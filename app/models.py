@@ -1,0 +1,105 @@
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+class Flat(Base):
+    __tablename__ = "flats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    addr: Mapped[str] = mapped_column(String(200))
+    dispo: Mapped[str] = mapped_column(String(20), default="")
+    floor: Mapped[str] = mapped_column(String(20), default="")
+    zip: Mapped[str] = mapped_column(String(120), default="")
+    owner: Mapped[str] = mapped_column(String(200), default="")
+    bank_acc: Mapped[str] = mapped_column(String(60), default="")
+    tenant_name: Mapped[str] = mapped_column(String(200), default="")
+    tenant_email: Mapped[str] = mapped_column(String(200), default="")
+    tenant_phone: Mapped[str] = mapped_column(String(60), default="")
+    tenant_others: Mapped[str] = mapped_column(Text, default="")  # jména oddělená čárkou
+
+    leases: Mapped[list["Lease"]] = relationship(
+        back_populates="flat", cascade="all, delete-orphan", order_by="Lease.valid_from"
+    )
+    statements: Mapped[list["Statement"]] = relationship(
+        back_populates="flat", cascade="all, delete-orphan", order_by="Statement.year"
+    )
+
+
+class Lease(Base):
+    """Předpis: nájem a zálohy platné v daném období."""
+
+    __tablename__ = "leases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rent: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    deposit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+
+    flat: Mapped[Flat] = relationship(back_populates="leases")
+    advances: Mapped[list["Advance"]] = relationship(cascade="all, delete-orphan", order_by="Advance.id")
+
+
+class Advance(Base):
+    __tablename__ = "advances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lease_id: Mapped[int] = mapped_column(ForeignKey("leases.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+
+
+class Statement(Base):
+    """Vyúčtování služeb za jeden rok."""
+
+    __tablename__ = "statements"
+    __table_args__ = (UniqueConstraint("flat_id", "year"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    year: Mapped[int] = mapped_column(Integer)
+    doc_label: Mapped[str] = mapped_column(String(300), default="")
+
+    flat: Mapped[Flat] = relationship(back_populates="statements")
+    items: Mapped[list["StatementItem"]] = relationship(
+        back_populates="statement", cascade="all, delete-orphan", order_by="StatementItem.position"
+    )
+
+
+class StatementItem(Base):
+    __tablename__ = "statement_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    statement_id: Mapped[int] = mapped_column(ForeignKey("statements.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    statement: Mapped[Statement] = relationship(back_populates="items")
+
+
+class Version(Base):
+    """Historie změn. Každá přepsaná hodnota zůstane uložená a dá se vrátit."""
+
+    __tablename__ = "versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    statement_id: Mapped[int | None] = mapped_column(ForeignKey("statements.id", ondelete="SET NULL"), nullable=True)
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("statement_items.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200))
+    action: Mapped[str] = mapped_column(String(40))  # nahrazeno, ponecháno, přidáno, vráceno, uložen
+    old: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    new: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
