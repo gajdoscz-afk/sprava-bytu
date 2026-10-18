@@ -449,8 +449,12 @@ function docsTab(){
  return `<div class="row"><h1>Dokumenty</h1><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div>
  <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
  <div class="card" style="text-align:center;padding:26px">
+  <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát fotky nebo PDF</b>
   <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
+  <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Celá složka</b>
+  <input type="file" multiple webkitdirectory style="display:none" onchange="uploadDocs(this)"></label>
+  </div>
   <div id="up" class="small mut" style="margin-top:8px"></div>
  </div>
  <h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')||'<div class="card mut">Nic nečeká.</div>'}
@@ -467,16 +471,26 @@ async function shrink(file){
  return new File([blob],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});
 }
 async function uploadDocs(input){
- const files=[...input.files];if(!files.length)return;
- const box=$('#up');box.textContent=`Nahrávám a čtu ${files.length} soubor(ů). Může to trvat i minutu…`;
- const fd=new FormData();
- for(const f of files){fd.append('files',await shrink(f).catch(()=>f))}
- try{
-  const res=await fetch('/documents',{method:'POST',body:fd});
-  if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
-  const j=await res.json();toast(`Nahráno: ${j.length}`);
-  await reload();render();
- }catch(e){toast(e.message);box.textContent=''}
+ const all=[...input.files];
+ const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
+ const skipped=all.length-files.length;
+ input.value='';
+ if(!files.length){toast('Žádný podporovaný soubor (PDF nebo obrázek)');return}
+ const box=$('#up');let ok=0,fail=0;
+ // posíláme po jednom souboru, ať je vidět průběh a jeden pomalý soubor nic nezastaví
+ for(let i=0;i<files.length;i++){
+  box.textContent=`Nahrávám a čtu ${i+1} z ${files.length}: ${files[i].name}`;
+  try{
+   const fd=new FormData();
+   fd.append('files',await shrink(files[i]).catch(()=>files[i]));
+   const res=await fetch('/documents',{method:'POST',body:fd});
+   if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
+   ok++;
+  }catch(e){fail++;toast(files[i].name+': '+e.message)}
+ }
+ box.textContent='';
+ toast(`Nahráno ${ok}${fail?', chyb '+fail:''}${skipped?', přeskočeno '+skipped:''}`);
+ await reload();render();
 }
 async function confirmDoc(id){
  let fid=$('#df'+id).value;const t=$('#dt'+id).value;
