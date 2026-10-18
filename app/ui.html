@@ -416,7 +416,10 @@ async function exportBackup(){
 // ---------- dokumenty ----------
 const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
 const docType=k=>DOC_TYPES[k]||'Jiné';
-function flatOpts(sel){return '<option value="">— nepřiřazeno —</option>'+S.flats.map(f=>`<option value="${f.id}" ${f.id==sel?'selected':''}>${esc(f.addr)}</option>`).join('')}
+function flatOpts(sel,newAddr){
+ const nw=(newAddr&&!sel)?`<option value="new" selected>＋ Nový byt: ${esc(newAddr)}</option>`:'';
+ return '<option value="">— nepřiřazeno —</option>'+nw+S.flats.map(f=>`<option value="${f.id}" ${f.id==sel?'selected':''}>${esc(f.addr)}</option>`).join('');
+}
 function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('')}
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
@@ -430,7 +433,7 @@ function inboxCard(d){
  ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
  ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
  <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div>
- <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id)}</select></div>
+ <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id,(d.extracted&&d.extracted.address)||'')}</select></div>
  <div><label>Typ</label><select id="dt${d.id}">${docTypeOpts(d.doc_type)}</select></div></div>
  <div class="btns"><button class="btn sm" onclick="confirmDoc(${d.id})">Potvrdit</button>
  ${d.note?`<button class="btn sm sec" onclick="classifyDoc(${d.id})">Přečíst znovu</button>`:''}
@@ -439,7 +442,7 @@ function inboxCard(d){
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status!=='zarazeno');
  const filed=S.docs.filter(d=>d.status==='zarazeno');
- return `<h1>Dokumenty</h1>
+ return `<div class="row"><h1>Dokumenty</h1><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div>
  <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
  <div class="card" style="text-align:center;padding:26px">
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát fotky nebo PDF</b>
@@ -472,8 +475,14 @@ async function uploadDocs(input){
  }catch(e){toast(e.message);box.textContent=''}
 }
 async function confirmDoc(id){
- const fid=$('#df'+id).value,t=$('#dt'+id).value;
- try{await api(`/documents/${id}`,'PATCH',{flat_id:fid?+fid:null,doc_type:t});toast('Zařazeno');await reload();render()}
+ let fid=$('#df'+id).value;const t=$('#dt'+id).value;
+ try{
+  if(fid==='new'){
+   const d=S.docs.find(x=>x.id==id),ex=d.extracted||{};
+   const nf=await api('/flats','POST',{addr:ex.address,tenant:{name:ex.tenant_name||''}});
+   fid=nf.id;
+  }
+  await api(`/documents/${id}`,'PATCH',{flat_id:fid?+fid:null,doc_type:t});toast('Zařazeno');await reload();render()}
  catch(e){toast(e.message)}
 }
 async function classifyDoc(id){
