@@ -28,8 +28,24 @@ Zahrň jen nabídky, které skutečně najdeš. Nejvíc 15. Nic nevymýšlej.
 Pokud nic nenajdeš, vrať prázdné pole []. Odpověď musí být jen JSON, bez dalšího textu."""
 
 
+FORMAT_PROMPT = """Z následujícího textu vypiš nabídky k pronájmu bytů jako JSON pole objektů s klíči:
+title, url (přímý odkaz na inzerát, pokud je v textu), dispo, area_m2 (číslo nebo null), price (měsíční nájem v Kč bez záloh jako číslo), locality.
+Zahrň jen nabídky s uvedenou cenou. Pokud žádné nejsou, vrať []. Nic nevymýšlej. Odpověz jen JSON."""
+
+
 class SearchError(Exception):
     pass
+
+
+def _claude_text(key: str, body: dict, timeout: int) -> str:
+    """Zavolá Claude API a vrátí text odpovědi."""
+    headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    try:
+        r = httpx.post("https://api.anthropic.com/v1/messages", headers=headers, json=body, timeout=timeout)
+        r.raise_for_status()
+        return "".join(c.get("text", "") for c in r.json().get("content", []) if c.get("type") == "text")
+    except httpx.HTTPError as e:
+        raise SearchError(f"Hledání selhalo: {e}")
 
 
 def norm_dispo(s: str | None) -> str:
@@ -61,15 +77,18 @@ def search_listings(locality: str, dispo: str) -> tuple[list[dict], str]:
         "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
         "messages": [{"role": "user", "content": SEARCH_PROMPT.format(locality=locality, dispo=dispo or "libovolná")}],
     }
-    headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
-    try:
-        r = httpx.post("https://api.anthropic.com/v1/messages", headers=headers, json=body, timeout=240)
-        r.raise_for_status()
-        text = "".join(c.get("text", "") for c in r.json().get("content", []) if c.get("type") == "text")
-    except httpx.HTTPError as e:
-        raise SearchError(f"Hledání selhalo: {e}")
+    text = _claude_text(key, body, 240)
 
     rows = _extract_rows(text)
+    if not rows and text.strip():
+        # Model nabídky našel, ale napsal je jako text. Druhým voláním bez vyhledávání je převedeme na JSON.
+        format_body = {
+            "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+            "max_tokens": 3000,
+            "messages": [{"role": "user", "content": FORMAT_PROMPT + "\n\nTEXT:\n" + text[:20000]}],
+        }
+        text = _claude_text(key, format_body, 120)
+        rows = _extract_rows(text)
     if not rows:
         snippet = " ".join(text.split())[:300]
         note = f"Model nevrátil seznam nabídek. Odpověď: {snippet}" if snippet else "Model nevrátil žádný text."
