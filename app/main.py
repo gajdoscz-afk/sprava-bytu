@@ -102,6 +102,20 @@ BENCH_WEEKDAY = 0  # pondělí
 BENCH_HOUR = 7     # od 7:00 pražského času
 
 
+# Stav běžícího hledání u všech bytů, aby ho stránka mohla ukázat
+BENCH_STATE: dict = {"running": False, "step": "", "done": 0, "total": 0, "result": None, "error": None}
+
+
+def _run_refresh_bg() -> None:
+    try:
+        result = run_benchmark_refresh()
+        BENCH_STATE.update(result=result, error=None)
+    except Exception as e:
+        BENCH_STATE.update(error=str(e))
+    finally:
+        BENCH_STATE.update(running=False, step="")
+
+
 def run_benchmark_refresh() -> dict:
     """Najde nabídky nájmů i prodejů na webu pro každou dispozici bytů, uloží nové a zapíše týdenní snímek cen.
     Hledá se podle dispozice, ne po bytech."""
@@ -110,8 +124,11 @@ def run_benchmark_refresh() -> dict:
     with Session(engine) as db:
         dispos = {bm.norm_dispo(f.dispo) for f in db.scalars(select(m.Flat)).all() if f.dispo and f.dispo.strip()}
         known = set(db.scalars(select(m.Listing.url)).all())
+        BENCH_STATE.update(total=len(dispos) * 2, done=0)
         for kind in ("rent", "sale"):
             for dispo in sorted(dispos):
+                BENCH_STATE.update(step=f"{'nájmy' if kind == 'rent' else 'prodej'} · {dispo}")
+                BENCH_STATE["done"] += 1
                 try:
                     found, _note = bm.search_listings(bm.DEFAULT_LOCALITY, dispo, kind)
                 except bm.SearchError as e:
@@ -365,6 +382,20 @@ def listing_out(l: m.Listing) -> dict:
         "area_m2": float(l.area_m2) if l.area_m2 is not None else None,
         "price": float(l.price), "url": l.url, "title": l.title, "source": l.source,
     }
+
+
+@app.post("/benchmark/refresh")
+def start_benchmark_refresh() -> dict:
+    """Spustí hledání nájmů i prodejů u všech bytů na pozadí. Pokud už běží, jen vrátí stav."""
+    if not BENCH_STATE["running"]:
+        BENCH_STATE.update(running=True, step="začínám", done=0, total=0, result=None, error=None)
+        threading.Thread(target=_run_refresh_bg, daemon=True).start()
+    return dict(BENCH_STATE)
+
+
+@app.get("/benchmark/refresh")
+def benchmark_refresh_status() -> dict:
+    return dict(BENCH_STATE)
 
 
 @app.get("/version")

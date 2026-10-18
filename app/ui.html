@@ -71,6 +71,12 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 .toast.show{opacity:1}
 .note{font-size:13px;color:var(--mut);margin-top:14px}
 .warnTxt{color:var(--warn)}
+/* Kolečko složené z čárek při hledání u všech bytů */
+.cspin{position:relative;display:inline-block;width:18px;height:18px;vertical-align:middle;margin-right:10px;animation:cspin 1s linear infinite;flex:0 0 auto}
+.cspin i{position:absolute;left:50%;top:50%;width:2.5px;height:6px;margin:-3px 0 0 -1.25px;border-radius:2px;background:var(--acc)}
+@keyframes cspin{to{transform:rotate(360deg)}}
+.bstat{display:flex;align-items:center;min-height:22px;margin:4px 0 14px;font-size:14px}
+@media (prefers-reduced-motion:reduce){.cspin{animation-duration:2.5s}}
 </style>
 </head>
 <body>
@@ -679,11 +685,52 @@ function benchTab(){
   </div>`;
  }).join('');
  const lst=BENCH.listings.map(l=>`<div class="line"><span>${l.url?`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title||l.url)}</a>`:esc(l.title||'nabídka')}<span class="mut small"> · ${l.kind==='sale'?'prodej':'nájem'} · ${esc(l.dispo)||'—'}${l.area_m2!=null?' · '+String(l.area_m2).replace('.',',')+' m²':''} · ${l.source}</span></span><span>${kc(l.price)} <button class="link small" onclick="delListing(${l.id})">smazat</button></span></div>`).join('');
- return `<div class="row"><h1>Benchmark nájmů</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addListingForm()">+ Přidat nabídku</button><button class="btn sm sec" onclick="BENCH=null;render()">↻ Obnovit</button></div></div>
+ return `<div class="row"><h1>Benchmark nájmů</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addListingForm()">+ Přidat nabídku</button><button class="btn sm sec" id="benchAll" onclick="refreshAllBench()" ${REF.running?'disabled':''}>↻ Aktualizovat vše</button><button class="btn sm sec" onclick="BENCH=null;render()">↻ Obnovit</button></div></div>
  <p class="mut small">Odhad vychází z nabídek se stejnou dispozicí. Pokud znám plochu bytu, počítá se cena za m². Návrh nájmu se zobrazí, jen když je nájem o více než ${kc(BENCH.min_diff)} pod odhadem.</p>
+ <div id="benchStatus" class="bstat">${refreshLine()}</div>
  ${rows||'<div class="card mut">Zatím nejsou žádné byty.</div>'}
  <h2>Nabídky na trhu (${BENCH.listings.length})</h2>
  <div class="card">${lst||'<div class="mut small">Zatím žádné nabídky. Najděte je na webu u konkrétního bytu, nebo je přidejte ručně.</div>'}</div>`;
+}
+// Hledání nájmů i prodejů u všech bytů najednou (běží na serveru, stránka jen ukazuje stav)
+let REF={running:false};
+const spinHtml=()=>`<span class="cspin" aria-hidden="true">${[...Array(10)].map((_,k)=>`<i style="transform:rotate(${k*36}deg) translateY(-8px);opacity:${((k+1)/10).toFixed(2)}"></i>`).join('')}</span>`;
+function refreshText(s){
+ if(s.running) return `Hledám nájmy i prodeje u všech bytů${s.step?` · ${s.step}`:''}${s.total?` (${s.done} z ${s.total})`:''}`;
+ if(s.error) return 'Hledání selhalo: '+s.error;
+ if(s.result) return `Hotovo: prohledáno ${s.result.searched}, nových nabídek ${s.result.new}${s.result.errors?`, chyb ${s.result.errors}`:''}.`;
+ return '';
+}
+function refreshLine(){
+ if(REF.running) return `${spinHtml()}<span>${esc(refreshText(REF))}</span>`;
+ const t=refreshText(REF);
+ return t?`<span class="mut small">${esc(t)}</span>`:'';
+}
+function updateRefreshUI(){
+ const el=$('#benchStatus'); if(el) el.innerHTML=refreshLine();
+ const b=$('#benchAll'); if(b) b.disabled=REF.running;
+}
+async function refreshAllBench(){
+ if(REF.running) return;
+ REF={running:true,step:'začínám',done:0,total:0};
+ updateRefreshUI();
+ try{ REF=await api('/benchmark/refresh','POST') }
+ catch(e){ REF={running:false,error:e.message}; updateRefreshUI(); toast(e.message); return }
+ updateRefreshUI();
+ pollRefresh();
+}
+async function pollRefresh(){
+ try{
+  const s=await api('/benchmark/refresh');
+  REF=s; updateRefreshUI();
+  if(s.running){ setTimeout(pollRefresh,4000); return }
+ }catch(e){ REF={running:false,error:e.message}; updateRefreshUI(); return }
+ // Hotovo: načíst nové nabídky a odhady, pokud je zrovna otevřená záložka Benchmark
+ BENCH=null;
+ try{ await loadBench() }catch(e){}
+ if(V.tab==='bench') render();
+ else updateRefreshUI();
+ toast(refreshText(REF));
 }
 async function searchBench(fid,kind='rent'){
  progress(`Hledám ${kind==='sale'?'prodej':'nájmy'} na webu… to může trvat minutu`);
