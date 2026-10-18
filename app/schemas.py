@@ -56,6 +56,7 @@ class BankAssignIn(BaseModel):
 class ListingIn(BaseModel):
     """Srovnatelná nabídka zadaná ručně."""
 
+    kind: str = Field(default="rent", pattern="^(rent|sale)$")
     dispo: str = Field(default="", max_length=20)
     area_m2: Decimal | None = Field(default=None, ge=0)
     price: Decimal = Field(gt=0)

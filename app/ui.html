@@ -639,6 +639,22 @@ let BENCH=null;
 async function loadBench(){BENCH=await api('/benchmark')}
 const kcOrDash=v=>v==null?'—':kc(v);
 const CONF_CLASS={'vysoká':'ok','střední':'','nízká':'warn'};
+const pctTxt=v=>v==null?'zatím málo dat':(v>0?'+':'')+String(v).replace('.',',')+' %';
+// Blok prodeje u bytu: odhad ceny, cena za m², růst za měsíc a rok
+function saleBlock(b){
+ const s=b.sale;
+ return `<div class="card" style="margin:10px 0 0">
+  <div class="row"><b>Prodej</b>${s?`<span class="tag ${CONF_CLASS[s.confidence]||''}">${s.confidence}</span>`:'<span class="tag warn">málo dat</span>'}</div>
+  <div class="mini">
+   <div><span>Odhad ceny</span><b>${s?kc(s.estimate):'—'}</b></div>
+   <div><span>Cena za m²</span><b>${s&&s.per_m2?kc(s.per_m2):'—'}</b></div>
+   <div><span>Růst za měsíc</span><b>${pctTxt(s&&s.growth_1m)}</b></div>
+   <div><span>Růst za rok</span><b>${pctTxt(s&&s.growth_12m)}</b></div>
+  </div>
+  <p class="small mut">${s?`Podle ${s.n} nabídek prodeje, ${s.basis}. Růst vzniká z týdenních snímků, první údaje budou za měsíc.`:'Zatím žádné nabídky prodeje pro tuto dispozici.'}</p>
+  <div class="btns"><button class="btn sec sm" onclick="searchBench(${b.id},'sale')">Hledat prodej na webu</button></div>
+ </div>`;
+}
 function benchTab(){
  if(!BENCH){loadBench().then(render).catch(e=>toast(e.message));return '<p class="mut">Načítám…</p>'}
  const rows=BENCH.flats.map(b=>{
@@ -657,19 +673,20 @@ function benchTab(){
    </div>
    <p class="small mut">${e?`Podle: ${e.basis}. Nájem je ${diffTxt}.`:'Zatím nejsou srovnatelné nabídky se stejnou dispozicí.'}</p>
    ${sug}
-   <div class="btns"><button class="btn sec sm" onclick="searchBench(${b.id})">Hledat nabídky na webu</button></div>
+   <div class="btns"><button class="btn sec sm" onclick="searchBench(${b.id},'rent')">Hledat nájmy na webu</button></div>
+   ${saleBlock(b)}
   </div>`;
  }).join('');
- const lst=BENCH.listings.map(l=>`<div class="line"><span>${l.url?`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title||l.url)}</a>`:esc(l.title||'nabídka')}<span class="mut small"> · ${esc(l.dispo)||'—'}${l.area_m2!=null?' · '+String(l.area_m2).replace('.',',')+' m²':''} · ${l.source}</span></span><span>${kc(l.price)} <button class="link small" onclick="delListing(${l.id})">smazat</button></span></div>`).join('');
+ const lst=BENCH.listings.map(l=>`<div class="line"><span>${l.url?`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title||l.url)}</a>`:esc(l.title||'nabídka')}<span class="mut small"> · ${l.kind==='sale'?'prodej':'nájem'} · ${esc(l.dispo)||'—'}${l.area_m2!=null?' · '+String(l.area_m2).replace('.',',')+' m²':''} · ${l.source}</span></span><span>${kc(l.price)} <button class="link small" onclick="delListing(${l.id})">smazat</button></span></div>`).join('');
  return `<div class="row"><h1>Benchmark nájmů</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addListingForm()">+ Přidat nabídku</button><button class="btn sm sec" onclick="BENCH=null;render()">↻ Obnovit</button></div></div>
  <p class="mut small">Odhad vychází z nabídek se stejnou dispozicí. Pokud znám plochu bytu, počítá se cena za m². Návrh nájmu se zobrazí, jen když je nájem o více než ${kc(BENCH.min_diff)} pod odhadem.</p>
  ${rows||'<div class="card mut">Zatím nejsou žádné byty.</div>'}
  <h2>Nabídky na trhu (${BENCH.listings.length})</h2>
  <div class="card">${lst||'<div class="mut small">Zatím žádné nabídky. Najděte je na webu u konkrétního bytu, nebo je přidejte ručně.</div>'}</div>`;
 }
-async function searchBench(fid){
- progress('Hledám nabídky na webu… to může trvat minutu');
- try{const r=await api(`/flats/${fid}/benchmark/search`,'POST');toast(r.found?`Nalezeno ${r.found}, nových ${r.new}`:(r.note||'Nic nenalezeno'));BENCH=null;await loadBench();render()}
+async function searchBench(fid,kind='rent'){
+ progress(`Hledám ${kind==='sale'?'prodej':'nájmy'} na webu… to může trvat minutu`);
+ try{const r=await api(`/flats/${fid}/benchmark/search?kind=${kind}`,'POST');toast(r.found?`Nalezeno ${r.found}, nových ${r.new}`:(r.note||'Nic nenalezeno'));BENCH=null;await loadBench();render()}
  catch(e){toast(e.message)}
  finally{progress('')}
 }
@@ -677,14 +694,15 @@ function addListingForm(){
  modal(`<div class="sheetHead"><h2>Nová nabídka</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Odkaz na inzerát</label><input id="lu" placeholder="https://…">
  <div class="grid2"><div><label>Dispozice</label><input id="ld" placeholder="2+kk"></div><div><label>Plocha (m²)</label><input id="la" type="number" min="0" step="0.01"></div></div>
- <label>Měsíční nájem (Kč, bez záloh)</label><input id="lp" type="number" min="1" step="1">
+ <label>Typ</label><select id="lk"><option value="rent">Nájem</option><option value="sale">Prodej</option></select>
+ <label>Cena (Kč; u nájmu měsíční, bez záloh)</label><input id="lp" type="number" min="1" step="1">
  <div class="btns"><button class="btn" onclick="saveListing()">Uložit</button></div>`);
 }
 async function saveListing(){
  const price=parseFloat(($('#lp').value||'').replace(',','.'));
  if(!(price>0)){toast('Vyplňte nájem');return}
  const areaRaw=($('#la').value||'').replace(',','.').trim();
- try{await api('/benchmark/listings','POST',{url:$('#lu').value.trim(),dispo:$('#ld').value.trim(),area_m2:areaRaw===''?null:parseFloat(areaRaw),price});closeModal();toast('Uloženo');BENCH=null;await loadBench();render()}
+ try{await api('/benchmark/listings','POST',{kind:$('#lk').value,url:$('#lu').value.trim(),dispo:$('#ld').value.trim(),area_m2:areaRaw===''?null:parseFloat(areaRaw),price});closeModal();toast('Uloženo');BENCH=null;await loadBench();render()}
  catch(e){toast(e.message)}
 }
 async function delListing(id){

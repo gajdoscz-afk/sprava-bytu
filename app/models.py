@@ -187,6 +187,20 @@ class Listing(Base):
     found_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MarketSnapshot(Base):
+    """Týdenní snímek mediánu cen na trhu pro dispozici. Z něj se počítá růst za měsíc a za rok."""
+
+    __tablename__ = "market_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # rent | sale
+    dispo: Mapped[str] = mapped_column(String(20), index=True)  # normalizovaná dispozice
+    n: Mapped[int] = mapped_column(Integer, default=0)
+    median_pm2: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    median_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+
+
 class FlatAcquisition(Base):
     """Pořízení bytu: datum koupě a cena. Vyplní se z kupní smlouvy, nebo ručně (ruční údaj má přednost)."""
 

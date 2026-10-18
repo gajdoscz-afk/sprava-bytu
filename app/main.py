@@ -1,5 +1,6 @@
 import os
 import secrets
+import statistics
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -10,7 +11,7 @@ from pathlib import Path
 import mimetypes
 import re
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -75,29 +76,65 @@ BENCH_HOUR = 7     # od 7:00 pražského času
 
 
 def run_benchmark_refresh() -> dict:
-    """Najde nabídky na webu pro každou dispozici bytů a uloží nové. Hledá se podle dispozice, ne po bytech."""
+    """Najde nabídky nájmů i prodejů na webu pro každou dispozici bytů, uloží nové a zapíše týdenní snímek cen.
+    Hledá se podle dispozice, ne po bytech."""
     done = {"searched": 0, "new": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
     with Session(engine) as db:
-        dispos = {f.dispo.strip() for f in db.scalars(select(m.Flat)).all() if f.dispo and f.dispo.strip()}
+        dispos = {bm.norm_dispo(f.dispo) for f in db.scalars(select(m.Flat)).all() if f.dispo and f.dispo.strip()}
         known = set(db.scalars(select(m.Listing.url)).all())
-        for dispo in sorted(dispos):
-            try:
-                found, _note = bm.search_listings(bm.DEFAULT_LOCALITY, dispo)
-            except bm.SearchError as e:
-                done["errors"] += 1
-                print(f"[benchmark] {dispo}: {e}", flush=True)
-                continue
-            done["searched"] += 1
-            for it in found:
-                if it["url"] in known:
+        for kind in ("rent", "sale"):
+            for dispo in sorted(dispos):
+                try:
+                    found, _note = bm.search_listings(bm.DEFAULT_LOCALITY, dispo, kind)
+                except bm.SearchError as e:
+                    done["errors"] += 1
+                    print(f"[benchmark] {kind} {dispo}: {e}", flush=True)
                     continue
-                known.add(it["url"])
-                db.add(m.Listing(kind="rent", locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
-                                 price=it["price"], url=it["url"], title=it["title"], source="web"))
-                done["new"] += 1
-            db.commit()
+                done["searched"] += 1
+                for it in found:
+                    if it["url"] in known:
+                        continue
+                    known.add(it["url"])
+                    db.add(m.Listing(kind=kind, locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
+                                     price=it["price"], url=it["url"], title=it["title"], source="web"))
+                    done["new"] += 1
+                db.commit()
+                # Snímek mediánu z nabídek, které v databázi jsou
+                same = [l for l in db.scalars(select(m.Listing).where(m.Listing.kind == kind)).all()
+                        if bm.norm_dispo(l.dispo) == dispo]
+                if same:
+                    pm2 = [float(l.price / l.area_m2) for l in same if l.area_m2]
+                    db.add(m.MarketSnapshot(
+                        taken_at=now, kind=kind, dispo=dispo, n=len(same),
+                        median_pm2=Decimal(str(round(statistics.median(pm2), 2))) if pm2 else None,
+                        median_price=Decimal(str(round(statistics.median([float(l.price) for l in same]), 2))),
+                    ))
+                db.commit()
     print(f"[benchmark] hotovo: {done}", flush=True)
     return done
+
+
+def _snapshot_growth(db: Session, kind: str, dispo: str) -> tuple[float | None, float | None]:
+    """Růst mediánu ceny za m² (nebo celkové ceny, pokud m² chybí) za měsíc a za rok. Vrací procenta nebo None."""
+    snaps = db.scalars(select(m.MarketSnapshot).where(
+        m.MarketSnapshot.kind == kind, m.MarketSnapshot.dispo == bm.norm_dispo(dispo)
+    ).order_by(m.MarketSnapshot.taken_at)).all()
+    if not snaps:
+        return None, None
+    latest = snaps[-1]
+
+    def value(s: m.MarketSnapshot) -> float | None:
+        return float(s.median_pm2) if s.median_pm2 is not None else (float(s.median_price) if s.median_price else None)
+
+    def base(days: int, tolerance: int) -> float | None:
+        target = latest.taken_at - timedelta(days=days)
+        cands = [s for s in snaps if s.taken_at < latest.taken_at and abs((s.taken_at - target).days) <= tolerance]
+        if not cands:
+            return None
+        return value(min(cands, key=lambda s: abs((s.taken_at - target).total_seconds())))
+
+    return bm.growth_pct(value(latest), base(30, 10)), bm.growth_pct(value(latest), base(365, 45))
 
 
 def _benchmark_scheduler() -> None:
@@ -305,12 +342,18 @@ def listing_out(l: m.Listing) -> dict:
 
 @app.get("/benchmark")
 def benchmark_overview(db: Session = Depends(get_db)):
-    rents = db.scalars(select(m.Listing).where(m.Listing.kind == "rent")).all()
+    all_listings = db.scalars(select(m.Listing)).all()
+    rents = [l for l in all_listings if l.kind == "rent"]
+    sales = [l for l in all_listings if l.kind == "sale"]
     flats = []
     for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
         cur = f.leases[-1].rent if f.leases else None
         e = bm.estimate(f.dispo, f.area_m2, rents)
         sug = bm.suggest_rent(cur, e["estimate"]) if e else None
+        es = bm.estimate(f.dispo, f.area_m2, sales)
+        g1, g12 = _snapshot_growth(db, "sale", f.dispo) if f.dispo else (None, None)
+        if es is not None:
+            es["growth_1m"], es["growth_12m"] = g1, g12
         flats.append({
             "id": f.id, "addr": f.addr, "dispo": f.dispo,
             "area_m2": float(f.area_m2) if f.area_m2 is not None else None,
@@ -318,16 +361,19 @@ def benchmark_overview(db: Session = Depends(get_db)):
             "estimate": e,
             "diff": float(cur) - e["estimate"] if (cur is not None and e) else None,
             "suggested_rent": float(sug) if sug is not None else None,
+            "sale": es,
         })
-    listings = sorted(rents, key=lambda l: l.found_at, reverse=True)[:300]
+    listings = sorted(all_listings, key=lambda l: l.found_at, reverse=True)[:300]
     return {"min_diff": float(bm.MIN_DIFF_KC), "flats": flats, "listings": [listing_out(l) for l in listings]}
 
 
 @app.post("/flats/{flat_id}/benchmark/search")
-def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
+def search_benchmark(flat_id: int, kind: str = "rent", db: Session = Depends(get_db)):
+    if kind not in ("rent", "sale"):
+        raise HTTPException(400, "Neznámý typ nabídek")
     f = get_flat(db, flat_id)
     try:
-        found, note = bm.search_listings(bm.DEFAULT_LOCALITY, f.dispo)
+        found, note = bm.search_listings(bm.DEFAULT_LOCALITY, f.dispo, kind)
     except bm.SearchError as e:
         raise HTTPException(502, str(e))
     known = set(db.scalars(select(m.Listing.url)).all())
@@ -336,7 +382,7 @@ def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
         if it["url"] in known:
             continue
         known.add(it["url"])
-        db.add(m.Listing(kind="rent", locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
+        db.add(m.Listing(kind=kind, locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
                          price=it["price"], url=it["url"], title=it["title"], source="web"))
         new += 1
     db.commit()
@@ -345,7 +391,7 @@ def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
 
 @app.post("/benchmark/listings", status_code=201)
 def add_listing(body: s.ListingIn, db: Session = Depends(get_db)):
-    l = m.Listing(kind="rent", locality=body.locality or bm.DEFAULT_LOCALITY, dispo=body.dispo,
+    l = m.Listing(kind=body.kind, locality=body.locality or bm.DEFAULT_LOCALITY, dispo=body.dispo,
                   area_m2=body.area_m2, price=money(body.price), url=body.url, title=body.title, source="ručně")
     db.add(l)
     db.commit()

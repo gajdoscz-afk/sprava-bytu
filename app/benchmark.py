@@ -1,4 +1,4 @@
-"""Price Benchmark: nabídky nájmů z trhu, odhad tržního nájmu a návrh nového nájmu.
+"""Price Benchmark: nabídky nájmů a prodejů z trhu, odhad, spolehlivost, růst cen a návrh nájmu.
 
 Nabídky hledá Claude s vyhledáváním na webu. Odhad počítáme sami z nabídek, aby byl vidět postup.
 Spolehlivost se odvíjí od počtu srovnatelných nabídek a od jejich rozptylu.
@@ -14,27 +14,34 @@ import httpx
 # Návrh nového nájmu se ukáže, jen když je nájem o víc než tuto částku pod odhadem
 MIN_DIFF_KC = Decimal("1000")
 DEFAULT_LOCALITY = "Ústí nad Labem"
+KINDS = {
+    "rent": {"offer": "PRONÁJMU", "price": "měsíční nájem v Kč bez záloh"},
+    "sale": {"offer": "PRODEJI", "price": "kupní cena v Kč"},
+}
 
-SEARCH_PROMPT = """Najdi aktuální nabídky ke PRONÁJMU bytů v lokalitě {locality}, dispozice {dispo}.
+SEARCH_PROMPT = """Najdi aktuální nabídky k {offer} bytů v lokalitě {locality}, dispozice {dispo}.
 Hledej na veřejných realitních portálech (například sreality.cz, bezrealitky.cz, realitymix.cz, reality.idnes.cz).
 Odpověz POUZE JSON polem objektů, každý s klíči:
 - title: název nebo popis nabídky
 - url: přímý odkaz na inzerát (povinné, jinak nabídku vynech)
 - dispo: dispozice, např. "2+kk"
 - area_m2: podlahová plocha v m² jako číslo, nebo null
-- price: měsíční nájem v Kč bez záloh jako číslo (povinné)
+- price: {price} jako číslo (povinné)
 - locality: obec nebo část města
 Zahrň jen nabídky, které skutečně najdeš. Nejvíc 15. Nic nevymýšlej.
-Pokud nic nenajdeš, vrať prázdné pole []. Odpověď musí být jen JSON, bez dalšího textu."""
+Pokud nic nenajdeš, vrať prázdné pole []. Odpověz jen JSON."""
 
-
-FORMAT_PROMPT = """Z následujícího textu vypiš nabídky k pronájmu bytů jako JSON pole objektů s klíči:
-title, url (přímý odkaz na inzerát, pokud je v textu), dispo, area_m2 (číslo nebo null), price (měsíční nájem v Kč bez záloh jako číslo), locality.
+FORMAT_PROMPT = """Z následujícího textu vypiš nabídky k {offer} bytů jako JSON pole objektů s klíči:
+title, url (přímý odkaz na inzerát, pokud je v textu), dispo, area_m2 (číslo nebo null), price ({price} jako číslo), locality.
 Zahrň jen nabídky s uvedenou cenou. Pokud žádné nejsou, vrať []. Nic nevymýšlej. Odpověz jen JSON."""
 
 
 class SearchError(Exception):
     pass
+
+
+def norm_dispo(s: str | None) -> str:
+    return re.sub(r"\s+", "", (s or "").lower())
 
 
 def _claude_text(key: str, body: dict, timeout: int) -> str:
@@ -46,10 +53,6 @@ def _claude_text(key: str, body: dict, timeout: int) -> str:
         return "".join(c.get("text", "") for c in r.json().get("content", []) if c.get("type") == "text")
     except httpx.HTTPError as e:
         raise SearchError(f"Hledání selhalo: {e}")
-
-
-def norm_dispo(s: str | None) -> str:
-    return re.sub(r"\s+", "", (s or "").lower())
 
 
 def _extract_rows(text: str) -> list:
@@ -66,16 +69,18 @@ def _extract_rows(text: str) -> list:
     return []
 
 
-def search_listings(locality: str, dispo: str) -> tuple[list[dict], str]:
+def search_listings(locality: str, dispo: str, kind: str = "rent") -> tuple[list[dict], str]:
     """Zavolá Claude s vyhledáváním na webu. Vrací (nabídky, poznámka pro případ, že nic nebylo nalezeno)."""
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         raise SearchError("Hledání nabídek zatím není zapnuté (chybí ANTHROPIC_API_KEY).")
+    k = KINDS[kind]
     body = {
         "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
         "max_tokens": 4000,
         "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
-        "messages": [{"role": "user", "content": SEARCH_PROMPT.format(locality=locality, dispo=dispo or "libovolná")}],
+        "messages": [{"role": "user", "content": SEARCH_PROMPT.format(
+            offer=k["offer"], price=k["price"], locality=locality, dispo=dispo or "libovolná")}],
     }
     text = _claude_text(key, body, 240)
 
@@ -85,7 +90,8 @@ def search_listings(locality: str, dispo: str) -> tuple[list[dict], str]:
         format_body = {
             "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
             "max_tokens": 3000,
-            "messages": [{"role": "user", "content": FORMAT_PROMPT + "\n\nTEXT:\n" + text[:20000]}],
+            "messages": [{"role": "user", "content": FORMAT_PROMPT.format(
+                offer=k["offer"], price=k["price"]) + "\n\nTEXT:\n" + text[:20000]}],
         }
         text = _claude_text(key, format_body, 120)
         rows = _extract_rows(text)
@@ -123,16 +129,17 @@ def search_listings(locality: str, dispo: str) -> tuple[list[dict], str]:
 
 
 def estimate(flat_dispo: str, flat_area: Decimal | None, listings) -> dict | None:
-    """Odhad tržního nájmu z nabídek se stejnou dispozicí.
+    """Odhad z nabídek se stejnou dispozicí. Výsledek je v korunách celkem (nájem nebo kupní cena).
 
     Pokud je známa plocha bytu a nabídky mají plochu, počítá se medián ceny za m² a vynásobí plochou bytu.
-    Jinak se bere medián celkových nájmů (méně přesné, spolehlivost nejvýš střední).
+    Jinak se bere medián celkových cen (méně přesné, spolehlivost nejvýš střední).
     """
     same = [l for l in listings if norm_dispo(l.dispo) == norm_dispo(flat_dispo)]
     if not same:
         return None
 
     per_m2 = [float(l.price / l.area_m2) for l in same if l.area_m2]
+    m2_median = round(statistics.median(per_m2)) if per_m2 else None
     if flat_area and len(per_m2) >= 3:
         values = per_m2
         basis = "cena za m² × plocha bytu"
@@ -140,14 +147,13 @@ def estimate(flat_dispo: str, flat_area: Decimal | None, listings) -> dict | Non
         per_m2_basis = True
     else:
         values = [float(l.price) for l in same]
-        basis = "medián celkových nájmů"
+        basis = "medián celkových cen"
         scale = 1.0
         per_m2_basis = False
 
     if len(values) < 3:
-        # Málo dat: jen orientační medián, bez spolehlivosti
         med = statistics.median(values) * scale
-        return {"estimate": round(med), "n": len(values), "confidence": "nízká",
+        return {"estimate": round(med), "per_m2": m2_median, "n": len(values), "confidence": "nízká",
                 "basis": basis, "low": round(min(values) * scale), "high": round(max(values) * scale)}
 
     med = statistics.median(values)
@@ -165,12 +171,20 @@ def estimate(flat_dispo: str, flat_area: Decimal | None, listings) -> dict | Non
 
     return {
         "estimate": round(med * scale),
+        "per_m2": m2_median,
         "n": n,
         "confidence": confidence,
         "basis": basis,
         "low": round(q1 * scale),
         "high": round(q3 * scale),
     }
+
+
+def growth_pct(latest: float | None, base: float | None) -> float | None:
+    """Procentní změna mezi dvěma hodnotami, zaokrouhlená na desetiny."""
+    if not latest or not base:
+        return None
+    return round((latest - base) / base * 100, 1)
 
 
 def suggest_rent(current: Decimal | None, est: int | None) -> Decimal | None:
