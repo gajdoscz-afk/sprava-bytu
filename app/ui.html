@@ -259,7 +259,7 @@ function flatForm(id){
  <label>Adresa a číslo bytu</label><input id="fa" value="${esc(f?f.addr:'')}" placeholder="Ulice 12/3">
  <div class="grid2"><div><label>Dispozice</label><input id="fd" value="${esc(f?f.dispo:'')}" placeholder="2+kk"></div><div><label>Patro</label><input id="fp" value="${esc(f?f.floor:'')}" placeholder="3. NP"></div></div>
  <label>PSČ a město</label><input id="fz" value="${esc(f?f.zip:'')}">
- <label>Vlastník (pronajímatel)</label><input id="fo" value="${esc(f?f.owner:'')}">
+ <label>Vlastník (pronajímatel)</label><input id="fo" value="${esc(f?f.owner:'')}" placeholder="Michal Gajdoš">
  <label>Nájemce</label><input id="ft" value="${esc(f?f.tenant.name:'')}">
  <label>Další osoby v bytě (čárkou)</label><input id="fx" value="${esc(f?f.tenant.others.join(', '):'')}">
  <div class="grid2"><div><label>E-mail nájemce</label><input id="fe" type="email" value="${esc(f?f.tenant.email:'')}"></div><div><label>Telefon</label><input id="fph" value="${esc(f?f.tenant.phone:'')}"></div></div>
@@ -369,7 +369,7 @@ ${f.owner||'[jméno pronajímatele]'}`;
 function detailsCard(f){
  const rows=[
   ['Adresa a číslo bytu',f.addr],['Dispozice',f.dispo],['Patro',f.floor],['PSČ a město',f.zip],
-  ['Vlastník (pronajímatel)',f.owner],['Nájemce',f.tenant.name],['Další osoby v bytě',(f.tenant.others||[]).join(', ')],
+  ['Nájemce',f.tenant.name],['Další osoby v bytě',(f.tenant.others||[]).join(', ')],
   ['E-mail nájemce',f.tenant.email],['Telefon nájemce',f.tenant.phone],['Účet pro platby',f.bank.acc]
  ];
  const missing=rows.filter(([,v])=>!v).length;

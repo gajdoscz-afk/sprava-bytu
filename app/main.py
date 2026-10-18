@@ -141,10 +141,14 @@ def list_flats(db: Session = Depends(get_db)):
     return [flat_out(f) for f in flats]
 
 
+DEFAULT_OWNER = "Michal Gajdoš"  # vlastník bytů je vždy správce; prodávající z kupní smlouvy se nepřebírá
+
+
 @app.post("/flats", status_code=201)
 def create_flat(data: s.FlatIn, db: Session = Depends(get_db)):
     f = m.Flat()
     apply_flat(f, data)
+    f.owner = f.owner or DEFAULT_OWNER
     db.add(f)
     db.flush()
     rematch_all(db)
@@ -161,6 +165,7 @@ def read_flat(flat_id: int, db: Session = Depends(get_db)):
 def update_flat(flat_id: int, data: s.FlatIn, db: Session = Depends(get_db)):
     f = get_flat(db, flat_id)
     apply_flat(f, data)
+    f.owner = f.owner or DEFAULT_OWNER
     db.flush()
     rematch_all(db)
     db.commit()
@@ -377,14 +382,13 @@ FLAT_FIELDS = {
     "dispo": "dispo",
     "floor": "floor",
     "zip_city": "zip",
-    "owner": "owner",
     "tenant_name": "tenant_name",
     "tenant_email": "tenant_email",
     "tenant_phone": "tenant_phone",
     "tenant_bank_account": "bank_acc",
 }
 FLAT_FIELD_LABELS = {
-    "dispo": "Dispozice", "floor": "Patro", "zip": "PSČ a město", "owner": "Vlastník",
+    "dispo": "Dispozice", "floor": "Patro", "zip": "PSČ a město",
     "tenant_name": "Nájemník", "tenant_email": "E-mail nájemníka", "tenant_phone": "Telefon nájemníka",
     "bank_acc": "Účet pro platby",
 }
