@@ -633,7 +633,7 @@ function docGroups(list,emptyText){
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status!=='zarazeno');
  const filed=S.docs.filter(d=>d.status==='zarazeno');
- return `<div class="row"><h1>Dokumenty</h1><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div>
+ return `<div class="row"><h1>Dokumenty</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
  <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
@@ -737,6 +737,21 @@ window.addEventListener('paste',e=>{
  e.preventDefault();
  uploadFiles(files,t.flatId);
 });
+
+// Přečte znovu všechny dokumenty: doplní nová pole (dispozice, PSČ, kontakty, účet) a přepočítá přiřazení
+async function rereadAll(){
+ const ids=S.docs.map(d=>d.id);
+ if(!ids.length){toast('Zatím nejsou žádné dokumenty');return}
+ if(!confirm(`Přečíst znovu ${ids.length} dokumentů? Typ a údaje se přepočítají, ruční přiřazení k bytu zůstane.`))return;
+ let ok=0,fail=0;
+ for(let i=0;i<ids.length;i++){
+  progress(`Čtu znovu ${i+1} z ${ids.length}`);
+  try{await api(`/documents/${ids[i]}/classify`,'POST');ok++}catch(e){fail++;toast(e.message)}
+ }
+ progress('');
+ toast(`Přečteno ${ok}${fail?', chyb '+fail:''}`);
+ await reload();render();
+}
 
 async function confirmDoc(id){
  let fid=$('#df'+id).value;const t=$('#dt'+id).value;
