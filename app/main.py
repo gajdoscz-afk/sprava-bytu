@@ -26,6 +26,7 @@ from . import bank
 from . import benchmark as bm
 from . import documents
 from . import models as m
+from . import news as nw
 from . import schemas as s
 from .db import Base, engine, get_db
 
@@ -156,6 +157,10 @@ def run_benchmark_refresh() -> dict:
                     ))
                 db.commit()
     print(f"[benchmark] hotovo: {done}", flush=True)
+    try:
+        snapshot_portfolio_now()
+    except Exception as e:
+        print(f"[portfolio] snímek selhal: {e}", flush=True)
     return done
 
 
@@ -181,8 +186,80 @@ def _snapshot_growth(db: Session, kind: str, dispo: str) -> tuple[float | None, 
     return bm.growth_pct(value(latest), base(30, 10)), bm.growth_pct(value(latest), base(365, 45))
 
 
+def portfolio_values(db: Session) -> list[dict]:
+    """Hodnota každého bytu: odhad z nabídek prodeje, jinak pořizovací cena. Bez obojího je hodnota None."""
+    sales = db.scalars(select(m.Listing).where(m.Listing.kind == "sale")).all()
+    rows = []
+    for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
+        value, basis = None, ""
+        es = bm.estimate(f.dispo, f.area_m2, sales) if f.dispo else None
+        if es:
+            value, basis = es["estimate"], f"odhad z nabídek, spolehlivost {es['confidence']}"
+        elif f.acquisition and f.acquisition.price:
+            value, basis = float(f.acquisition.price), "pořizovací cena"
+        rows.append({"id": f.id, "addr": f.addr, "value": value, "basis": basis})
+    return rows
+
+
+def snapshot_portfolio_now() -> None:
+    """Uloží snímek hodnoty portfolia (nejvýš jeden za den)."""
+    with Session(engine) as db:
+        rows = portfolio_values(db)
+        valued = [r for r in rows if r["value"] is not None]
+        if not valued:
+            return
+        now = datetime.now(timezone.utc)
+        last = db.scalar(select(m.PortfolioSnapshot).order_by(m.PortfolioSnapshot.taken_at.desc()).limit(1))
+        if last and last.taken_at.astimezone(timezone.utc).date() == now.date():
+            return
+        db.add(m.PortfolioSnapshot(
+            taken_at=now,
+            total=Decimal(str(sum(r["value"] for r in valued))),
+            per_flat={str(r["id"]): r["value"] for r in valued},
+        ))
+        db.commit()
+
+
+def pick_snapshot(snaps: list, days: int, tolerance: int):
+    """Snímek zhruba před daným počtem dní (tolerance ve dnech)."""
+    target = datetime.now(timezone.utc) - timedelta(days=days)
+    cands = [s for s in snaps if abs((s.taken_at - target).days) <= tolerance]
+    return min(cands, key=lambda s: abs((s.taken_at - target).total_seconds())) if cands else None
+
+
+NEWS_STATE: dict = {"running": False, "step": "", "result": None, "error": None}
+
+
+def monday_of(d: date) -> str:
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+def run_news_scan() -> int:
+    """Stáhne tržní přehled na tento týden a nahradí jím předchozí zprávy téhož týdne."""
+    today = datetime.now(timezone.utc).date()
+    week = monday_of(today)
+    items = nw.search_news(today.isoformat())
+    with Session(engine) as db:
+        for old in db.scalars(select(m.MarketNews).where(m.MarketNews.week == week)).all():
+            db.delete(old)
+        for it in items:
+            db.add(m.MarketNews(week=week, **it))
+        db.commit()
+    print(f"[news] přehled {week}: {len(items)} zpráv", flush=True)
+    return len(items)
+
+
+def _run_news_bg() -> None:
+    try:
+        NEWS_STATE.update(result=run_news_scan(), error=None)
+    except Exception as e:
+        NEWS_STATE.update(error=str(e))
+    finally:
+        NEWS_STATE.update(running=False, step="")
+
+
 def _benchmark_scheduler() -> None:
-    """Běží na pozadí: hned po startu a pak každé pondělí ráno."""
+    """Běží na pozadí: hned po startu a pak každé pondělí ráno (hledání nájmů a prodejů + tržní přehled)."""
     from datetime import datetime
     try:
         from zoneinfo import ZoneInfo
@@ -193,6 +270,14 @@ def _benchmark_scheduler() -> None:
         run_benchmark_refresh()  # při startu u všech bytů
     except Exception as e:
         print(f"[benchmark] start selhal: {e}", flush=True)
+    try:
+        with Session(engine) as db:
+            has_news = db.scalar(select(m.MarketNews.id).where(
+                m.MarketNews.week == monday_of(datetime.now(timezone.utc).date())).limit(1)) is not None
+        if not has_news:
+            run_news_scan()
+    except Exception as e:
+        print(f"[news] start selhal: {e}", flush=True)
     last_run_day = datetime.now(tz).date() if tz else None
     while True:
         time.sleep(1800)
@@ -203,6 +288,10 @@ def _benchmark_scheduler() -> None:
                 run_benchmark_refresh()
             except Exception as e:
                 print(f"[benchmark] pondělní hledání selhalo: {e}", flush=True)
+            try:
+                run_news_scan()
+            except Exception as e:
+                print(f"[news] pondělní přehled selhal: {e}", flush=True)
 
 
 app = FastAPI(title="Správa bytů", version="0.3.0", lifespan=lifespan, dependencies=[Depends(require_auth)])
@@ -396,6 +485,54 @@ def start_benchmark_refresh() -> dict:
 @app.get("/benchmark/refresh")
 def benchmark_refresh_status() -> dict:
     return dict(BENCH_STATE)
+
+
+@app.get("/portfolio")
+def portfolio(db: Session = Depends(get_db)):
+    """Hodnota portfolia: součet hodnot bytů, změna za měsíc a historie snímků."""
+    rows = portfolio_values(db)
+    total = sum(r["value"] for r in rows if r["value"] is not None)
+    snaps = db.scalars(select(m.PortfolioSnapshot).order_by(m.PortfolioSnapshot.taken_at)).all()
+    base = pick_snapshot(snaps, 30, 10)
+    base_total = float(base.total) if base and base.total else None
+    for r in rows:
+        prev = base.per_flat.get(str(r["id"])) if base else None
+        r["change"] = (r["value"] - prev) if (r["value"] is not None and prev) else None
+    return {
+        "total": round(total),
+        "flats_count": len(rows),
+        "without_value": sum(1 for r in rows if r["value"] is None),
+        "change_1m": round(total - base_total) if base_total else None,
+        "change_1m_pct": bm.growth_pct(total, base_total),
+        "base_date": base.taken_at.date().isoformat() if base else None,
+        "flats": rows,
+        "history": [{"date": s.taken_at.date().isoformat(), "total": float(s.total)} for s in snaps[-52:]],
+    }
+
+
+@app.get("/news")
+def news_list(db: Session = Depends(get_db)):
+    week = db.scalar(select(m.MarketNews.week).order_by(m.MarketNews.week.desc()).limit(1))
+    if not week:
+        return {"week": None, "items": []}
+    items = db.scalars(select(m.MarketNews).where(m.MarketNews.week == week)
+                       .order_by(m.MarketNews.importance, m.MarketNews.id)).all()
+    return {"week": week, "items": [
+        {"id": i.id, "category": i.category, "importance": i.importance, "title": i.title,
+         "summary": i.summary, "url": i.url} for i in items]}
+
+
+@app.post("/news/refresh")
+def start_news_refresh() -> dict:
+    if not NEWS_STATE["running"]:
+        NEWS_STATE.update(running=True, step="hledám", result=None, error=None)
+        threading.Thread(target=_run_news_bg, daemon=True).start()
+    return dict(NEWS_STATE)
+
+
+@app.get("/news/refresh")
+def news_refresh_status() -> dict:
+    return dict(NEWS_STATE)
 
 
 @app.get("/version")

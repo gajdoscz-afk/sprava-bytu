@@ -77,6 +77,22 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 @keyframes cspin{to{transform:rotate(360deg)}}
 .bstat{display:flex;align-items:center;min-height:22px;margin:4px 0 14px;font-size:14px}
 @media (prefers-reduced-motion:reduce){.cspin{animation-duration:2.5s}}
+/* Hodnota portfolia: fialový panel s podsvícením */
+.pwidget{position:relative;margin:4px auto 18px;max-width:440px;text-align:center;padding:18px 18px 16px;border-radius:20px;background:radial-gradient(120% 140% at 50% 0%,#2A1656 0%,#0C0818 62%);border:1px solid #7C3AED;box-shadow:0 0 0 1px rgba(168,85,247,.25),0 0 30px rgba(139,92,246,.45),0 0 70px rgba(139,92,246,.18);color:#E9D5FF;cursor:pointer}
+.pwidget .pl{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#C4B5FD}
+.pwidget .pv{font-size:34px;font-weight:800;color:#F3E8FF;text-shadow:0 0 12px rgba(192,132,252,.9),0 0 26px rgba(139,92,246,.7);font-variant-numeric:tabular-nums;margin:6px 0 4px}
+.pwidget .pv.pvl{font-size:44px}
+.pwidget .pc{font-size:14px;color:#C4B5FD}
+.pwidget.fixed{cursor:default}
+/* Sloupcový graf hodnoty bytů */
+.vwrap{overflow-x:auto;padding:18px 12px 12px}
+.vrow{display:flex;align-items:flex-end;gap:12px;min-height:280px;min-width:100%}
+.vcol{flex:1 1 0;min-width:76px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;text-align:center}
+.vval{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:2px;white-space:nowrap}
+.vchg{font-size:11px;margin-bottom:4px;white-space:nowrap}
+.vbar{width:100%;max-width:64px;border-radius:10px 10px 4px 4px;background:linear-gradient(180deg,var(--acc),color-mix(in srgb,var(--acc) 45%,transparent))}
+.vbar.none{background:none;border:2px dashed var(--line);min-height:8px}
+.vname{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.25;max-width:96px;word-break:break-word}
 </style>
 </head>
 <body>
@@ -86,6 +102,7 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 <button class="brand" onclick="go('home')" title="Na hlavní stránku"><span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--paper);font-weight:800;font-size:12px;margin-bottom:6px">MG</span><br>MG Property</button>
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
+<button data-t="value" onclick="go('value')">Hodnota</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
 <button data-t="bench" onclick="go('bench')">Benchmark</button>
@@ -157,7 +174,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='mail'?mailTab():historyTab();
+ m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab();
 }
 
 // ---------- přehled ----------
@@ -175,6 +192,7 @@ function home(){
  const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
  return `<h1>Přehled</h1><p class="mut small">Stav k ${fd(TODAY)}</p>
+ ${portWidget()}
  <div class="kpis">
   <div class="card"><div class="mut small">Bytů</div><div class="big">${S.flats.length}</div></div>
   <div class="card"><div class="mut small">S nedoplatkem</div><div class="big bad">${debts.length}</div></div>
@@ -183,6 +201,7 @@ function home(){
  ${debts.map(d=>`<div class="card item" onclick="openFlat(${d.f.id})"><div class="row"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div></div>`).join('')||'<div class="card mut">Nic nečeká na řešení.</div>'}
  <h2>Oznámení</h2>
  ${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')||'<div class="card mut">Žádná oznámení.</div>'}
+ ${newsBlock()}
  <h2>Záloha dat</h2>
  <div class="card">
   <p class="small mut" style="margin:0 0 10px">Data jsou uložena na serveru. Kopii můžete stáhnout do souboru.</p>
@@ -692,6 +711,93 @@ function benchTab(){
  <h2>Nabídky na trhu (${BENCH.listings.length})</h2>
  <div class="card">${lst||'<div class="mut small">Zatím žádné nabídky. Najděte je na webu u konkrétního bytu, nebo je přidejte ručně.</div>'}</div>`;
 }
+// ---------- hodnota portfolia ----------
+let PORT=null, PORT_LOADING=false;
+async function loadPortfolio(){ PORT_LOADING=true; try{ PORT=await api('/portfolio') }catch(e){ toast(e.message) } finally{ PORT_LOADING=false } }
+const showValue=()=>{ try{ return localStorage.getItem('mgShowValue')==='1' }catch(e){ return false } };
+const setShowValue=v=>{ try{ localStorage.setItem('mgShowValue', v?'1':'0') }catch(e){} };
+const arrow=v=>v>=0?'▲':'▼';
+const pctS=p=>`${p>0?'+':''}${String(p).replace('.',',')} %`;
+const dmy=s=>s?s.split('-').reverse().join('. ')+'.':'';
+const chgColor=v=>v>=0?'#86EFAC':'#FCA5A5';
+function portWidget(){
+ if(!showValue()) return '';
+ if(!PORT){
+  if(!PORT_LOADING) loadPortfolio().then(render);
+  return `<div class="pwidget fixed"><div class="pl">Hodnota portfolia</div><div class="pc">Načítám…</div></div>`;
+ }
+ const ch=PORT.change_1m_pct;
+ return `<div class="pwidget" onclick="go('value')" role="button" title="Otevřít přehled hodnoty"><div class="pl">Hodnota portfolia</div><div class="pv">${kc(PORT.total)}</div>${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${pctS(ch)} za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže za měsíc od prvního snímku</div>'}</div>`;
+}
+function valueTab(){
+ if(!PORT){
+  if(!PORT_LOADING) loadPortfolio().then(render);
+  return '<h1>Hodnota portfolia</h1><p class="mut">Načítám…</p>';
+ }
+ const P=PORT;
+ const max=Math.max(...P.flats.map(f=>f.value??0),1);
+ const cols=P.flats.map(f=>{
+  const h=f.value!=null?Math.max(8,Math.round(f.value/max*190)):0;
+  const chg=f.change!=null?`<div class="vchg" style="color:${f.change>=0?'var(--ok)':'var(--bad)'}">${arrow(f.change)} ${kc(Math.abs(f.change))} za měsíc</div>`:'';
+  return `<div class="vcol" title="${esc(f.addr)}${f.basis?' · '+esc(f.basis):''}">
+   <div class="vval">${f.value!=null?kc(f.value):'bez odhadu'}</div>${chg}
+   <div class="vbar${f.value==null?' none':''}" style="height:${h}px"></div>
+   <div class="vname">${esc(f.addr)}</div></div>`;
+ }).join('');
+ const ch=P.change_1m, pct=P.change_1m_pct;
+ const hist=P.history.slice(-12).reverse().map(h=>`<div class="line"><span class="mut small">${dmy(h.date)}</span><span>${kc(h.total)}</span></div>`).join('');
+ return `<h1>Hodnota portfolia</h1>
+ <p class="mut small">Součet odhadů bytů. Odhad vychází z nabídek prodeje se stejnou dispozicí, jinak je to pořizovací cena.</p>
+ <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
+ <div class="pwidget fixed">
+  <div class="pl">Aktuální hodnota portfolia</div>
+  <div class="pv pvl">${kc(P.total)}</div>
+  ${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${kc(Math.abs(ch))} (${pctS(pct)}) za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže, až bude snímek starý měsíc</div>'}
+  ${P.without_value?`<div class="pc" style="margin-top:4px">Bez hodnoty: ${P.without_value} byt(y)</div>`:''}
+ </div>
+ <div class="card"><label class="row" style="cursor:pointer"><span>Zobrazovat hodnotu na hlavní stránce</span><input type="checkbox" ${showValue()?'checked':''} onchange="setShowValue(this.checked);render()"></label></div>
+ <h2>Historie</h2>
+ <div class="card">${hist||'<div class="mut small">Zatím žádný snímek. Ukládá se při každém týdenním hledání, nejvýš jeden za den.</div>'}</div>`;
+}
+
+// ---------- tržní přehled (každé pondělí) ----------
+let NEWS=null, NEWS_REF={running:false};
+async function loadNews(){ NEWS=await api('/news') }
+function newsLine(){
+ if(NEWS_REF.running) return `${spinHtml()}<span>Hledám zprávy pro tržní přehled…</span>`;
+ if(NEWS_REF.error) return `<span class="bad small">${esc('Přehled se nepodařil: '+NEWS_REF.error)}</span>`;
+ return '';
+}
+function updNews(){ const el=$('#newsStatus'); if(el) el.innerHTML=newsLine(); const b=$('#newsAll'); if(b) b.disabled=NEWS_REF.running; }
+function newsBlock(){
+ if(!NEWS){ loadNews().then(render).catch(()=>{}); return '<h2>Tržní přehled</h2><div class="card mut small">Načítám přehled…</div>'; }
+ const tag={1:['bad','Zásadní'],2:['warn','Důležité'],3:['ok','Na vědomí']};
+ const items=NEWS.items.map(i=>`<div class="card"><div class="row" style="margin-bottom:4px"><span class="tag ${tag[i.importance][0]}">${tag[i.importance][1]}</span><span class="mut small">${esc(i.category)}</span></div>
+  <a href="${esc(i.url)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:600">${esc(i.title)}</a>
+  ${i.summary?`<div class="small mut" style="margin-top:4px">${esc(i.summary)}</div>`:''}</div>`).join('');
+ return `<div class="row" style="margin-top:26px"><h2 style="margin:0">Tržní přehled</h2><button class="btn sm sec" id="newsAll" onclick="refreshNews()" ${NEWS_REF.running?'disabled':''}>↻ Aktualizovat</button></div>
+ <div id="newsStatus" class="bstat">${newsLine()}</div>
+ ${NEWS.week?`<p class="mut small" style="margin:0 0 10px">Týden od ${dmy(NEWS.week)}</p>`:''}
+ ${items||'<div class="card mut small">Zatím žádný přehled. Stahuje se každé pondělí ráno, nebo ho spusťte tlačítkem.</div>'}
+ <p class="mut small">Zprávy jsou z veřejných zdrojů. Nejsou to právní ani daňové rady, před jednáním ověřte u zdroje.</p>`;
+}
+async function refreshNews(){
+ if(NEWS_REF.running) return;
+ NEWS_REF={running:true}; updNews();
+ try{ NEWS_REF=await api('/news/refresh','POST') }
+ catch(e){ NEWS_REF={running:false,error:e.message}; updNews(); toast(e.message); return }
+ updNews(); pollNews();
+}
+async function pollNews(){
+ try{
+  const s=await api('/news/refresh'); NEWS_REF=s; updNews();
+  if(s.running){ setTimeout(pollNews,4000); return }
+ }catch(e){ NEWS_REF={running:false,error:e.message}; updNews(); return }
+ try{ NEWS=null; await loadNews() }catch(e){}
+ if(V.tab==='home') render(); else updNews();
+ if(NEWS_REF.error) toast(NEWS_REF.error); else toast('Tržní přehled je aktualizovaný');
+}
+
 // Hledání nájmů i prodejů u všech bytů najednou (běží na serveru, stránka jen ukazuje stav)
 let REF={running:false};
 const spinHtml=()=>`<span class="cspin" aria-hidden="true">${[...Array(10)].map((_,k)=>`<i style="transform:rotate(${k*36}deg) translateY(-8px);opacity:${((k+1)/10).toFixed(2)}"></i>`).join('')}</span>`;

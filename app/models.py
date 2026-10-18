@@ -213,3 +213,29 @@ class FlatAcquisition(Base):
     source: Mapped[str] = mapped_column(String(40), default="ručně")  # ručně | kupní smlouva
     doc_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")
+
+
+class PortfolioSnapshot(Base):
+    """Snímek hodnoty celého portfolia a hodnoty každého bytu. Zapisuje se při týdenním hledání, z něj jsou měsíční změny."""
+
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    per_flat: Mapped[dict] = mapped_column(JSON, default=dict)  # {"id bytu": hodnota v Kč}
+
+
+class MarketNews(Base):
+    """Zpráva z tržního přehledu (daně, zákony a lhůty, nájemní trh, sazby). Týdně se nahrazuje."""
+
+    __tablename__ = "market_news"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    found_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    week: Mapped[str] = mapped_column(String(10), index=True)  # pondělí přehledu, YYYY-MM-DD
+    category: Mapped[str] = mapped_column(String(40), default="Ostatní")
+    importance: Mapped[int] = mapped_column(Integer, default=2)  # 1 = nejdůležitější
+    title: Mapped[str] = mapped_column(String(300))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(String(500), default="")
