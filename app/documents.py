@@ -18,6 +18,7 @@ DOC_TYPES = {
     "vyuctovani_najemnikovi": "Vyúčtování nájemníkovi",
     "faktura": "Faktura",
     "pojistka": "Pojistka",
+    "vypis_katastru": "Výpis z katastru",
     "fotky_stavu": "Fotky stavu bytu",
     "doklad_najemnika": "Doklad nájemníka",
     "jine": "Jiné",
@@ -28,7 +29,8 @@ AUTO_FILE_CONFIDENCE = 0.8
 
 PROMPT = """Jsi asistentka správce bytů v ČR. Z přiloženého dokumentu urči typ a vytáhni údaje.
 Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
-- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, fotky_stavu, doklad_najemnika, jine]
+- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, fotky_stavu, doklad_najemnika, jine]
+  vypis_katastru = výpis z katastru nemovitostí (LV), vlastník, parcela, jednotka, podíly na společných částech.
   vyuctovani_najemnikovi = vyúčtování služeb, které vystavil pronajímatel nájemníkovi (nájemník doplácí nebo má přeplatek).
   vyuctovani_spravy = vyúčtování od správy domu nebo SVJ pronajímateli.
 - year: rok, ke kterému dokument patří (číslo), nebo null
