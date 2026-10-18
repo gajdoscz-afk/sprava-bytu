@@ -230,7 +230,7 @@ ${svjCard}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
- <h2>Dokumenty</h2>${S.docs.filter(d=>d.flat_id==f.id).map(docRow).join('')||'<div class="card mut">Zatím žádné dokumenty.</div>'}
+ <h2>Dokumenty</h2>${docGroups(S.docs.filter(d=>d.flat_id==f.id),'Zatím žádné dokumenty.')}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
 }
@@ -610,6 +610,26 @@ function inboxCard(d){
  ${d.note?`<button class="btn sm sec" onclick="classifyDoc(${d.id})">Přečíst znovu</button>`:''}
  <button class="btn sm danger" onclick="deleteDoc(${d.id})">Smazat</button></div></div>`;
 }
+// Skupiny dokumentů: pořadí tady je i pořadí na obrazovce
+const DOC_GROUPS=[
+ ['Smlouvy a dodatky',['smlouva','dodatek','kupni_smlouva'],true],
+ ['Vyúčtování',['vyuctovani_svj','vyuctovani_spravy','vyuctovani_najemnikovi'],true],
+ ['Faktury a pojistky',['faktura','pojistka'],true],
+ ['Doklady a katastr',['vypis_katastru','doklad_najemnika'],true],
+ ['Fotky stavu bytu',['fotky_stavu'],false],
+ ['Ostatní',['jine'],true]
+];
+function docGroups(list,emptyText){
+ if(!list.length)return `<div class="card mut">${emptyText}</div>`;
+ const known=new Set(DOC_GROUPS.flatMap(g=>g[1]));
+ let h='';
+ for(const [title,types,open] of DOC_GROUPS){
+  const items=list.filter(d=>types.includes(d.doc_type)||(title==='Ostatní'&&!known.has(d.doc_type)));
+  if(!items.length)continue;
+  h+=`<details class="docGroup"${open?' open':''}><summary><b>${title}</b> <span class="mut small">(${items.length})</span></summary>${items.map(docRow).join('')}</details>`;
+ }
+ return h;
+}
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status!=='zarazeno');
  const filed=S.docs.filter(d=>d.status==='zarazeno');
@@ -625,7 +645,7 @@ function docsTab(){
   <div id="up" class="small mut" style="margin-top:8px"></div>
  </div>
  <h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')||'<div class="card mut">Nic nečeká.</div>'}
- <h2>Zařazeno</h2>${filed.map(docRow).join('')||'<div class="card mut">Zatím nic.</div>'}`;
+ <h2>Zařazeno</h2>${docGroups(filed,'Zatím nic.')}`;
 }
 // Velké fotky zmenšíme, ať se rychleji nahrají a levněji přečtou
 async function shrink(file){
