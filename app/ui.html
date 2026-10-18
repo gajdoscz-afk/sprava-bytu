@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Správa bytů</title>
+<style>
+:root{--paper:#f6f2ea;--card:#fffdf8;--ink:#1f2b2e;--mut:#6b7470;--line:#e2dccd;--acc:#2f5d50;--bad:#a8432f;--ok:#2d7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:40px}
+main{max-width:760px;margin:0 auto;padding:18px 16px}
+h1{font-family:Georgia,serif;font-size:28px;margin:6px 0 14px}
+h2{font-family:Georgia,serif;font-size:19px;margin:24px 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.mut{color:var(--mut);font-size:14px}
+.btn{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+.btn.sec{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
+input,textarea{font:inherit;width:100%;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.msg{padding:10px 12px;border-radius:10px;margin:10px 0;font-size:14px}
+.msg.ok{background:#e3f1e8;color:var(--ok)}.msg.err{background:#f7e2dc;color:var(--bad)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+<div class="row"><h1>Byty</h1><button class="btn" onclick="toggleForm()">+ Přidat byt</button></div>
+<div id="msg"></div>
+
+<div id="form" class="card hidden">
+ <h2 style="margin-top:0">Nový byt</h2>
+ <label>Adresa a číslo bytu</label><input id="f_addr" placeholder="Sibiřská 375/12">
+ <div class="grid2">
+  <div><label>Dispozice</label><input id="f_dispo" placeholder="2+1"></div>
+  <div><label>Patro</label><input id="f_floor" placeholder="5. NP"></div>
+ </div>
+ <label>PSČ a město</label><input id="f_zip" placeholder="400 07 Ústí nad Labem">
+ <label>Nájemce</label><input id="f_tenant">
+ <label>Další osoby v bytě (čárkou)</label><input id="f_others">
+ <div class="grid2">
+  <div><label>E-mail nájemce</label><input id="f_email" type="email"></div>
+  <div><label>Telefon</label><input id="f_phone"></div>
+ </div>
+ <label>Účet pro platby</label><input id="f_bank" placeholder="číslo/kód banky">
+ <h2>Předpis</h2>
+ <div class="grid2">
+  <div><label>Platnost od</label><input id="l_from" type="date"></div>
+  <div><label>Platnost do</label><input id="l_to" type="date"></div>
+ </div>
+ <div class="grid2">
+  <div><label>Nájem bez záloh (Kč)</label><input id="l_rent" type="number" inputmode="numeric"></div>
+  <div><label>Kauce (Kč)</label><input id="l_deposit" type="number" inputmode="numeric"></div>
+ </div>
+ <label>Zálohy, jeden řádek na službu: Název: částka</label>
+ <textarea id="l_adv" rows="6" placeholder="Studená voda: 720&#10;Teplá voda: 840&#10;Vytápění: 1455"></textarea>
+ <div class="row" style="margin-top:14px"><button class="btn" onclick="saveFlat()">Uložit byt</button><button class="btn sec" onclick="toggleForm()">Zrušit</button></div>
+</div>
+
+<div id="list"></div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kc=n=>Math.round(n||0).toLocaleString('cs-CZ')+' Kč';
+function msg(t,ok){$('msg').innerHTML=t?`<div class="msg ${ok?'ok':'err'}">${esc(t)}</div>`:''}
+function toggleForm(){$('form').classList.toggle('hidden')}
+
+async function api(path,opts={}){
+ const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opts));
+ if(r.status===401){throw new Error('Neplatné přihlášení. Obnovte stránku a zadejte jméno a heslo.')}
+ if(!r.ok){let d='';try{d=(await r.json()).detail}catch(e){}throw new Error(typeof d==='string'?d:('Chyba '+r.status))}
+ return r.status===204?null:r.json();
+}
+
+function parseAdv(text){
+ const adv={};
+ text.split('\n').forEach(line=>{const i=line.lastIndexOf(':');if(i>0){const v=parseFloat(line.slice(i+1).replace(/\s/g,'').replace(',','.'));if(!isNaN(v))adv[line.slice(0,i).trim()]=v}});
+ return adv;
+}
+
+async function saveFlat(){
+ const addr=$('f_addr').value.trim();
+ if(!addr){msg('Vyplňte adresu bytu',false);return}
+ const body={addr,dispo:$('f_dispo').value,floor:$('f_floor').value,zip:$('f_zip').value,owner:'',bank_acc:$('f_bank').value,
+  tenant:{name:$('f_tenant').value,email:$('f_email').value,phone:$('f_phone').value,
+   others:$('f_others').value.split(',').map(s=>s.trim()).filter(Boolean)}};
+ try{
+  const flat=await api('/flats',{method:'POST',body:JSON.stringify(body)});
+  const rent=parseFloat($('l_rent').value);
+  if(!isNaN(rent)||$('l_from').value){
+   await api(`/flats/${flat.id}/leases`,{method:'POST',body:JSON.stringify({
+    valid_from:$('l_from').value||'2000-01-01',valid_to:$('l_to').value||null,
+    rent:rent||0,deposit:parseFloat($('l_deposit').value)||0,advances:parseAdv($('l_adv').value)})});
+  }
+  ['f_addr','f_dispo','f_floor','f_zip','f_tenant','f_others','f_email','f_phone','f_bank','l_from','l_to','l_rent','l_deposit','l_adv']
+   .forEach(id=>$(id).value='');
+  toggleForm();msg('Byt uložen: '+addr,true);
+  load();
+ }catch(e){msg(e.message,false)}
+}
+
+async function load(){
+ try{
+  const flats=await api('/flats');
+  if(!flats.length){$('list').innerHTML='<div class="card mut">Zatím žádné byty. Přidejte první tlačítkem nahoře.</div>';return}
+  $('list').innerHTML=flats.map(f=>{
+   const l=f.leases[f.leases.length-1];
+   const adv=l?Object.values(l.advances||{}).reduce((a,b)=>a+b,0):0;
+   return `<div class="card"><div class="row"><div><b>${esc(f.addr)}</b> <span class="mut">${esc(f.dispo)}</span>
+    <div class="mut">${esc(f.tenant.name)||'—'}</div></div>
+    <div style="text-align:right">${l?kc(l.rent)+'<div class="mut">zálohy '+kc(adv)+'</div>':'<span class="mut">bez předpisu</span>'}</div></div></div>`;
+  }).join('');
+ }catch(e){msg(e.message,false)}
+}
+load();
+</script>
+</body>
+</html>

@@ -3,7 +3,10 @@ import secrets
 from contextlib import asynccontextmanager
 from decimal import Decimal
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -266,3 +269,10 @@ def restore_version(version_id: int, db: Session = Depends(get_db)):
 def export_all(db: Session = Depends(get_db)):
     flats = db.scalars(select(m.Flat).order_by(m.Flat.addr)).all()
     return {"flats": [flat_out(f) for f in flats]}
+
+
+# ---------- jednoduchá stránka pro správu (chráněná stejným přihlášením) ----------
+
+@app.get("/", response_class=HTMLResponse)
+def index(_: None = Depends(require_auth)):
+    return HTMLResponse((Path(__file__).parent / "ui.html").read_text(encoding="utf-8"))
