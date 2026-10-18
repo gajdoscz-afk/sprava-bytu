@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Správa bytů</title>
+<title>MG Property</title>
+<meta name="theme-color" content="#1F5C4A">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231F5C4A'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='26' font-weight='700' text-anchor='middle' fill='%23FF6B4A'%3EMG%3C/text%3E%3C/svg%3E">
 <style>
-:root{--paper:#f6f2ea;--card:#fffdf8;--ink:#1f2b2e;--mut:#6b7470;--line:#e2dccd;--acc:#2f5d50;--onacc:#ffffff;--ok:#2d7a4f;--okB:#e3f1e8;--warn:#a2640f;--warnB:#fbefd9;--bad:#a8432f;--badB:#f7e2dc}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#1B1F1D;--card:#242A27;--ink:#EDE8DC;--mut:#9AA39D;--line:#333B37;--acc:#7FB8A4;--onacc:#16201C;--ok:#8FD0B0;--okB:#21352b;--warn:#E8C27A;--warnB:#3a3020;--bad:#E8957E;--badB:#3d2822}}
-:root[data-theme="dark"]{--paper:#1B1F1D;--card:#242A27;--ink:#EDE8DC;--mut:#9AA39D;--line:#333B37;--acc:#7FB8A4;--onacc:#16201C;--ok:#8FD0B0;--okB:#21352b;--warn:#E8C27A;--warnB:#3a3020;--bad:#E8957E;--badB:#3d2822}
+:root{--paper:#EEF4F0;--card:#F9FCFA;--ink:#14201B;--mut:#5B6B63;--line:#D5E2DA;--acc:#1F5C4A;--onacc:#ffffff;--ok:#1F5C4A;--okB:#DDF2E6;--warn:#7A5A00;--warnB:#FFF1C9;--bad:#B4441F;--badB:#FFE3DA}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#0B1512;--card:#162A24;--ink:#EAF4EE;--mut:#9DB3A8;--line:#1E3430;--acc:#6FD3B0;--onacc:#0B1512;--ok:#8EE3C4;--okB:#1F4A3D;--warn:#F5D680;--warnB:#43391A;--bad:#FF9A7E;--badB:#4A2A21}}
+:root[data-theme="dark"]{--paper:#0B1512;--card:#162A24;--ink:#EAF4EE;--mut:#9DB3A8;--line:#1E3430;--acc:#6FD3B0;--onacc:#0B1512;--ok:#8EE3C4;--okB:#1F4A3D;--warn:#F5D680;--warnB:#43391A;--bad:#FF9A7E;--badB:#4A2A21}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-left:118px}
 h1,h2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;letter-spacing:-.01em}
@@ -74,7 +76,7 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <nav>
-<button class="brand" onclick="go('home')" title="Na hlavní stránku">⌂ Správa bytů</button>
+<button class="brand" onclick="go('home')" title="Na hlavní stránku"><span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--paper);font-weight:800;font-size:12px;margin-bottom:6px">MG</span><br>MG Property</button>
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
