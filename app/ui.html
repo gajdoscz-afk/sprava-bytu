@@ -203,7 +203,7 @@ function flatDetail(){
   <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button></div></div>`;
  const y=V.year?f.years[V.year]:null;
  return `<button class="link" onclick="go('flats')">← Byty</button>
- <h1>${esc(f.addr)}</h1><p class="mut small">${esc(f.dispo)} · ${esc(f.floor)} · ${esc(f.zip)}</p>
+ <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut small">${esc(f.dispo)} · ${esc(f.floor)} · ${esc(f.zip)}</p>
  <div class="card">
   <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
   ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>'}</div>
