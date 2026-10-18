@@ -24,7 +24,8 @@ Odpověz POUZE JSON polem objektů, každý s klíči:
 - area_m2: podlahová plocha v m² jako číslo, nebo null
 - price: měsíční nájem v Kč bez záloh jako číslo (povinné)
 - locality: obec nebo část města
-Zahrň jen nabídky, které skutečně najdeš. Nejvíc 15. Nic nevymýšlej."""
+Zahrň jen nabídky, které skutečně najdeš. Nejvíc 15. Nic nevymýšlej.
+Pokud nic nenajdeš, vrať prázdné pole []. Odpověď musí být jen JSON, bez dalšího textu."""
 
 
 class SearchError(Exception):
@@ -35,8 +36,22 @@ def norm_dispo(s: str | None) -> str:
     return re.sub(r"\s+", "", (s or "").lower())
 
 
-def search_listings(locality: str, dispo: str) -> list[dict]:
-    """Zavolá Claude s vyhledáváním na webu a vrátí očištěné nabídky."""
+def _extract_rows(text: str) -> list:
+    """Najde v textu první JSON pole objektů. Ignoruje citace typu [1] a markdown kolem JSONu."""
+    text = re.sub(r"```(?:json)?", "", text)
+    dec = json.JSONDecoder()
+    for m_ in re.finditer(r"\[\s*\{", text):
+        try:
+            obj, _ = dec.raw_decode(text[m_.start():])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, list) and obj:
+            return obj
+    return []
+
+
+def search_listings(locality: str, dispo: str) -> tuple[list[dict], str]:
+    """Zavolá Claude s vyhledáváním na webu. Vrací (nabídky, poznámka pro případ, že nic nebylo nalezeno)."""
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         raise SearchError("Hledání nabídek zatím není zapnuté (chybí ANTHROPIC_API_KEY).")
@@ -54,16 +69,14 @@ def search_listings(locality: str, dispo: str) -> list[dict]:
     except httpx.HTTPError as e:
         raise SearchError(f"Hledání selhalo: {e}")
 
-    match = re.search(r"\[.*\]", text, re.S)
-    if not match:
-        return []
-    try:
-        rows = json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return []
+    rows = _extract_rows(text)
+    if not rows:
+        snippet = " ".join(text.split())[:300]
+        note = f"Model nevrátil seznam nabídek. Odpověď: {snippet}" if snippet else "Model nevrátil žádný text."
+        return [], note
 
     out = []
-    for row in rows if isinstance(rows, list) else []:
+    for row in rows:
         if not isinstance(row, dict):
             continue
         url = str(row.get("url") or "").strip()[:500]
@@ -87,7 +100,7 @@ def search_listings(locality: str, dispo: str) -> list[dict]:
             "price": price,
             "locality": str(row.get("locality") or locality)[:120],
         })
-    return out
+    return out, ""
 
 
 def estimate(flat_dispo: str, flat_area: Decimal | None, listings) -> dict | None:

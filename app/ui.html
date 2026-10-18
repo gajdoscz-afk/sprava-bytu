@@ -648,7 +648,7 @@ function benchTab(){
 }
 async function searchBench(fid){
  progress('Hledám nabídky na webu… to může trvat minutu');
- try{const r=await api(`/flats/${fid}/benchmark/search`,'POST');toast(`Nalezeno ${r.found}, nových ${r.new}`);BENCH=null;await loadBench();render()}
+ try{const r=await api(`/flats/${fid}/benchmark/search`,'POST');toast(r.found?`Nalezeno ${r.found}, nových ${r.new}`:(r.note||'Nic nenalezeno'));BENCH=null;await loadBench();render()}
  catch(e){toast(e.message)}
  finally{progress('')}
 }

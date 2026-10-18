@@ -270,7 +270,7 @@ def benchmark_overview(db: Session = Depends(get_db)):
 def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
     f = get_flat(db, flat_id)
     try:
-        found = bm.search_listings(bm.DEFAULT_LOCALITY, f.dispo)
+        found, note = bm.search_listings(bm.DEFAULT_LOCALITY, f.dispo)
     except bm.SearchError as e:
         raise HTTPException(502, str(e))
     known = set(db.scalars(select(m.Listing.url)).all())
@@ -283,7 +283,7 @@ def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
                          price=it["price"], url=it["url"], title=it["title"], source="web"))
         new += 1
     db.commit()
-    return {"found": len(found), "new": new}
+    return {"found": len(found), "new": new, "note": note}
 
 
 @app.post("/benchmark/listings", status_code=201)
