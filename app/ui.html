@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Správa bytů</title>
 <style>
-:root{--paper:#f6f2ea;--card:#fffdf8;--ink:#1f2b2e;--mut:#6b7470;--line:#e2dccd;--acc:#2f5d50;--ok:#2d7a4f;--okB:#e3f1e8;--warn:#a2640f;--warnB:#fbefd9;--bad:#a8432f;--badB:#f7e2dc}
+:root{--paper:#f6f2ea;--card:#fffdf8;--ink:#1f2b2e;--mut:#6b7470;--line:#e2dccd;--acc:#2f5d50;--onacc:#ffffff;--ok:#2d7a4f;--okB:#e3f1e8;--warn:#a2640f;--warnB:#fbefd9;--bad:#a8432f;--badB:#f7e2dc}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#1B1F1D;--card:#242A27;--ink:#EDE8DC;--mut:#9AA39D;--line:#333B37;--acc:#7FB8A4;--onacc:#16201C;--ok:#8FD0B0;--okB:#21352b;--warn:#E8C27A;--warnB:#3a3020;--bad:#E8957E;--badB:#3d2822}}
+:root[data-theme="dark"]{--paper:#1B1F1D;--card:#242A27;--ink:#EDE8DC;--mut:#9AA39D;--line:#333B37;--acc:#7FB8A4;--onacc:#16201C;--ok:#8FD0B0;--okB:#21352b;--warn:#E8C27A;--warnB:#3a3020;--bad:#E8957E;--badB:#3d2822}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-left:118px}
 h1,h2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;letter-spacing:-.01em}
@@ -25,8 +27,8 @@ main{max-width:760px;margin:0 auto;padding:18px 16px}
 .tag.ok{background:var(--okB);color:var(--ok)}.tag.warn{background:var(--warnB);color:var(--warn)}.tag.bad{background:var(--badB);color:var(--bad)}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
 .chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 14px;font:inherit;cursor:pointer}
-.chip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-.btn{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
+.chip.on{background:var(--acc);color:var(--onacc);border-color:var(--acc)}
+.btn{background:var(--acc);color:var(--onacc);border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
 .btn.sec{background:transparent;color:var(--acc);border:1px solid var(--acc)}
 .btn.sm{padding:6px 12px;font-size:14px}
 .btn.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
@@ -48,13 +50,14 @@ input,select,textarea{font:inherit;width:100%;background:var(--card);color:var(-
 .modal.show{display:flex}
 .sheet{background:var(--paper);width:100%;max-width:760px;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom,0px))}
 .sheetHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.doc{white-space:pre-wrap;font:14px/1.6 Georgia,"Times New Roman",serif;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
+.doc{white-space:pre-wrap;font:14px/1.6 Georgia,"Times New Roman",serif;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
 .resRow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
 nav{position:fixed;left:0;top:0;bottom:0;width:118px;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:8px;padding:14px 10px;z-index:5}
 nav button.brand{background:none;border:0;padding:4px 4px 10px;margin:0 0 4px;text-align:left;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;color:var(--acc);font-size:16px;line-height:1.2;border-bottom:1px solid var(--line);border-radius:0;cursor:pointer}
 nav button.brand:hover{color:var(--ink)}
 nav button{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 10px;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer}
-nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+nav button.on{background:var(--acc);border-color:var(--acc);color:var(--onacc);font-weight:600}
+nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 @media (max-width:560px){
  body{padding-left:84px}
  nav{width:84px;padding:10px 8px}
@@ -77,6 +80,7 @@ nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weig
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
+<button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -494,8 +498,20 @@ async function deleteDoc(id){
  try{await api(`/documents/${id}`,'DELETE');toast('Smazáno');await reload();render()}catch(e){toast(e.message)}
 }
 
+// ---------- režim zobrazení ----------
+function currentTheme(){return document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+function updateThemeBtn(){const b=$('#themeBtn');if(b)b.textContent=currentTheme()==='dark'?'☀ Světlý režim':'☾ Noční režim'}
+function toggleTheme(){
+ const next=currentTheme()==='dark'?'light':'dark';
+ document.documentElement.dataset.theme=next;
+ try{localStorage.setItem('sb-theme',next)}catch(e){}
+ updateThemeBtn();
+}
+
 // ---------- start ----------
 (async()=>{
+ try{const t=localStorage.getItem('sb-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+ updateThemeBtn();
  try{await reload()}catch(e){toast(e.message)}
  render();
 })();
