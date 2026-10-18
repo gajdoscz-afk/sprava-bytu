@@ -10,7 +10,7 @@ import re
 from collections import defaultdict
 from datetime import date
 
-from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, update
@@ -485,7 +485,14 @@ def sync_acquisition(db: Session, d: m.Document) -> None:
 
 
 @app.post("/documents", status_code=201)
-async def upload_documents(files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+async def upload_documents(
+    files: list[UploadFile] = File(...),
+    flat_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    # flat_id posílá karta bytu: dokumenty jdou rovnou k tomuto bytu, bez dotazu
+    if flat_id is not None:
+        get_flat(db, flat_id)
     out = []
     for up in files:
         data = await up.read()
@@ -493,6 +500,9 @@ async def upload_documents(files: list[UploadFile] = File(...), db: Session = De
             raise HTTPException(413, f"{up.filename}: soubor je větší než 15 MB")
         mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "application/octet-stream"
         d = m.Document(filename=(up.filename or "dokument")[:300], mime=mime, size=len(data), data=data)
+        if flat_id is not None:
+            d.flat_id = flat_id
+            d.status = "zarazeno"
         db.add(d)
         db.flush()
         await run_in_threadpool(run_classification, d, db)

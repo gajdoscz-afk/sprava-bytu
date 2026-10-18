@@ -229,7 +229,7 @@ ${svjCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
- <div class="btns"><button class="btn" onclick="go('docs')">Nahrát dokument</button><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
+ <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
  <h2>Dokumenty</h2>${S.docs.filter(d=>d.flat_id==f.id).map(docRow).join('')||'<div class="card mut">Zatím žádné dokumenty.</div>'}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
@@ -637,7 +637,7 @@ async function shrink(file){
  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
  return new File([blob],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});
 }
-async function uploadDocs(input){
+async function uploadDocs(input,flatId){
  const all=[...input.files];
  const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
  const skipped=all.length-files.length;
@@ -650,6 +650,7 @@ async function uploadDocs(input){
   try{
    const fd=new FormData();
    fd.append('files',await shrink(files[i]).catch(()=>files[i]));
+   if(flatId)fd.append('flat_id',flatId);
    const res=await fetch('/documents',{method:'POST',body:fd});
    if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
    ok++;
