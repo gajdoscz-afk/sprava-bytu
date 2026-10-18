@@ -76,6 +76,7 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 <nav>
 <button class="brand" onclick="go('home')" title="Na hlavní stránku">⌂ Správa bytů</button>
 <button data-t="home" onclick="go('home')">Přehled</button>
+<button data-t="econ" onclick="go('econ')">Ekonomika</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
@@ -144,7 +145,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
+ m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
 }
 
 // ---------- přehled ----------
@@ -161,7 +162,7 @@ function notesFor(){
 function home(){
  const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
- return `${econHome()}<h2>Byty a upozornění</h2><p class="mut small">Stav k ${fd(TODAY)}</p>
+ return `<h1>Přehled</h1><p class="mut small">Stav k ${fd(TODAY)}</p>
  <div class="kpis">
   <div class="card"><div class="mut small">Bytů</div><div class="big">${S.flats.length}</div></div>
   <div class="card"><div class="mut small">S nedoplatkem</div><div class="big bad">${debts.length}</div></div>
@@ -321,8 +322,7 @@ function econHome(){
   ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
  </tbody></table></div>
  <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
- <h2>Platby z výpisu k přiřazení</h2>${unm}
- <h2>Byty a upozornění</h2>`;
+ <h2>Platby z výpisu k přiřazení</h2>${unm}`;
 }
 async function uploadBank(input){
  const f=input.files[0];input.value='';if(!f)return;
