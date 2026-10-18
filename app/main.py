@@ -1,5 +1,7 @@
 import os
 import secrets
+import threading
+import time
 from contextlib import asynccontextmanager
 from decimal import Decimal
 
@@ -48,6 +50,7 @@ async def lifespan(_app: FastAPI):
     with engine.begin() as conn:  # create_all nové sloupce do existujících tabulek nepřidá
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS area_m2 NUMERIC(8,2)"))
     _fix_owners_from_documents()
+    threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
 
 
@@ -65,6 +68,60 @@ def _fix_owners_from_documents() -> None:
                 f.owner = DEFAULT_OWNER
             db.delete(v)
         db.commit()
+
+
+BENCH_WEEKDAY = 0  # pondělí
+BENCH_HOUR = 7     # od 7:00 pražského času
+
+
+def run_benchmark_refresh() -> dict:
+    """Najde nabídky na webu pro každou dispozici bytů a uloží nové. Hledá se podle dispozice, ne po bytech."""
+    done = {"searched": 0, "new": 0, "errors": 0}
+    with Session(engine) as db:
+        dispos = {f.dispo.strip() for f in db.scalars(select(m.Flat)).all() if f.dispo and f.dispo.strip()}
+        known = set(db.scalars(select(m.Listing.url)).all())
+        for dispo in sorted(dispos):
+            try:
+                found, _note = bm.search_listings(bm.DEFAULT_LOCALITY, dispo)
+            except bm.SearchError as e:
+                done["errors"] += 1
+                print(f"[benchmark] {dispo}: {e}", flush=True)
+                continue
+            done["searched"] += 1
+            for it in found:
+                if it["url"] in known:
+                    continue
+                known.add(it["url"])
+                db.add(m.Listing(kind="rent", locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
+                                 price=it["price"], url=it["url"], title=it["title"], source="web"))
+                done["new"] += 1
+            db.commit()
+    print(f"[benchmark] hotovo: {done}", flush=True)
+    return done
+
+
+def _benchmark_scheduler() -> None:
+    """Běží na pozadí: hned po startu a pak každé pondělí ráno."""
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Europe/Prague")
+    except Exception:
+        tz = None
+    try:
+        run_benchmark_refresh()  # při startu u všech bytů
+    except Exception as e:
+        print(f"[benchmark] start selhal: {e}", flush=True)
+    last_run_day = datetime.now(tz).date() if tz else None
+    while True:
+        time.sleep(1800)
+        now = datetime.now(tz) if tz else datetime.now()
+        if now.weekday() == BENCH_WEEKDAY and now.hour >= BENCH_HOUR and last_run_day != now.date():
+            last_run_day = now.date()
+            try:
+                run_benchmark_refresh()
+            except Exception as e:
+                print(f"[benchmark] pondělní hledání selhalo: {e}", flush=True)
 
 
 app = FastAPI(title="Správa bytů", version="0.3.0", lifespan=lifespan, dependencies=[Depends(require_auth)])
