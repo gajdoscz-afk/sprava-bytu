@@ -7,7 +7,7 @@
 <style>
 :root{--paper:#f6f2ea;--card:#fffdf8;--ink:#1f2b2e;--mut:#6b7470;--line:#e2dccd;--acc:#2f5d50;--ok:#2d7a4f;--okB:#e3f1e8;--warn:#a2640f;--warnB:#fbefd9;--bad:#a8432f;--badB:#f7e2dc}
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:88px}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-left:118px}
 h1,h2{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;letter-spacing:-.01em}
 h1{font-size:30px;margin:6px 0 4px}
 h2{font-size:20px;margin:26px 0 10px}
@@ -50,18 +50,27 @@ input,select,textarea{font:inherit;width:100%;background:var(--card);color:var(-
 .sheetHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .doc{white-space:pre-wrap;font:14px/1.6 Georgia,"Times New Roman",serif;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
 .resRow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
-nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
-nav button{flex:1;background:none;border:0;padding:12px 2px 11px;color:var(--mut);font:inherit;font-size:13px;cursor:pointer}
-nav button.on{color:var(--acc);font-weight:700}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:100px;background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
+nav{position:fixed;left:0;top:0;bottom:0;width:118px;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:8px;padding:14px 10px;z-index:5}
+nav .brand{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;color:var(--acc);font-size:15px;margin:0 4px 8px}
+nav button{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 10px;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer}
+nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+@media (max-width:560px){
+ body{padding-left:84px}
+ nav{width:84px;padding:10px 8px}
+ nav .brand{display:none}
+ nav button{font-size:13px;padding:12px 6px;text-align:center}
+ main{padding:14px 12px}
+}
+.toast{position:fixed;left:calc(50% + 59px);transform:translateX(-50%);bottom:24px;background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:20;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
 .note{font-size:13px;color:var(--mut);margin-top:14px}
 .warnTxt{color:var(--warn)}
 </style>
 </head>
 <body>
-<main id="main"></main>
+<main id="main"><p class="mut">Načítám…</p></main>
 <nav>
+<div class="brand">Správa bytů</div>
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
@@ -71,59 +80,78 @@ nav button.on{color:var(--acc);font-weight:700}
 <div class="toast" id="toast"></div>
 
 <script>
-const TODAY=new Date('2026-10-18');
-const KEY='sprava-bytu-data-v1';
 const $=s=>document.querySelector(s);
-const kc=n=>Math.round(n).toLocaleString('cs-CZ')+' Kč';
-const fd=s=>{const d=new Date(s);return isNaN(d)?'—':d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear()};
+const kc=n=>Math.round(n||0).toLocaleString('cs-CZ')+' Kč';
+const fd=s=>{if(!s)return'—';const d=new Date(s);return isNaN(d)?'—':d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear()};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const costs=it=>it.reduce((s,r)=>s+r[1],0);
-const paid=it=>it.reduce((s,r)=>s+r[2],0);
+const costs=it=>it.reduce((s,r)=>s+(+r[1]||0),0);
+const paid=it=>it.reduce((s,r)=>s+(+r[2]||0),0);
 const bal=y=>paid(y.items)-costs(y.items);
-const flat=id=>S.flats.find(f=>f.id==id);
+const TODAY=new Date();
 const years=f=>Object.keys(f.years).map(Number).sort((a,b)=>b-a);
+const flat=id=>S.flats.find(f=>f.id==id);
 
-// ---------- ULOŽENÍ ----------
-const INITIAL={flats:[{
- id:1,addr:'Sibiřská 375/12',dispo:'2+1',floor:'5. NP',zip:'400 07 Ústí nad Labem',owner:'Michal Gajdoš',
- tenant:{name:'Karolína Ferencová',others:['Sylvie Ferencová'],email:'',phone:'735 957 153'},
- bank:{acc:'2238724016/3030'},
- leases:[{from:'2023-01-01',to:'2023-12-31',rent:9475,kauce:20000,
-   adv:{'Studená voda a stočné':720,'Teplá voda':840,'Vytápění':1455,'Výtah':130,'Osvětlení':80,'Úklid':100}}],
- years:{
-  2023:{doc:'Vyúčtování SVJ, vydáno 27. 3. 2024',items:[
-   ['Výtah',2132.06,1200],['Osvětlení',502.10,864],['Prádelna, mandl',0,0],['Správa vodoměrů',455.32,420],
-   ['Správa domu',1818.63,1224],['Úklid',898.71,864],['Studená voda',11334.50,8136],['Teplá voda',22996.40,7992],['Teplo',20790.20,14556]]},
-  2025:{doc:'Vyúčtování SVJ + Ulimex, vydáno 17. 3. 2026',items:[
-   ['Výtah',2532.01,1200],['Osvětlení',607.11,864],['Prádelna, mandl',0,0],['Správa vodoměrů',443.44,420],
-   ['Správa domu',1873.08,1224],['Úklid',985.32,864],['Studená voda',11166.60,8136],['Teplá voda',28125.50,7992],['Teplo',13476.10,14556]]}
- }}],
- versions:[],
- notes:[{t:'Rok 2025: nedoplatek 23 953 Kč, vyúčtování vydáno 17. 3. 2026',k:'bad'},{t:'Smlouva z 1. 1. 2023 skončila 31. 12. 2023. Ověřte, zda nájem pokračuje.',k:'warn'}]
-};
-function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&Array.isArray(d.flats))return d}catch(e){}return JSON.parse(JSON.stringify(INITIAL))}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Ukládání v tomto prohlížeči není dostupné')}}
-
-let S=load();
+let S={flats:[],versions:[]};
 let V={tab:'home',flat:null,year:null};
 let pending=null;
 
-function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2400)}
+// ---------- komunikace se serverem ----------
+async function api(path,method='GET',body){
+ const opt={method,headers:{}};
+ if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
+ const r=await fetch(path,opt);
+ if(r.status===401)throw new Error('Nejste přihlášen. Obnovte stránku a zadejte jméno a heslo.');
+ if(!r.ok){
+  let d='Chyba '+r.status;
+  try{const j=await r.json();if(typeof j.detail==='string')d=j.detail;else if(j.detail&&j.detail.message)d=j.detail.message;}catch(e){}
+  throw new Error(d);
+ }
+ return r.status===204?null:r.json();
+}
+
+// převod z formátu API do tvaru, se kterým pracuje rozhraní
+function toFlat(f){
+ return {id:f.id,addr:f.addr,dispo:f.dispo||'',floor:f.floor||'',zip:f.zip||'',owner:f.owner||'',
+  tenant:{name:f.tenant.name||'',email:f.tenant.email||'',phone:f.tenant.phone||'',others:f.tenant.others||[]},
+  bank:{acc:f.bank_acc||''},
+  leases:f.leases.map(l=>({id:l.id,from:l.valid_from,to:l.valid_to||'',rent:l.rent,kauce:l.deposit,adv:l.advances||{}})),
+  years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
+}
+async function reload(){
+ const [flats,versions]=await Promise.all([api('/flats'),api('/versions')]);
+ S.flats=flats.map(toFlat);
+ S.versions=versions.map(v=>({id:v.id,flat:v.flat_id,name:v.name,action:v.action,old:v.old,new:v.new,
+  when:new Date(v.created_at).toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}),
+  flatName:(flat(v.flat_id)||{}).addr||''}));
+}
+
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000)}
 function modal(h){$('#sheet').innerHTML=h;$('#modal').classList.add('show')}
 function closeModal(){$('#modal').classList.remove('show')}
 
-// ---------- NAVIGACE ----------
+// ---------- navigace ----------
 function go(t){V.tab=t;V.flat=null;render();window.scrollTo(0,0)}
-function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=years(f)[0]||null;render();window.scrollTo(0,0)}
+function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)[0]||null):null;render();window.scrollTo(0,0)}
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
  m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
 }
 
-// ---------- PŘEHLED ----------
+// ---------- přehled ----------
+function notesFor(){
+ const out=[];
+ S.flats.forEach(f=>{
+  const y=years(f)[0];
+  if(y&&bal(f.years[y])<0)out.push({t:`${f.addr}: nedoplatek ${y}, ${kc(-bal(f.years[y]))}`,k:'bad',id:f.id});
+  const l=f.leases[f.leases.length-1];
+  if(l&&l.to&&new Date(l.to)<TODAY)out.push({t:`${f.addr}: smlouva skončila ${fd(l.to)}. Ověřte, zda nájem pokračuje.`,k:'warn',id:f.id});
+ });
+ return out;
+}
 function home(){
  const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
+ const notes=notesFor();
  return `<h1>Přehled</h1><p class="mut small">Stav k ${fd(TODAY)}</p>
  <div class="kpis">
   <div class="card"><div class="mut small">Bytů</div><div class="big">${S.flats.length}</div></div>
@@ -132,57 +160,56 @@ function home(){
  <h2>K řešení</h2>
  ${debts.map(d=>`<div class="card item" onclick="openFlat(${d.f.id})"><div class="row"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div></div>`).join('')||'<div class="card mut">Nic nečeká na řešení.</div>'}
  <h2>Oznámení</h2>
- ${S.notes.map(n=>`<div class="card row"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')||'<div class="card mut">Žádná oznámení.</div>'}
+ ${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')||'<div class="card mut">Žádná oznámení.</div>'}
  <h2>Záloha dat</h2>
  <div class="card">
-  <p class="small mut" style="margin:0 0 10px">Data jsou uložena jen v tomto prohlížeči. Stáhněte si zálohu do souboru a uschovejte ji.</p>
-  <div class="btns" style="margin:0"><button class="btn sec sm" onclick="exportBackup()">Stáhnout zálohu</button><label class="btn sec sm" style="margin:0;cursor:pointer">Obnovit ze zálohy<input type="file" accept="application/json" onchange="importBackup(this)" style="display:none"></label></div>
+  <p class="small mut" style="margin:0 0 10px">Data jsou uložena na serveru. Kopii můžete stáhnout do souboru.</p>
+  <div class="btns" style="margin:0"><button class="btn sec sm" onclick="exportBackup()">Stáhnout zálohu</button></div>
  </div>
  <div class="btns"><button class="btn" onclick="flatForm()">+ Přidat byt</button></div>`;
 }
 
-// ---------- BYTY ----------
+// ---------- byty ----------
 function flatsList(){
  return `<div class="row"><h1>Byty</h1><button class="btn" onclick="flatForm()">+ Přidat byt</button></div>`+
- S.flats.map(f=>{const y=years(f)[0];const b=y?bal(f.years[y]):0;
+ (S.flats.map(f=>{const y=years(f)[0];const b=y?bal(f.years[y]):0;
   return `<div class="card item" onclick="openFlat(${f.id})"><div class="row"><div><b>${esc(f.addr)}</b> <span class="mut">${esc(f.dispo)}</span><div class="mut small">${esc(f.tenant.name)}</div></div>
-  <div style="text-align:right">${y?`<b class="${b<0?'bad':'ok'}">${b<0?'−':'+'}${kc(Math.abs(b))}</b>`:'<span class="mut">—</span>'}<div class="mut small">${y?'vyúčtování '+y:'bez dat'}</div></div></div></div>`}).join('')||'<div class="card mut">Zatím žádné byty.</div>';
+  <div style="text-align:right">${y?`<b class="${b<0?'bad':'ok'}">${b<0?'−':'+'}${kc(Math.abs(b))}</b>`:'<span class="mut">—</span>'}<div class="mut small">${y?'vyúčtování '+y:'bez dat'}</div></div></div></div>`}).join('')||'<div class="card mut">Zatím žádné byty.</div>');
 }
 
 function flatDetail(){
- const f=flat(V.flat);if(!f)return '';
+ const f=flat(V.flat);if(!f){go('flats');return ''}
  const l=f.leases[f.leases.length-1];
  const expired=l&&l.to&&new Date(l.to)<TODAY;
- const advTotal=l?Object.values(l.adv).reduce((a,b)=>a+b,0):0;
+ const advTotal=l?Object.values(l.adv).reduce((a,b)=>a+(+b||0),0):0;
  const y=V.year?f.years[V.year]:null;
  return `<button class="link" onclick="go('flats')">← Byty</button>
  <h1>${esc(f.addr)}</h1><p class="mut small">${esc(f.dispo)} · ${esc(f.floor)} · ${esc(f.zip)}</p>
  <div class="card">
   <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
-  ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):'Platná do '+fd(l.to)}</span>`:'<span class="tag warn">Bez smlouvy</span>'}</div>
+  ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>'}</div>
   ${l?`<div class="mini">
    <div><span>Nájem bez záloh</span><b>${kc(l.rent)}</b></div>
    <div><span>Zálohy měsíčně</span><b>${kc(advTotal)}</b></div>
    <div><span>Kauce</span><b>${kc(l.kauce)}</b></div>
    <div><span>Účet nájemce</span><b>${esc(f.bank.acc)||'—'}</b></div>
   </div>`:''}
-  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Upravit předpis</button></div>
+  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button></div>
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
- ${y?yearCard(f,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
+ ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><button class="btn" onclick="openUpload(${f.id})">Nahrát dokument</button><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
 }
 
-function yearCard(f,y){
+function yearCard(f,yr,y){
  const c=costs(y.items),p=paid(y.items),b=p-c;
- const yr=+Object.keys(f.years).find(k=>f.years[k]===y);
- const lease=f.leases.find(l=>l.from&&l.to&&new Date(l.from).getFullYear()<=yr&&new Date(l.to).getFullYear()>=yr);
+ const lease=f.leases.find(l=>l.from&&new Date(l.from).getFullYear()<=yr&&(!l.to||new Date(l.to).getFullYear()>=yr));
  const pred=lease?`<div class="card"><h3>Předpis ${yr}</h3>
   ${Object.entries(lease.adv).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><span>${kc(v)}</span></div>`).join('')}
-  <div class="line sum"><span>Zálohy celkem</span><span>${kc(Object.values(lease.adv).reduce((a,x)=>a+x,0))}</span></div>
+  <div class="line sum"><span>Zálohy celkem</span><span>${kc(Object.values(lease.adv).reduce((a,x)=>a+(+x||0),0))}</span></div>
   <div class="line"><span>Nájem bez záloh</span><span>${kc(lease.rent)}</span></div></div>`:'';
  const rows=y.items.map(([n,cost,pd])=>{const d=pd-cost;return `<tr><td>${esc(n)}</td><td class="r">${kc(cost)}</td><td class="r">${kc(pd)}</td><td class="r ${d<0?'bad':'ok'}">${d>=0?'+':''}${kc(d)}</td></tr>`}).join('');
  return `${pred}<div class="card">
@@ -194,7 +221,7 @@ function yearCard(f,y){
  </div>`;
 }
 
-// ---------- FORMULÁŘE BYTU A PŘEDPISU ----------
+// ---------- formuláře ----------
 function flatForm(id){
  const f=id?flat(id):null;
  modal(`<div class="sheetHead"><h2>${f?'Upravit byt':'Nový byt'}</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
@@ -205,23 +232,24 @@ function flatForm(id){
  <label>Nájemce</label><input id="ft" value="${esc(f?f.tenant.name:'')}">
  <label>Další osoby v bytě (čárkou)</label><input id="fx" value="${esc(f?f.tenant.others.join(', '):'')}">
  <div class="grid2"><div><label>E-mail nájemce</label><input id="fe" type="email" value="${esc(f?f.tenant.email:'')}"></div><div><label>Telefon</label><input id="fph" value="${esc(f?f.tenant.phone:'')}"></div></div>
- <label>Účet pro platby (číslo/kód banky)</label><input id="fb" value="${esc(f?f.bank.acc:'')}">
+ <label>Účet pro platby</label><input id="fb" value="${esc(f?f.bank.acc:'')}">
  <div class="btns"><button class="btn" onclick="saveFlat(${id||'null'})">Uložit</button></div>`);
 }
-function saveFlat(id){
- const a=$('#fa').value.trim();if(!a){toast('Vyplňte adresu');return}
- const data={addr:a,dispo:$('#fd').value||'—',floor:$('#fp').value||'—',zip:$('#fz').value,owner:$('#fo').value,
-  tenant:{name:$('#ft').value||'Volný byt',others:$('#fx').value.split(',').map(s=>s.trim()).filter(Boolean),email:$('#fe').value,phone:$('#fph').value},
-  bank:{acc:$('#fb').value}};
- let target;
- if(id){target=flat(id);Object.assign(target,data)}
- else{const nid=Math.max(0,...S.flats.map(f=>f.id))+1;target=Object.assign({id:nid,leases:[],years:{}},data);S.flats.push(target)}
- save();closeModal();toast(id?'Údaje uloženy':'Byt přidán');openFlat(target.id);
+async function saveFlat(id){
+ const addr=$('#fa').value.trim();if(!addr){toast('Vyplňte adresu');return}
+ const body={addr,dispo:$('#fd').value,floor:$('#fp').value,zip:$('#fz').value,owner:$('#fo').value,bank_acc:$('#fb').value,
+  tenant:{name:$('#ft').value,email:$('#fe').value,phone:$('#fph').value,others:$('#fx').value.split(',').map(s=>s.trim()).filter(Boolean)}};
+ try{
+  const saved=id?await api(`/flats/${id}`,'PUT',body):await api('/flats','POST',body);
+  closeModal();toast(id?'Údaje uloženy':'Byt přidán');
+  await reload();openFlat(saved.id);
+ }catch(e){toast(e.message)}
 }
+
 function leaseForm(fid){
  const f=flat(fid);const l=f.leases[f.leases.length-1]||{from:'',to:'',rent:0,kauce:0,adv:{}};
- modal(`<div class="sheetHead"><h2>Předpis</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <p class="small mut">Nový předpis zapíšete s novým obdobím. Starý zůstane v historii.</p>
+ modal(`<div class="sheetHead"><h2>Nový předpis</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <p class="small mut">Předpis se uloží jako nové období. Starší zůstane v historii.</p>
  <div class="grid2"><div><label>Platnost od</label><input type="date" id="lf" value="${esc(l.from)}"></div><div><label>Platnost do</label><input type="date" id="lt" value="${esc(l.to)}"></div></div>
  <label>Nájem bez záloh (Kč)</label><input type="number" id="lr" value="${l.rent}">
  <label>Kauce (Kč)</label><input type="number" id="lk" value="${l.kauce}">
@@ -229,100 +257,88 @@ function leaseForm(fid){
  <textarea id="la" rows="7">${esc(Object.entries(l.adv).map(([k,v])=>k+': '+v).join('\n'))}</textarea>
  <div class="btns"><button class="btn" onclick="saveLease(${fid})">Uložit předpis</button></div>`);
 }
-function saveLease(fid){
- const f=flat(fid),adv={};
+async function saveLease(fid){
+ const from=$('#lf').value;if(!from){toast('Vyplňte začátek platnosti předpisu');return}
+ const adv={};
  $('#la').value.split('\n').forEach(line=>{const i=line.lastIndexOf(':');if(i>0){const v=parseFloat(line.slice(i+1).replace(/\s/g,'').replace(',','.'));if(!isNaN(v))adv[line.slice(0,i).trim()]=v}});
- const nl={from:$('#lf').value,to:$('#lt').value,rent:+$('#lr').value||0,kauce:+$('#lk').value||0,adv};
- const last=f.leases[f.leases.length-1];
- if(last&&last.from===nl.from&&last.to===nl.to)f.leases[f.leases.length-1]=nl;else f.leases.push(nl);
- logVersion({flat:fid,name:'Předpis '+(nl.from||'bez data')+' až '+(nl.to||'bez data'),action:'uložen'});
- save();closeModal();toast('Předpis uložen');render();
-}
-function deleteFlat(id){
- const f=flat(id);if(!confirm('Smazat byt '+f.addr+' včetně historie? Tuto akci nelze vrátit, pokud nemáte zálohu.'))return;
- S.flats=S.flats.filter(x=>x.id!=id);S.versions=S.versions.filter(v=>v.flat!=id);
- save();toast('Byt smazán');go('flats');
+ const body={valid_from:from,valid_to:$('#lt').value||null,rent:+$('#lr').value||0,deposit:+$('#lk').value||0,advances:adv};
+ try{await api(`/flats/${fid}/leases`,'POST',body);closeModal();toast('Předpis uložen');await reload();render()}
+ catch(e){toast(e.message)}
 }
 
-// ---------- VERZE A OBNOVA ----------
-function logVersion(o){
- const f=flat(o.flat);
- S.versions.unshift(Object.assign({id:Date.now()+Math.random(),when:new Date().toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}),flatName:f?f.addr:''},o));
+async function deleteFlat(id){
+ const f=flat(id);if(!confirm('Smazat byt '+f.addr+' včetně historie? Tuto akci nelze vrátit.'))return;
+ try{await api(`/flats/${id}`,'DELETE');toast('Byt smazán');await reload();go('flats')}
+ catch(e){toast(e.message)}
 }
+
+// ---------- historie ----------
 function versionsList(filter){
  const v=S.versions.filter(filter);
  if(!v.length)return '<div class="card mut">Zatím žádné změny.</div>';
- return v.map(x=>`<div class="card"><div class="row"><div><b>${esc(x.name)}</b> ${x.year?'<span class="mut small">rok '+x.year+'</span>':''}
-  <div class="mut small">${esc(x.when)} · ${esc(x.action)}${x.flatName?' · '+esc(x.flatName):''}</div></div>
-  ${x.action==='nahrazeno'?`<button class="btn sec sm" onclick="restore(${x.id})">Vrátit starou hodnotu</button>`:''}</div>
-  ${x.old?`<div class="small mut" style="margin-top:6px">Náklad ${kc(x.old[1])} → ${kc(x.new[1])}</div>`:''}</div>`).join('');
+ return v.map(x=>{
+  const amt=(x.old&&x.old.cost!==undefined&&x.new&&x.new.cost!==undefined)?`<div class="small mut" style="margin-top:6px">Náklad ${kc(x.old.cost)} → ${kc(x.new.cost)}</div>`:'';
+  return `<div class="card"><div class="row"><div><b>${esc(x.name)}</b>
+   <div class="mut small">${esc(x.when)} · ${esc(x.action)}${x.flatName?' · '+esc(x.flatName):''}</div></div>
+   ${x.action==='nahrazeno'?`<button class="btn sec sm" onclick="restore(${x.id})">Vrátit starou hodnotu</button>`:''}</div>${amt}</div>`;
+ }).join('');
 }
-function historyTab(){return `<h1>Historie změn</h1><p class="mut small">Každá přepsaná hodnota se tu uloží a dá se vrátit.</p>${versionsList(()=>true)}`}
-function restore(id){
- const x=S.versions.find(v=>v.id===id);if(!x)return;
- const f=flat(x.flat),y=f&&f.years[x.year];if(!y){toast('Vyúčtování už neexistuje');return}
- const i=y.items.findIndex(r=>r[0]===x.name);if(i<0){toast('Položka nenalezena');return}
- const cur=[...y.items[i]];y.items[i]=[...x.old];
- logVersion({flat:x.flat,year:x.year,name:x.name,action:'vráceno',old:cur,new:[...x.old]});
- save();toast('Vrácena starší hodnota');render();
+function historyTab(){return `<h1>Historie změn</h1><p class="mut small">Každá přepsaná hodnota se uloží a dá se vrátit.</p>${versionsList(()=>true)}`}
+async function restore(id){
+ try{await api(`/versions/${id}/restore`,'POST');toast('Vrácena starší hodnota');await reload();render()}
+ catch(e){toast(e.message)}
 }
 
-// ---------- NAHRÁNÍ A KONFLIKTY ----------
+// ---------- nahrání dokumentu a rozhodnutí o rozdílech ----------
 function openUpload(fid){
  modal(`<div class="sheetHead"><h2>Nahrát dokument</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <p class="mut small">Čtení z fotky nebo PDF je v tomto prototypu simulované. Skutečné čtení poběží na serveru. Porovnání funguje nad uloženými daty.</p>
+ <p class="mut small">Čtení z fotky nebo PDF je zatím simulované. Porovnání a uložení už běží na serveru.</p>
  <label>Soubor</label><input type="file" id="uf" accept="image/*,application/pdf">
- <label>Rok, ke kterému dokument patří</label><input type="number" id="uy" value="${V.year||2025}">
+ <label>Rok, ke kterému dokument patří</label><input type="number" id="uy" value="${V.year||new Date().getFullYear()-1}">
  <label>Ukázkový výsledek čtení</label>
  <select id="um"><option value="same">Stejný dokument (bez rozdílů)</option><option value="changed">Upravený dokument (jiná Správa domu)</option></select>
  <div class="btns"><button class="btn" onclick="readDoc(${fid})">Přečíst a porovnat</button></div>
  <div id="res"></div>`);
 }
-function readDoc(fid){
+async function readDoc(fid){
  const f=flat(fid),y=+$('#uy').value,mode=$('#um').value;
  const base=f.years[y]?f.years[y].items:null;
- if(!base){$('#res').innerHTML=`<div class="card mut" style="margin-top:12px">Pro rok ${y} nejsou uložená data. Doplňte je ručně, nebo se načtou z dokumentu na serveru.</div>`;return}
- const ext=base.map(r=>[...r]);
- if(mode==='changed'){const i=ext.findIndex(r=>r[0]==='Správa domu');if(i>=0)ext[i][1]+=26.92}
- const diffs=ext.map((r,i)=>({n:r[0],old:[...base[i]],neu:r})).filter(d=>Math.abs(d.old[1]-d.neu[1])>0.5||Math.abs(d.old[2]-d.neu[2])>0.5);
- pending={fid,y,diffs};
- if(!diffs.length){$('#res').innerHTML=`<div class="card ok" style="margin-top:12px">Dokument se shoduje s uloženými údaji. Nic se nemění.</div>`;return}
+ if(!base){$('#res').innerHTML=`<div class="card mut" style="margin-top:12px">Pro rok ${y} zatím nejsou uložená data. Vyúčtování tohoto roku se zatím nedá porovnat.</div>`;return}
+ const items=base.map(r=>[r[0],+r[1],+r[2]]);
+ if(mode==='changed'){const i=items.findIndex(r=>r[0]==='Správa domu');if(i>=0)items[i][1]+=26.92}
+ const body={items:items.map(([n,c,p])=>({name:n,cost:String(Math.round(c*100)/100),paid:String(Math.round(p*100)/100)}))};
+ try{
+  const cmp=await api(`/flats/${fid}/statements/${y}/compare`,'POST',body);
+  const diffs=cmp.diffs.filter(d=>d.status==='changed');
+  pending={fid,y,items:body.items,diffs,decisions:{}};
+  if(!diffs.length){$('#res').innerHTML=`<div class="card ok" style="margin-top:12px">Dokument se shoduje s uloženými údaji. Nic se nemění.</div>`;return}
+  renderDiffs();
+ }catch(e){toast(e.message)}
+}
+function renderDiffs(){
+ const p=pending;
  $('#res').innerHTML=`<div class="card" style="margin-top:12px;border-color:var(--warn)">
-  <h3 class="warn">Našel jsem ${diffs.length} rozdíl(y) oproti vyúčtování ${y}</h3>
+  <h3 class="warn">Našel jsem ${p.diffs.length} rozdíl(y) oproti vyúčtování ${p.y}</h3>
   <p class="small mut">Starší hodnota se uloží do historie a dá se vrátit.</p>
-  ${diffs.map((d,i)=>`<div class="resRow" id="d${i}"><div><b>${esc(d.n)}</b><div class="small mut">Uloženo ${kc(d.old[1])} → v dokumentu ${kc(d.neu[1])}</div></div>
-   <div class="btns" style="margin:0"><button class="btn sm" onclick="resolve(${i},'new')">Nahradit novým</button><button class="btn sec sm" onclick="resolve(${i},'keep')">Ponechat starý</button></div></div>`).join('')}
-  <div class="btns"><button class="btn sec sm" onclick="resolveAll('keep')">Ponechat všechny</button><button class="btn sm" onclick="resolveAll('new')">Nahradit všechny</button></div>
+  ${p.diffs.map((d,i)=>{const dec=p.decisions[d.name];return `<div class="resRow"><div><b>${esc(d.name)}</b><div class="small mut">Uloženo ${kc(d.stored.cost)} → v dokumentu ${kc(d.extracted.cost)}</div></div>
+   <div class="btns" style="margin:0"><button class="btn sm ${dec==='replace'?'':'sec'}" onclick="decide(${i},'replace')">Nahradit novým</button><button class="btn sm ${dec==='keep'?'':'sec'}" onclick="decide(${i},'keep')">Ponechat starý</button></div></div>`}).join('')}
+  <div class="btns"><button class="btn sec sm" onclick="decideAll('keep')">Ponechat všechny</button><button class="btn sm sec" onclick="decideAll('replace')">Nahradit všechny</button></div>
+  <div class="btns"><button class="btn" onclick="applyDecisions()">Uložit rozhodnutí</button></div>
  </div>`;
 }
-function resolve(i,choice){
- const d=pending.diffs[i];if(!d||d.done)return;
- const f=flat(pending.fid),y=f.years[pending.y];const idx=y.items.findIndex(r=>r[0]===d.n);
- if(choice==='new'){
-  logVersion({flat:pending.fid,year:pending.y,name:d.n,action:'nahrazeno',old:[...d.old],new:[...d.neu]});
-  y.items[idx]=[...d.neu];
- }else{
-  logVersion({flat:pending.fid,year:pending.y,name:d.n,action:'ponecháno'});
- }
- d.done=true;save();
- const el=$('#d'+i);if(el)el.innerHTML=`<span class="small mut">${choice==='new'?'Nahrazeno, starší verze v historii':'Ponecháno'}</span>`;
-}
-function resolveAll(c){pending.diffs.forEach((_,i)=>resolve(i,c));toast('Hotovo');render()}
-
-// ---------- ZÁLOHA ----------
-function exportBackup(){
- const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);
- a.download='sprava-bytu-zaloha-'+TODAY.toISOString().slice(0,10)+'.json';a.click();
-}
-function importBackup(input){
- const f=input.files[0];if(!f)return;
- const r=new FileReader();
- r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.flats))throw 0;S=d;save();toast('Záloha načtena');render()}catch(e){toast('Soubor není platná záloha')}};
- r.readAsText(f);
+function decide(i,c){pending.decisions[pending.diffs[i].name]=c;renderDiffs()}
+function decideAll(c){pending.diffs.forEach(d=>pending.decisions[d.name]=c);renderDiffs()}
+async function applyDecisions(){
+ const p=pending;
+ if(p.diffs.some(d=>!p.decisions[d.name])){toast('Nejdřív rozhodněte u všech rozdílů');return}
+ try{
+  await api(`/flats/${p.fid}/statements/${p.y}/resolve`,'POST',{doc_label:'Nahráno ručně',items:p.items,decisions:p.decisions});
+  closeModal();toast('Uloženo, starší hodnoty jsou v historii');
+  await reload();render();
+ }catch(e){toast(e.message)}
 }
 
-// ---------- SMLOUVA / DODATEK ----------
+// ---------- smlouva / dodatek ----------
 function openContract(fid){
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Typ dokumentu</label><select id="ct"><option>Dodatek: změna nájemného</option><option>Nájemní smlouva</option><option>Výpověď nájmu</option></select>
@@ -331,7 +347,7 @@ function openContract(fid){
 }
 function genContract(fid){
  const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,kauce:0,adv:{}},z=+$('#cz').value||0,t=$('#ct').value;
- const rent=l.rent+z;
+ const rent=(+l.rent||0)+z;
  const adv=Object.entries(l.adv).map(([k,v])=>k+': '+kc(v)).join('\n');
  const txt=`${t.toUpperCase()}
 
@@ -353,7 +369,7 @@ Pronajímatel                     Nájemce`;
  $('#doc').innerHTML=`${z?`<p class="small warnTxt" style="margin-top:12px">Zvýšení nad rámec inflační doložky (čl. 4 smlouvy) může být sporné. Smlouva dovoluje upravit nájemné o míru inflace, a to od 1. července s oznámením do 20. června. Před podpisem to nechte ověřit.</p>`:''}<pre class="doc">${esc(txt)}</pre>`;
 }
 
-// ---------- UPOMÍNKY ----------
+// ---------- upomínky ----------
 function mailTab(){
  const rows=S.flats.map(f=>{const y=years(f)[0];if(!y)return '';const b=bal(f.years[y]);if(b>=0)return '';
   return `<div class="card"><div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${esc(f.addr)} · nedoplatek ${y}: ${kc(-b)}</div></div>
@@ -383,7 +399,21 @@ ${f.owner||'[jméno pronajímatele]'}`;
 function openMail(){window.location.href=`mailto:${encodeURIComponent($('#me').value)}?subject=${encodeURIComponent($('#ms').value)}&body=${encodeURIComponent($('#mb').value)}`}
 function copyMail(){const t=$('#ms').value+'\n\n'+$('#mb').value;navigator.clipboard?navigator.clipboard.writeText(t).then(()=>toast('Zkopírováno'),()=>toast('Kopírování se nepovedlo')):toast('Kopírování není dostupné')}
 
-render();
+// ---------- záloha ----------
+async function exportBackup(){
+ try{
+  const d=await api('/export');
+  const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='sprava-bytu-zaloha-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+ }catch(e){toast(e.message)}
+}
+
+// ---------- start ----------
+(async()=>{
+ try{await reload()}catch(e){toast(e.message)}
+ render();
+})();
 </script>
 </body>
 </html>
