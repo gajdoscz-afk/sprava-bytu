@@ -5,15 +5,21 @@ from decimal import Decimal
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+import mimetypes
+
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
+from . import documents
 from . import models as m
 from . import schemas as s
 from .db import Base, engine, get_db
+
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
 security = HTTPBasic()
 
@@ -261,6 +267,121 @@ def restore_version(version_id: int, db: Session = Depends(get_db)):
                      action="vráceno", old=current, new=v.old))
     db.commit()
     return {"ok": True}
+
+
+# ---------- dokumenty ----------
+
+def get_document(db: Session, doc_id: int) -> m.Document:
+    d = db.get(m.Document, doc_id)
+    if d is None:
+        raise HTTPException(404, "Dokument nenalezen")
+    return d
+
+
+def doc_out(d: m.Document) -> dict:
+    return {
+        "id": d.id, "flat_id": d.flat_id, "status": d.status, "doc_type": d.doc_type,
+        "filename": d.filename, "mime": d.mime, "size": d.size, "year": d.year,
+        "summary": d.summary, "note": d.note, "suggested_flat_id": d.suggested_flat_id,
+        "extracted": d.extracted, "created_at": d.created_at.isoformat(),
+    }
+
+
+def run_classification(d: m.Document, db: Session) -> None:
+    """Přečte dokument a nastaví typ, rok, shrnutí a navržený byt. Automaticky zařadí jen při jisté shodě."""
+    flats = db.scalars(select(m.Flat)).all()
+    aliases = db.scalars(select(m.FlatAlias)).all()
+    try:
+        result = documents.classify(d.data, d.mime)
+    except documents.ClassifyError as e:
+        d.note = str(e)
+        d.status = "ke_kontrole" if d.flat_id is None else d.status
+        return
+
+    d.extracted = result
+    d.doc_type = result.get("doc_type", "jine")
+    try:
+        d.year = int(result["year"]) if result.get("year") else None
+    except (TypeError, ValueError):
+        d.year = None
+    d.summary = str(result.get("summary") or "")[:500]
+    d.note = ""
+    d.suggested_flat_id = documents.suggest_flat(result, flats, aliases)
+
+    if d.flat_id is None and d.suggested_flat_id and result["confidence"] >= documents.AUTO_FILE_CONFIDENCE:
+        d.flat_id = d.suggested_flat_id
+        d.status = "zarazeno"
+    elif d.flat_id is None:
+        d.status = "ke_kontrole"
+
+
+@app.post("/documents", status_code=201)
+async def upload_documents(files: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    out = []
+    for up in files:
+        data = await up.read()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{up.filename}: soubor je větší než 15 MB")
+        mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "application/octet-stream"
+        d = m.Document(filename=(up.filename or "dokument")[:300], mime=mime, size=len(data), data=data)
+        db.add(d)
+        db.flush()
+        await run_in_threadpool(run_classification, d, db)
+        db.commit()
+        out.append(doc_out(d))
+    return out
+
+
+@app.get("/documents")
+def list_documents(flat_id: int | None = None, db: Session = Depends(get_db)):
+    q = select(m.Document).order_by(m.Document.id.desc())
+    if flat_id is not None:
+        q = q.where(m.Document.flat_id == flat_id)
+    return [doc_out(d) for d in db.scalars(q)]
+
+
+@app.get("/documents/{doc_id}/file")
+def document_file(doc_id: int, db: Session = Depends(get_db)):
+    d = get_document(db, doc_id)
+    return Response(content=d.data, media_type=d.mime, headers={"Content-Disposition": "inline"})
+
+
+@app.patch("/documents/{doc_id}")
+def update_document(doc_id: int, body: s.DocumentUpdate, db: Session = Depends(get_db)):
+    d = get_document(db, doc_id)
+    if body.doc_type is not None:
+        if body.doc_type not in documents.DOC_TYPES:
+            raise HTTPException(400, "Neznámý typ dokumentu")
+        d.doc_type = body.doc_type
+    if "flat_id" in body.model_fields_set:
+        if body.flat_id is not None:
+            get_flat(db, body.flat_id)
+        d.flat_id = body.flat_id
+        d.status = "zarazeno" if body.flat_id is not None else "ke_kontrole"
+        # Zapamatuje si, jak se adresa na dokumentu píše, aby příště byl byt poznán sám
+        addr = documents.normalize((d.extracted or {}).get("address") or "")
+        if body.flat_id is not None and addr:
+            exists = db.scalar(select(m.FlatAlias).where(
+                m.FlatAlias.flat_id == body.flat_id, m.FlatAlias.alias == addr[:200]))
+            if exists is None:
+                db.add(m.FlatAlias(flat_id=body.flat_id, alias=addr[:200]))
+    db.commit()
+    return doc_out(d)
+
+
+@app.post("/documents/{doc_id}/classify")
+async def reclassify_document(doc_id: int, db: Session = Depends(get_db)):
+    d = get_document(db, doc_id)
+    await run_in_threadpool(run_classification, d, db)
+    db.commit()
+    return doc_out(d)
+
+
+@app.delete("/documents/{doc_id}", status_code=204)
+def delete_document(doc_id: int, db: Session = Depends(get_db)):
+    db.delete(get_document(db, doc_id))
+    db.commit()
+    return Response(status_code=204)
 
 
 # ---------- záloha ----------

@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -103,3 +103,37 @@ class Version(Base):
     old: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     new: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Document(Base):
+    """Nahraný dokument (fotka nebo PDF). Soubor je v databázi, takže není třeba další služba."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int | None] = mapped_column(
+        ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="ke_kontrole")  # ke_kontrole | zarazeno
+    doc_type: Mapped[str] = mapped_column(String(40), default="jine")
+    filename: Mapped[str] = mapped_column(String(300))
+    mime: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    suggested_flat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extracted: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # celý výstup čtení
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FlatAlias(Base):
+    """Jiný zápis adresy, který aplikace pozná (např. 'Sibiřská 375' = byt 2). Vzniká potvrzením dokumentu."""
+
+    __tablename__ = "flat_aliases"
+    __table_args__ = (UniqueConstraint("flat_id", "alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    alias: Mapped[str] = mapped_column(String(200))

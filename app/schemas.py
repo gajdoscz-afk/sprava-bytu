@@ -46,3 +46,9 @@ class ExtractedIn(BaseModel):
 class ResolveIn(ExtractedIn):
     # Rozhodnutí u každé změněné položky: nahradit novým, nebo ponechat starý údaj
     decisions: dict[str, Literal["replace", "keep"]] = {}
+
+
+class DocumentUpdate(BaseModel):
+    # flat_id se bere jen, když ho klient poslal (null znamená odebrat byt)
+    flat_id: int | None = None
+    doc_type: str | None = None

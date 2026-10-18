@@ -73,6 +73,7 @@ nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weig
 <div class="brand">Správa bytů</div>
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
+<button data-t="docs" onclick="go('docs')">Dokumenty</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
 </nav>
@@ -91,7 +92,7 @@ const TODAY=new Date();
 const years=f=>Object.keys(f.years).map(Number).sort((a,b)=>b-a);
 const flat=id=>S.flats.find(f=>f.id==id);
 
-let S={flats:[],versions:[]};
+let S={flats:[],versions:[],docs:[]};
 let V={tab:'home',flat:null,year:null};
 let pending=null;
 
@@ -118,8 +119,9 @@ function toFlat(f){
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
 }
 async function reload(){
- const [flats,versions]=await Promise.all([api('/flats'),api('/versions')]);
+ const [flats,versions,docs]=await Promise.all([api('/flats'),api('/versions'),api('/documents')]);
  S.flats=flats.map(toFlat);
+ S.docs=docs;
  S.versions=versions.map(v=>({id:v.id,flat:v.flat_id,name:v.name,action:v.action,old:v.old,new:v.new,
   when:new Date(v.created_at).toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}),
   flatName:(flat(v.flat_id)||{}).addr||''}));
@@ -135,7 +137,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
+ m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
 }
 
 // ---------- přehled ----------
@@ -199,7 +201,8 @@ function flatDetail(){
  </div>
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
- <div class="btns"><button class="btn" onclick="openUpload(${f.id})">Nahrát dokument</button><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
+ <div class="btns"><button class="btn" onclick="go('docs')">Nahrát dokument</button><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
+ <h2>Dokumenty</h2>${S.docs.filter(d=>d.flat_id==f.id).map(docRow).join('')||'<div class="card mut">Zatím žádné dokumenty.</div>'}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
 }
@@ -407,6 +410,78 @@ async function exportBackup(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='sprava-bytu-zaloha-'+new Date().toISOString().slice(0,10)+'.json';a.click();
  }catch(e){toast(e.message)}
+}
+
+// ---------- dokumenty ----------
+const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',faktura:'Faktura',pojistka:'Pojistka',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
+const docType=k=>DOC_TYPES[k]||'Jiné';
+function flatOpts(sel){return '<option value="">— nepřiřazeno —</option>'+S.flats.map(f=>`<option value="${f.id}" ${f.id==sel?'selected':''}>${esc(f.addr)}</option>`).join('')}
+function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('')}
+function docRow(d){
+ const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
+ return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
+ <div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''}</div>
+ ${d.summary?`<div class="small" style="margin-top:4px">${esc(d.summary)}</div>`:''}</div>
+ <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div></div>`;
+}
+function inboxCard(d){
+ return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
+ ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
+ ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
+ <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div>
+ <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id)}</select></div>
+ <div><label>Typ</label><select id="dt${d.id}">${docTypeOpts(d.doc_type)}</select></div></div>
+ <div class="btns"><button class="btn sm" onclick="confirmDoc(${d.id})">Potvrdit</button>
+ ${d.note?`<button class="btn sm sec" onclick="classifyDoc(${d.id})">Přečíst znovu</button>`:''}
+ <button class="btn sm danger" onclick="deleteDoc(${d.id})">Smazat</button></div></div>`;
+}
+function docsTab(){
+ const inbox=S.docs.filter(d=>d.status!=='zarazeno');
+ const filed=S.docs.filter(d=>d.status==='zarazeno');
+ return `<h1>Dokumenty</h1>
+ <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
+ <div class="card" style="text-align:center;padding:26px">
+  <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát fotky nebo PDF</b>
+  <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
+  <div id="up" class="small mut" style="margin-top:8px"></div>
+ </div>
+ <h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')||'<div class="card mut">Nic nečeká.</div>'}
+ <h2>Zařazeno</h2>${filed.map(docRow).join('')||'<div class="card mut">Zatím nic.</div>'}`;
+}
+// Velké fotky zmenšíme, ať se rychleji nahrají a levněji přečtou
+async function shrink(file){
+ if(!file.type.startsWith('image/'))return file;
+ const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)});
+ const k=Math.min(1,2000/Math.max(img.width,img.height));
+ const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+ c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+ const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+ return new File([blob],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});
+}
+async function uploadDocs(input){
+ const files=[...input.files];if(!files.length)return;
+ const box=$('#up');box.textContent=`Nahrávám a čtu ${files.length} soubor(ů). Může to trvat i minutu…`;
+ const fd=new FormData();
+ for(const f of files){fd.append('files',await shrink(f).catch(()=>f))}
+ try{
+  const res=await fetch('/documents',{method:'POST',body:fd});
+  if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
+  const j=await res.json();toast(`Nahráno: ${j.length}`);
+  await reload();render();
+ }catch(e){toast(e.message);box.textContent=''}
+}
+async function confirmDoc(id){
+ const fid=$('#df'+id).value,t=$('#dt'+id).value;
+ try{await api(`/documents/${id}`,'PATCH',{flat_id:fid?+fid:null,doc_type:t});toast('Zařazeno');await reload();render()}
+ catch(e){toast(e.message)}
+}
+async function classifyDoc(id){
+ toast('Čtu dokument…');
+ try{await api(`/documents/${id}/classify`,'POST');await reload();render()}catch(e){toast(e.message)}
+}
+async function deleteDoc(id){
+ if(!confirm('Smazat dokument?'))return;
+ try{await api(`/documents/${id}`,'DELETE');toast('Smazáno');await reload();render()}catch(e){toast(e.message)}
 }
 
 // ---------- start ----------
