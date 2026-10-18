@@ -229,14 +229,6 @@ def geo_later() -> None:
     threading.Thread(target=lambda: ensure_geo(), daemon=True).start()
 
 
-@app.put("/flats/{flat_id}/valuation")
-def set_valuation_radius(flat_id: int, body: s.ValuationIn, db: Session = Depends(get_db)):
-    f = get_flat(db, flat_id)
-    f.valuation_radius_km = body.radius_km
-    db.commit()
-    return {"ok": True, "radius_km": body.radius_km}
-
-
 def snapshot_portfolio_now() -> None:
     """Uloží snímek hodnoty portfolia (nejvýš jeden za den)."""
     with Session(engine) as db:
@@ -331,6 +323,15 @@ def _benchmark_scheduler() -> None:
 
 
 app = FastAPI(title="Správa bytů", version="0.3.0", lifespan=lifespan, dependencies=[Depends(require_auth)])
+
+@app.put("/flats/{flat_id}/valuation")
+def set_valuation_radius(flat_id: int, body: s.ValuationIn, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    f.valuation_radius_km = body.radius_km
+    db.commit()
+    return {"ok": True, "radius_km": body.radius_km}
+
+
 
 
 # ---------- pomocné funkce ----------
