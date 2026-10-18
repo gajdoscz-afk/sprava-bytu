@@ -51,14 +51,15 @@ input,select,textarea{font:inherit;width:100%;background:var(--card);color:var(-
 .doc{white-space:pre-wrap;font:14px/1.6 Georgia,"Times New Roman",serif;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
 .resRow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
 nav{position:fixed;left:0;top:0;bottom:0;width:118px;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:8px;padding:14px 10px;z-index:5}
-nav .brand{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;color:var(--acc);font-size:15px;margin:0 4px 8px}
+nav button.brand{background:none;border:0;padding:4px 4px 10px;margin:0 0 4px;text-align:left;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;color:var(--acc);font-size:16px;line-height:1.2;border-bottom:1px solid var(--line);border-radius:0;cursor:pointer}
+nav button.brand:hover{color:var(--ink)}
 nav button{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:14px 10px;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer}
 nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 @media (max-width:560px){
  body{padding-left:84px}
  nav{width:84px;padding:10px 8px}
- nav .brand{display:none}
- nav button{font-size:13px;padding:12px 6px;text-align:center}
+ nav button.brand{font-size:13px;text-align:center;padding:4px 2px 10px}
+ nav button:not(.brand){font-size:13px;padding:12px 6px;text-align:center}
  main{padding:14px 12px}
 }
 .toast{position:fixed;left:calc(50% + 59px);transform:translateX(-50%);bottom:24px;background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:20;max-width:90vw;text-align:center}
@@ -70,7 +71,7 @@ nav button.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weig
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <nav>
-<div class="brand">Správa bytů</div>
+<button class="brand" onclick="go('home')" title="Na hlavní stránku">⌂ Správa bytů</button>
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
