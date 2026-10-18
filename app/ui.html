@@ -224,6 +224,7 @@ function flatDetail(){
   <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
+${detailsCard(f)}
 ${svjCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
@@ -365,6 +366,17 @@ ${f.owner||'[jméno pronajímatele]'}`;
  <div class="btns"><button class="btn" onclick="openMail()">Otevřít v poště</button><button class="btn sec" onclick="copyMail()">Zkopírovat</button></div>`);
 }
 
+function detailsCard(f){
+ const rows=[
+  ['Adresa a číslo bytu',f.addr],['Dispozice',f.dispo],['Patro',f.floor],['PSČ a město',f.zip],
+  ['Vlastník (pronajímatel)',f.owner],['Nájemce',f.tenant.name],['Další osoby v bytě',(f.tenant.others||[]).join(', ')],
+  ['E-mail nájemce',f.tenant.email],['Telefon nájemce',f.tenant.phone],['Účet pro platby',f.bank.acc]
+ ];
+ const missing=rows.filter(([,v])=>!v).length;
+ return `<h2>Údaje o bytu</h2><div class="card">
+  <div class="mini">${rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?'':'mut'}">${v?esc(v):'—'}</b></div>`).join('')}</div>
+  <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p></div>`;
+}
 function acqCard(f){
  const a=f.acq;
  const when=a&&a.acquired_on?fd(a.acquired_on):'neznámé';
