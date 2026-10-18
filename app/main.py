@@ -115,6 +115,12 @@ def flat_out(f: m.Flat) -> dict:
         "leases": [lease_out(l) for l in f.leases],
         "statements": [statement_out(st) for st in f.statements],
         "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount)} for c in f.costs],
+        "acquisition": (
+            {"acquired_on": f.acquisition.acquired_on.isoformat() if f.acquisition.acquired_on else None,
+             "price": float(f.acquisition.price) if f.acquisition.price is not None else None,
+             "source": f.acquisition.source, "note": f.acquisition.note}
+            if f.acquisition else None
+        ),
     }
 
 
@@ -140,6 +146,8 @@ def create_flat(data: s.FlatIn, db: Session = Depends(get_db)):
     f = m.Flat()
     apply_flat(f, data)
     db.add(f)
+    db.flush()
+    rematch_all(db)
     db.commit()
     return flat_out(f)
 
@@ -153,6 +161,8 @@ def read_flat(flat_id: int, db: Session = Depends(get_db)):
 def update_flat(flat_id: int, data: s.FlatIn, db: Session = Depends(get_db)):
     f = get_flat(db, flat_id)
     apply_flat(f, data)
+    db.flush()
+    rematch_all(db)
     db.commit()
     return flat_out(f)
 
@@ -194,6 +204,22 @@ def merge_flats(flat_id: int, other_id: int, db: Session = Depends(get_db)):
 
     # Po přesunu už druhý byt nemá žádné napojené záznamy, takže ho lze smazat
     db.delete(get_flat(db, other_id))
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
+
+
+# ---------- pořízení bytu ----------
+
+@app.put("/flats/{flat_id}/acquisition")
+def set_acquisition(flat_id: int, body: s.AcquisitionIn, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    acq = db.scalar(select(m.FlatAcquisition).where(m.FlatAcquisition.flat_id == f.id))
+    if acq is None:
+        acq = m.FlatAcquisition(flat_id=f.id)
+        db.add(acq)
+    acq.acquired_on = body.acquired_on
+    acq.price = money(body.price) if body.price is not None else None
+    acq.source = "ručně"
     db.commit()
     return flat_out(get_flat(db, flat_id))
 
@@ -346,6 +372,63 @@ def doc_out(d: m.Document) -> dict:
     }
 
 
+# Údaje bytu, které se doplní z dokumentů: klíč v extracted -> atribut bytu
+FLAT_FIELDS = {
+    "dispo": "dispo",
+    "floor": "floor",
+    "zip_city": "zip",
+    "owner": "owner",
+    "tenant_name": "tenant_name",
+    "tenant_email": "tenant_email",
+    "tenant_phone": "tenant_phone",
+    "tenant_bank_account": "bank_acc",
+}
+FLAT_FIELD_LABELS = {
+    "dispo": "Dispozice", "floor": "Patro", "zip": "PSČ a město", "owner": "Vlastník",
+    "tenant_name": "Nájemník", "tenant_email": "E-mail nájemníka", "tenant_phone": "Telefon nájemníka",
+    "bank_acc": "Účet pro platby",
+}
+
+
+def enrich_flat(db: Session, d: m.Document) -> None:
+    """Doplní prázdné údaje bytu z dokumentu. Vyplněné hodnoty nepřepisuje a každé doplnění zapíše do historie."""
+    ex = d.extracted or {}
+    if d.flat_id is None or not ex:
+        return
+    f = db.get(m.Flat, d.flat_id)
+    if f is None:
+        return
+    for key, attr in FLAT_FIELDS.items():
+        val = str(ex.get(key) or "").strip()
+        if not val or val.lower() in ("null", "none") or getattr(f, attr):
+            continue
+        limit = 60 if attr in ("bank_acc", "tenant_phone") else 120
+        val = val[:limit]
+        setattr(f, attr, val)
+        db.add(m.Version(flat_id=f.id, name=FLAT_FIELD_LABELS[attr], action="doplněno z dokumentu",
+                         old=None, new={"value": val, "doc_id": d.id}))
+
+
+def rematch_all(db: Session) -> None:
+    """Po založení nebo úpravě bytu znovu projde dokumenty. Nezařazené zkusí přiřadit (jen při jisté shodě),
+    u zařazených doplní prázdné údaje bytu."""
+    flats = db.scalars(select(m.Flat)).all()
+    aliases = db.scalars(select(m.FlatAlias)).all()
+    for d in db.scalars(select(m.Document).where(m.Document.extracted.is_not(None))).all():
+        if d.flat_id is None:
+            fid = documents.suggest_flat(d.extracted, flats, aliases, d.filename)
+            d.suggested_flat_id = fid
+            try:
+                conf = float((d.extracted or {}).get("confidence") or 0)
+            except (TypeError, ValueError):
+                conf = 0.0
+            if fid and conf >= documents.AUTO_FILE_CONFIDENCE:
+                d.flat_id = fid
+                d.status = "zarazeno"
+        enrich_flat(db, d)
+        sync_acquisition(db, d)
+
+
 def run_classification(d: m.Document, db: Session) -> None:
     """Přečte dokument a nastaví typ, rok, shrnutí a navržený byt. Automaticky zařadí jen při jisté shodě."""
     flats = db.scalars(select(m.Flat)).all()
@@ -372,6 +455,33 @@ def run_classification(d: m.Document, db: Session) -> None:
         d.status = "zarazeno"
     elif d.flat_id is None:
         d.status = "ke_kontrole"
+    sync_acquisition(db, d)
+    enrich_flat(db, d)
+
+
+def sync_acquisition(db: Session, d: m.Document) -> None:
+    """Z kupní smlouvy doplní datum a cenu pořízení bytu. Ruční údaj má přednost."""
+    ex = d.extracted or {}
+    if d.doc_type != "kupni_smlouva" or d.flat_id is None:
+        return
+    price_raw, date_raw = ex.get("price"), ex.get("contract_date")
+    if price_raw is None and not date_raw:
+        return
+    acq = db.scalar(select(m.FlatAcquisition).where(m.FlatAcquisition.flat_id == d.flat_id))
+    if acq is None:
+        acq = m.FlatAcquisition(flat_id=d.flat_id)
+        db.add(acq)
+    if acq.source == "ručně" and acq.price is not None:
+        return
+    try:
+        acq.price = money(price_raw) if price_raw is not None else acq.price
+    except (ArithmeticError, ValueError, TypeError):
+        pass
+    try:
+        acq.acquired_on = date.fromisoformat(str(date_raw)[:10]) if date_raw else acq.acquired_on
+    except ValueError:
+        pass
+    acq.source, acq.doc_id = "kupní smlouva", d.id
 
 
 @app.post("/documents", status_code=201)
@@ -424,6 +534,8 @@ def update_document(doc_id: int, body: s.DocumentUpdate, db: Session = Depends(g
                 m.FlatAlias.flat_id == body.flat_id, m.FlatAlias.alias == addr[:200]))
             if exists is None:
                 db.add(m.FlatAlias(flat_id=body.flat_id, alias=addr[:200]))
+    sync_acquisition(db, d)
+    enrich_flat(db, d)
     db.commit()
     return doc_out(d)
 

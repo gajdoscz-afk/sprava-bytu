@@ -33,6 +33,7 @@ class Flat(Base):
         back_populates="flat", cascade="all, delete-orphan", order_by="Statement.year"
     )
     costs: Mapped[list["FlatCost"]] = relationship(cascade="all, delete-orphan", order_by="FlatCost.id")
+    acquisition: Mapped["FlatAcquisition | None"] = relationship(cascade="all, delete-orphan", uselist=False)
 
 
 class Lease(Base):
@@ -166,3 +167,17 @@ class BankTx(Base):
     period: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM, za který měsíc platba je
     flat_id: Mapped[int | None] = mapped_column(ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True)
     match: Mapped[str] = mapped_column(String(20), default="none")  # auto-vs, auto-částka, auto-jméno, ručně, none
+
+
+class FlatAcquisition(Base):
+    """Pořízení bytu: datum koupě a cena. Vyplní se z kupní smlouvy, nebo ručně (ruční údaj má přednost)."""
+
+    __tablename__ = "flat_acquisitions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), unique=True)
+    acquired_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="ručně")  # ručně | kupní smlouva
+    doc_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")

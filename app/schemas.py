@@ -52,6 +52,11 @@ class BankAssignIn(BaseModel):
     flat_id: int | None = None
 
 
+class AcquisitionIn(BaseModel):
+    acquired_on: date | None = None
+    price: Decimal | None = Field(default=None, ge=0)
+
+
 class VsIn(BaseModel):
     vs: str = Field(min_length=1, max_length=20)
 

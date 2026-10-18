@@ -19,6 +19,7 @@ DOC_TYPES = {
     "faktura": "Faktura",
     "pojistka": "Pojistka",
     "vypis_katastru": "Výpis z katastru",
+    "kupni_smlouva": "Kupní smlouva",
     "fotky_stavu": "Fotky stavu bytu",
     "doklad_najemnika": "Doklad nájemníka",
     "jine": "Jiné",
@@ -29,13 +30,24 @@ AUTO_FILE_CONFIDENCE = 0.8
 
 PROMPT = """Jsi asistentka správce bytů v ČR. Z přiloženého dokumentu urči typ a vytáhni údaje.
 Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
-- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, fotky_stavu, doklad_najemnika, jine]
+- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, kupni_smlouva, fotky_stavu, doklad_najemnika, jine]
+  kupni_smlouva = kupní smlouva k nemovitosti (koupě bytu, prodávající a kupující).
+- price: u kupní smlouvy kupní cena bytu v Kč jako číslo, jinak null
+- contract_date: u kupní smlouvy datum podpisu ve formátu YYYY-MM-DD, u výpisu z katastru datum titulu (kupní smlouvy), jinak null
   vypis_katastru = výpis z katastru nemovitostí (LV), vlastník, parcela, jednotka, podíly na společných částech.
   vyuctovani_najemnikovi = vyúčtování služeb, které vystavil pronajímatel nájemníkovi (nájemník doplácí nebo má přeplatek).
   vyuctovani_spravy = vyúčtování od správy domu nebo SVJ pronajímateli.
 - year: rok, ke kterému dokument patří (číslo), nebo null
 - address: adresa bytu nebo domu přesně tak, jak je v dokumentu, nebo null
 - tenant_name: jméno nájemníka nebo null
+- dispo: dispozice bytu, např. "2+kk", nebo null
+- floor: patro bytu, např. "3. NP", nebo null
+- zip_city: PSČ a město bytu, např. "400 01 Ústí nad Labem", nebo null
+- owner: vlastník bytu (pronajímatel), nebo null
+- tenant_email: e-mail nájemníka, nebo null
+- tenant_phone: telefon nájemníka, nebo null
+- tenant_bank_account: číslo účtu, na který nájemník platí, nebo null
+  Dispozici, patro, PSČ, vlastníka, kontakty a účet vyplň jen tehdy, když jsou v dokumentu výslovně uvedeny.
 - summary: 1 až 2 věty česky o tom, co dokument je a co obsahuje
 - confidence: číslo 0 až 1, jak jsi si jistá typem i adresou
 - items: u vyúčtování seznam položek, každá {"name", "cost", "paid", "unit", "quantity", "category"}.

@@ -123,6 +123,7 @@ function toFlat(f){
   bank:{acc:f.bank_acc||''},
   leases:f.leases.map(l=>({id:l.id,from:l.valid_from,to:l.valid_to||'',rent:l.rent,kauce:l.deposit,adv:l.advances||{}})),
   svj:(f.svj_costs||[]).map(c=>({id:c.id,name:c.name,amount:c.amount})),
+  acq:f.acquisition||null,
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
 }
 async function reload(){
@@ -224,6 +225,7 @@ function flatDetail(){
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
 ${svjCard}
+ ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><button class="btn" onclick="go('docs')">Nahrát dokument</button><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
@@ -361,6 +363,36 @@ ${f.owner||'[jméno pronajímatele]'}`;
  <label>Předmět</label><input id="ms" value="${esc(subj)}">
  <label>Text</label><textarea id="mb" rows="11">${esc(body)}</textarea>
  <div class="btns"><button class="btn" onclick="openMail()">Otevřít v poště</button><button class="btn sec" onclick="copyMail()">Zkopírovat</button></div>`);
+}
+
+function acqCard(f){
+ const a=f.acq;
+ const when=a&&a.acquired_on?fd(a.acquired_on):'neznámé';
+ const price=a&&a.price!=null?kc(a.price):'neznámá';
+ const src=a?(a.source==='kupní smlouva'?'z kupní smlouvy':'zadáno ručně'):'zatím nevyplněno';
+ return `<h2>Pořízení bytu</h2><div class="card">
+  <div class="mini">
+   <div><span>Datum koupě</span><b>${when}</b></div>
+   <div><span>Kupní cena</span><b>${price}</b></div>
+  </div>
+  <p class="small mut">Zdroj: ${src}. Pokud nahrajete kupní smlouvu a aplikace přiřadí byt, údaje se doplní samy.</p>
+  <div class="btns"><button class="btn sec sm" onclick="acqForm(${f.id})">Upravit pořízení</button></div></div>`;
+}
+function acqForm(fid){
+ const f=flat(fid);const a=f&&f.acq;
+ modal(`<div class="sheetHead"><h2>Pořízení bytu</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <p class="small mut">Datum a cena z kupní smlouvy. Ruční úprava má přednost před údaji z dokumentu.</p>
+ <label>Datum koupě</label><input id="aD" type="date" value="${a&&a.acquired_on?a.acquired_on:''}">
+ <label>Kupní cena (Kč)</label><input id="aP" type="number" min="0" step="0.01" value="${a&&a.price!=null?a.price:''}">
+ <div class="btns"><button class="btn" onclick="saveAcq(${fid})">Uložit</button></div>`);
+}
+async function saveAcq(fid){
+ const d=$('#aD').value||null;
+ const raw=($('#aP').value||'').replace(',','.').trim();
+ const price=raw===''?null:parseFloat(raw);
+ if(price!==null&&isNaN(price)){toast('Zkontrolujte cenu');return}
+ try{await api(`/flats/${fid}/acquisition`,'PUT',{acquired_on:d,price});closeModal();toast('Uloženo');await reload();render()}
+ catch(e){toast(e.message)}
 }
 
 function costForm(fid){
@@ -541,7 +573,7 @@ async function exportBackup(){
 }
 
 // ---------- dokumenty ----------
-const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',vypis_katastru:'Výpis z katastru',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
+const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',vypis_katastru:'Výpis z katastru',kupni_smlouva:'Kupní smlouva',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
 const docType=k=>DOC_TYPES[k]||'Jiné';
 function flatOpts(sel,newAddr){
  const nw=(newAddr&&!sel)?`<option value="new" selected>＋ Nový byt: ${esc(newAddr)}</option>`:'';
