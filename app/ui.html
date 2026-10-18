@@ -452,7 +452,7 @@ function inboxCard(d){
  ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
  ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
  <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div>
- <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id,(d.extracted&&d.extracted.address)||'')}</select></div>
+ <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id)}</select></div>
  <div><label>Typ</label><select id="dt${d.id}">${docTypeOpts(d.doc_type)}</select></div></div>
  <div class="btns"><button class="btn sm" onclick="confirmDoc(${d.id})">Potvrdit</button>
  ${d.note?`<button class="btn sm sec" onclick="classifyDoc(${d.id})">Přečíst znovu</button>`:''}
