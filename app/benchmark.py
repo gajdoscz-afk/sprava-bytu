@@ -113,7 +113,7 @@ def estimate(flat_dispo: str, flat_area: Decimal | None, listings) -> dict | Non
     if not same:
         return None
 
-    per_m2 = [float(l.price / l.area) for l in same if l.area]
+    per_m2 = [float(l.price / l.area_m2) for l in same if l.area_m2]
     if flat_area and len(per_m2) >= 3:
         values = per_m2
         basis = "cena za m² × plocha bytu"
