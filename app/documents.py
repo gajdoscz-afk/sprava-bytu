@@ -15,6 +15,7 @@ DOC_TYPES = {
     "dodatek": "Dodatek",
     "vyuctovani_svj": "Vyúčtování SVJ",
     "vyuctovani_spravy": "Vyúčtování správy",
+    "vyuctovani_najemnikovi": "Vyúčtování nájemníkovi",
     "faktura": "Faktura",
     "pojistka": "Pojistka",
     "fotky_stavu": "Fotky stavu bytu",
@@ -27,7 +28,9 @@ AUTO_FILE_CONFIDENCE = 0.8
 
 PROMPT = """Jsi asistentka správce bytů v ČR. Z přiloženého dokumentu urči typ a vytáhni údaje.
 Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
-- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, faktura, pojistka, fotky_stavu, doklad_najemnika, jine]
+- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, fotky_stavu, doklad_najemnika, jine]
+  vyuctovani_najemnikovi = vyúčtování služeb, které vystavil pronajímatel nájemníkovi (nájemník doplácí nebo má přeplatek).
+  vyuctovani_spravy = vyúčtování od správy domu nebo SVJ pronajímateli.
 - year: rok, ke kterému dokument patří (číslo), nebo null
 - address: adresa bytu nebo domu přesně tak, jak je v dokumentu, nebo null
 - tenant_name: jméno nájemníka nebo null
@@ -101,9 +104,12 @@ def _contains(needle: str, haystack: str) -> bool:
     return bool(needle) and f" {needle} " in f" {haystack} "
 
 
-def suggest_flat(result: dict, flats, aliases) -> int | None:
-    """Vrátí id bytu, pokud je shoda jednoznačná. Jinak None."""
-    text = normalize(" ".join(str(result.get(k) or "") for k in ("address", "tenant_name", "summary")))
+def suggest_flat(result: dict, flats, aliases, filename: str = "") -> int | None:
+    """Vrátí id bytu, pokud je shoda jednoznačná. Jinak None.
+
+    Hledá v adrese, shrnutí, názvu souboru a v příjmení nájemníka (příjmení stačí, protože se často píše jen v názvu).
+    """
+    text = normalize(" ".join([str(result.get(k) or "") for k in ("address", "tenant_name", "summary")] + [filename]))
     if not text:
         return None
     scores: dict[int, int] = {}
@@ -111,6 +117,10 @@ def suggest_flat(result: dict, flats, aliases) -> int | None:
         if _contains(normalize(f.addr), text):
             scores[f.id] = scores.get(f.id, 0) + 3
         if _contains(normalize(f.tenant_name), text):
+            scores[f.id] = scores.get(f.id, 0) + 2
+        parts = normalize(f.tenant_name).split()
+        surname = parts[-1] if parts else ""
+        if len(surname) >= 4 and _contains(surname, text):
             scores[f.id] = scores.get(f.id, 0) + 2
     for al in aliases:
         if _contains(al.alias, text):

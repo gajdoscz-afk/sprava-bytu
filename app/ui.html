@@ -413,7 +413,7 @@ async function exportBackup(){
 }
 
 // ---------- dokumenty ----------
-const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',faktura:'Faktura',pojistka:'Pojistka',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
+const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
 const docType=k=>DOC_TYPES[k]||'Jiné';
 function flatOpts(sel){return '<option value="">— nepřiřazeno —</option>'+S.flats.map(f=>`<option value="${f.id}" ${f.id==sel?'selected':''}>${esc(f.addr)}</option>`).join('')}
 function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('')}

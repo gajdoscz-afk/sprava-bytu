@@ -306,7 +306,7 @@ def run_classification(d: m.Document, db: Session) -> None:
         d.year = None
     d.summary = str(result.get("summary") or "")[:500]
     d.note = ""
-    d.suggested_flat_id = documents.suggest_flat(result, flats, aliases)
+    d.suggested_flat_id = documents.suggest_flat(result, flats, aliases, d.filename)
 
     if d.flat_id is None and d.suggested_flat_id and result["confidence"] >= documents.AUTO_FILE_CONFIDENCE:
         d.flat_id = d.suggested_flat_id
