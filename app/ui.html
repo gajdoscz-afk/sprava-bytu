@@ -854,6 +854,25 @@ async function rereadAll(){
  await reload();render();
 }
 
+// Automatická obnova po nasazení: jednou za minutu a při návratu do záložky se zjistí verze serveru.
+// Když vyjde nová, stránka se obnoví. Pokud zrovna něco vyplňujete nebo se nahrává, jen se ukáže hláška.
+let BUILD=null;
+async function checkVersion(){
+ try{
+  const r=await fetch('/version',{cache:'no-store'});
+  if(!r.ok)return;
+  const v=(await r.json()).version;
+  if(BUILD===null){BUILD=v;return}
+  if(v!==BUILD){
+   if(document.querySelector('.modal.show')||document.getElementById('upBar'))toast('Vyšla nová verze. Obnovte stránku, až dokončíte práci.');
+   else location.reload();
+  }
+ }catch(e){}
+}
+setInterval(checkVersion,60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkVersion()});
+checkVersion();
+
 async function confirmDoc(id){
  let fid=$('#df'+id).value;const t=$('#dt'+id).value;
  try{

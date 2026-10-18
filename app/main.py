@@ -8,12 +8,14 @@ from decimal import Decimal
 
 from pathlib import Path
 
+import hashlib
+import hmac
 import mimetypes
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, text, update
@@ -29,19 +31,44 @@ from .db import Base, engine, get_db
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
-security = HTTPBasic()
+security = HTTPBasic(auto_error=False)
+SESSION_COOKIE = "sb_session"
+SESSION_DAYS = 90
 
 
-def require_auth(creds: HTTPBasicCredentials = Depends(security)) -> None:
-    """Jeden uživatel, přihlášení přes BASIC_USER a BASIC_PASS. Bez nich se server nespustí."""
+def _session_token(user: str, pwd: str, expires: int) -> str:
+    key = hashlib.sha256(("sb-session:" + pwd).encode()).digest()
+    sig = hmac.new(key, f"{user}|{expires}".encode(), hashlib.sha256).hexdigest()
+    return f"{expires}.{sig}"
+
+
+def _valid_session(token: str, user: str, pwd: str) -> bool:
+    try:
+        expires = int(token.split(".", 1)[0])
+    except (ValueError, AttributeError):
+        return False
+    if expires < time.time():
+        return False
+    return secrets.compare_digest(token, _session_token(user, pwd, expires))
+
+
+def require_auth(request: Request, response: Response, creds: HTTPBasicCredentials | None = Depends(security)) -> None:
+    """Jeden uživatel. Přihlášení přes BASIC_USER a BASIC_PASS, pak se nastaví přihlašovací cookie na 90 dní,
+    takže se při každém obnovení stránky znovu neptá. Bez BASIC_USER a BASIC_PASS se server nespustí."""
     user, pwd = os.getenv("BASIC_USER"), os.getenv("BASIC_PASS")
     if not user or not pwd:
         if os.getenv("ALLOW_NO_AUTH") == "1":  # jen pro lokální vývoj a testy
             return
         raise HTTPException(500, "Na serveru chybí BASIC_USER a BASIC_PASS")
-    ok = secrets.compare_digest(creds.username, user) and secrets.compare_digest(creds.password, pwd)
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if token and _valid_session(token, user, pwd):
+        return
+    ok = creds is not None and secrets.compare_digest(creds.username, user) and secrets.compare_digest(creds.password, pwd)
     if not ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Neplatné přihlášení", {"WWW-Authenticate": "Basic"})
+    expires = int(time.time()) + SESSION_DAYS * 86400
+    response.set_cookie(SESSION_COOKIE, _session_token(user, pwd, expires), max_age=SESSION_DAYS * 86400,
+                        httponly=True, secure=True, samesite="lax")
 
 
 @asynccontextmanager
@@ -338,6 +365,12 @@ def listing_out(l: m.Listing) -> dict:
         "area_m2": float(l.area_m2) if l.area_m2 is not None else None,
         "price": float(l.price), "url": l.url, "title": l.title, "source": l.source,
     }
+
+
+@app.get("/version")
+def app_version() -> dict:
+    """Identifikace verze nasazení. Stránka podle ní pozná, že vyšla nová verze, a sama se obnoví."""
+    return {"version": os.getenv("RENDER_GIT_COMMIT", "dev")}
 
 
 @app.get("/benchmark")
