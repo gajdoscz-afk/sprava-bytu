@@ -44,7 +44,24 @@ def require_auth(creds: HTTPBasicCredentials = Depends(security)) -> None:
 async def lifespan(_app: FastAPI):
     # MVP: tabulky vytvoříme při startu. Až budou změny schématu, přejdeme na Alembic.
     Base.metadata.create_all(engine)
+    _fix_owners_from_documents()
     yield
+
+
+def _fix_owners_from_documents() -> None:
+    """Jednorázová oprava: vlastníka dříve doplnil dokument (prodávající z kupní smlouvy).
+    Přepíše ho výchozím správcem, jen když je pořád stejný jako ta doplněná hodnota. Ruční úpravu nechá."""
+    with Session(engine) as db:
+        rows = db.scalars(select(m.Version).where(
+            m.Version.name == "Vlastník", m.Version.action == "doplněno z dokumentu")).all()
+        if not rows:
+            return
+        for v in rows:
+            f = db.get(m.Flat, v.flat_id)
+            if f is not None and f.owner == (v.new or {}).get("value"):
+                f.owner = DEFAULT_OWNER
+            db.delete(v)
+        db.commit()
 
 
 app = FastAPI(title="Správa bytů", version="0.3.0", lifespan=lifespan, dependencies=[Depends(require_auth)])
