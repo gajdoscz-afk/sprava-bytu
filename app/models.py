@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, LargeBinary, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -26,6 +26,9 @@ class Flat(Base):
     tenant_phone: Mapped[str] = mapped_column(String(60), default="")
     tenant_others: Mapped[str] = mapped_column(Text, default="")  # jména oddělená čárkou
     area_m2: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)  # podlahová plocha, z dokumentů nebo ručně
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)  # souřadnice adresy bytu
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    valuation_radius_km: Mapped[float] = mapped_column(Float, default=1.0)  # okruh pro hledání podobných nabídek
 
     leases: Mapped[list["Lease"]] = relationship(
         back_populates="flat", cascade="all, delete-orphan", order_by="Lease.valid_from"
@@ -180,6 +183,9 @@ class Listing(Base):
     locality: Mapped[str] = mapped_column(String(120), default="Ústí nad Labem")
     dispo: Mapped[str] = mapped_column(String(20), default="")
     area_m2: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    address: Mapped[str] = mapped_column(String(300), default="")  # ulice a číslo z inzerátu, pokud je
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     url: Mapped[str] = mapped_column(String(500), default="")
     title: Mapped[str] = mapped_column(String(300), default="")

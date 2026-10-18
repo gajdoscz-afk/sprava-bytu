@@ -28,11 +28,12 @@ Odpověz POUZE JSON polem objektů, každý s klíči:
 - area_m2: podlahová plocha v m² jako číslo, nebo null
 - price: {price} jako číslo (povinné)
 - locality: obec nebo část města
+- address: ulice a číslo z inzerátu, pokud je uvedené (jinak prázdný řetězec); bez adresy nabídka nepomůže k porovnání v okolí
 Zahrň jen nabídky, které skutečně najdeš. Nejvíc 15. Nic nevymýšlej.
 Pokud nic nenajdeš, vrať prázdné pole []. Odpověz jen JSON."""
 
 FORMAT_PROMPT = """Z následujícího textu vypiš nabídky k {offer} bytů jako JSON pole objektů s klíči:
-title, url (přímý odkaz na inzerát, pokud je v textu), dispo, area_m2 (číslo nebo null), price ({price} jako číslo), locality.
+title, url (přímý odkaz na inzerát, pokud je v textu), dispo, area_m2 (číslo nebo null), price ({price} jako číslo), locality, address (ulice a číslo, pokud jsou v textu, jinak prázdný řetězec).
 Zahrň jen nabídky s uvedenou cenou. Pokud žádné nejsou, vrať []. Nic nevymýšlej. Odpověz jen JSON."""
 
 
@@ -124,6 +125,7 @@ def search_listings(locality: str, dispo: str, kind: str = "rent") -> tuple[list
             "area_m2": area,
             "price": price,
             "locality": str(row.get("locality") or locality)[:120],
+            "address": str(row.get("address") or "")[:300],
         })
     return out, ""
 

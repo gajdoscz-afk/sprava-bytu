@@ -27,6 +27,7 @@ from . import benchmark as bm
 from . import documents
 from . import models as m
 from . import news as nw
+from . import geo as gx
 from . import schemas as s
 from .db import Base, engine, get_db
 
@@ -78,6 +79,12 @@ async def lifespan(_app: FastAPI):
     Base.metadata.create_all(engine)
     with engine.begin() as conn:  # create_all nové sloupce do existujících tabulek nepřidá
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS area_m2 NUMERIC(8,2)"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS valuation_radius_km DOUBLE PRECISION NOT NULL DEFAULT 1.0"))
+        conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS address VARCHAR(300) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -142,7 +149,8 @@ def run_benchmark_refresh() -> dict:
                         continue
                     known.add(it["url"])
                     db.add(m.Listing(kind=kind, locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
-                                     price=it["price"], url=it["url"], title=it["title"], source="web"))
+                                     price=it["price"], url=it["url"], title=it["title"], source="web",
+                                     address=it.get("address", "")))
                     done["new"] += 1
                 db.commit()
                 # Snímek mediánu z nabídek, které v databázi jsou
@@ -156,6 +164,10 @@ def run_benchmark_refresh() -> dict:
                         median_price=Decimal(str(round(statistics.median([float(l.price) for l in same]), 2))),
                     ))
                 db.commit()
+    try:
+        ensure_geo()
+    except Exception as e:
+        print(f"[geo] doplnění souřadnic selhalo: {e}", flush=True)
     print(f"[benchmark] hotovo: {done}", flush=True)
     try:
         snapshot_portfolio_now()
@@ -187,18 +199,42 @@ def _snapshot_growth(db: Session, kind: str, dispo: str) -> tuple[float | None, 
 
 
 def portfolio_values(db: Session) -> list[dict]:
-    """Hodnota každého bytu: odhad z nabídek prodeje, jinak pořizovací cena. Bez obojího je hodnota None."""
+    """Hodnota každého bytu z podobných nabídek prodeje v okruhu kolem adresy. Pořizovací cena se nepoužívá."""
     sales = db.scalars(select(m.Listing).where(m.Listing.kind == "sale")).all()
     rows = []
     for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
-        value, basis = None, ""
-        es = bm.estimate(f.dispo, f.area_m2, sales) if f.dispo else None
-        if es:
-            value, basis = es["estimate"], f"odhad z nabídek, spolehlivost {es['confidence']}"
-        elif f.acquisition and f.acquisition.price:
-            value, basis = float(f.acquisition.price), "pořizovací cena"
-        rows.append({"id": f.id, "addr": f.addr, "value": value, "basis": basis})
+        v = gx.valuation(f.lat, f.lon, f.dispo, f.area_m2, f.valuation_radius_km or gx.DEFAULT_RADIUS_KM, sales)
+        rows.append({"id": f.id, "addr": f.addr, **v})
     return rows
+
+
+def ensure_geo(limit: int = 200) -> None:
+    """Doplní souřadnice bytům a nabídkám, které je ještě nemají. Nominatim chce max. 1 dotaz za sekundu (hlídá geo.geocode)."""
+    with Session(engine) as db:
+        for f in db.scalars(select(m.Flat).where(m.Flat.lat.is_(None)).limit(limit)).all():
+            if f.addr:
+                xy = gx.geocode(gx.flat_query(f.addr, f.zip))
+                if xy:
+                    f.lat, f.lon = xy
+                    db.commit()
+        for l in db.scalars(select(m.Listing).where(m.Listing.lat.is_(None), m.Listing.address != "").limit(limit)).all():
+            xy = gx.geocode(gx.listing_query(l.address, l.locality))
+            if xy:
+                l.lat, l.lon = xy
+                db.commit()
+
+
+def geo_later() -> None:
+    """Souřadnice doplní na pozadí, aby se uložení nezdrželo."""
+    threading.Thread(target=lambda: ensure_geo(), daemon=True).start()
+
+
+@app.put("/flats/{flat_id}/valuation")
+def set_valuation_radius(flat_id: int, body: s.ValuationIn, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    f.valuation_radius_km = body.radius_km
+    db.commit()
+    return {"ok": True, "radius_km": body.radius_km}
 
 
 def snapshot_portfolio_now() -> None:
@@ -373,6 +409,8 @@ def flat_out(f: m.Flat) -> dict:
 
 
 def apply_flat(f: m.Flat, data: s.FlatIn) -> None:
+    if (f.addr, f.zip) != (data.addr, data.zip):
+        f.lat = f.lon = None  # změnila se adresa, souřadnice se zjistí znovu
     f.addr = data.addr
     f.dispo, f.floor, f.zip, f.owner, f.bank_acc = data.dispo, data.floor, data.zip, data.owner, data.bank_acc
     if "area_m2" in data.model_fields_set:
@@ -403,6 +441,7 @@ def create_flat(data: s.FlatIn, db: Session = Depends(get_db)):
     db.flush()
     rematch_all(db)
     db.commit()
+    geo_later()
     return flat_out(f)
 
 
@@ -419,6 +458,7 @@ def update_flat(flat_id: int, data: s.FlatIn, db: Session = Depends(get_db)):
     db.flush()
     rematch_all(db)
     db.commit()
+    geo_later()
     return flat_out(f)
 
 
@@ -584,7 +624,8 @@ def search_benchmark(flat_id: int, kind: str = "rent", db: Session = Depends(get
             continue
         known.add(it["url"])
         db.add(m.Listing(kind=kind, locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
-                         price=it["price"], url=it["url"], title=it["title"], source="web"))
+                         price=it["price"], url=it["url"], title=it["title"], source="web",
+                         address=it.get("address", "")))
         new += 1
     db.commit()
     return {"found": len(found), "new": new, "note": note}
@@ -593,9 +634,11 @@ def search_benchmark(flat_id: int, kind: str = "rent", db: Session = Depends(get
 @app.post("/benchmark/listings", status_code=201)
 def add_listing(body: s.ListingIn, db: Session = Depends(get_db)):
     l = m.Listing(kind=body.kind, locality=body.locality or bm.DEFAULT_LOCALITY, dispo=body.dispo,
-                  area_m2=body.area_m2, price=money(body.price), url=body.url, title=body.title, source="ručně")
+                  area_m2=body.area_m2, price=money(body.price), url=body.url, title=body.title, source="ručně",
+                  address=body.address)
     db.add(l)
     db.commit()
+    geo_later()
     return listing_out(l)
 
 

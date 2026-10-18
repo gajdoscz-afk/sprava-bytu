@@ -63,6 +63,7 @@ class ListingIn(BaseModel):
     url: str = Field(default="", max_length=500)
     title: str = Field(default="", max_length=300)
     locality: str = Field(default="", max_length=120)
+    address: str = Field(default="", max_length=300)
 
 
 class AcquisitionIn(BaseModel):
@@ -83,3 +84,7 @@ class DocumentUpdate(BaseModel):
     # flat_id se bere jen, když ho klient poslal (null znamená odebrat byt)
     flat_id: int | None = None
     doc_type: str | None = None
+
+
+class ValuationIn(BaseModel):
+    radius_km: float = Field(ge=0.1, le=20)

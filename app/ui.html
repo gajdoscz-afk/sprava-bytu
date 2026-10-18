@@ -729,6 +729,21 @@ function portWidget(){
  const ch=PORT.change_1m_pct;
  return `<div class="pwidget" onclick="go('value')" role="button" title="Otevřít přehled hodnoty"><div class="pl">Hodnota portfolia</div><div class="pv">${kc(PORT.total)}</div>${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${pctS(ch)} za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže za měsíc od prvního snímku</div>'}</div>`;
 }
+function valDetails(P){
+ const rows=P.flats.map(f=>{
+  const opts=[0.5,1,2,3,5,10].map(r=>`<option value="${r}" ${Math.abs(f.radius_km-r)<0.001?'selected':''}>${String(r).replace('.',',')} km</option>`).join('');
+  const head=`<div class="row"><div><b>${esc(f.addr)}</b><div class="small mut">${f.value!=null?`${kc(f.value)} · spolehlivost ${esc(f.confidence)} · ${f.n} nabídek · ${esc(f.basis)}`:esc(f.reason)}</div></div>
+   <label class="small mut">okruh <select onchange="setRadius(${f.id},this.value)">${opts}</select></label></div>`;
+  const comps=(f.comps||[]).map(c=>`<div class="line small"><span><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title||c.url)}</a><span class="mut"> · ${c.area_m2!=null?String(c.area_m2).replace('.',',')+' m² · ':''}${String(c.dist_km).replace('.',',')} km</span></span><span>${kc(c.price)}</span></div>`).join('');
+  return `<div class="card">${head}${comps?`<div style="margin-top:8px">${comps}</div>`:''}</div>`;
+ }).join('');
+ return `<h2>Podklady k odhadu</h2>${rows||'<div class="card mut">Zatím nejsou žádné byty.</div>'}
+ <p class="mut small">Srovnávají se nabídky prodeje se stejnou dispozicí v okruhu od adresy bytu. Nabídky bez adresy se nezapočítají. Souřadnice se doplňují na pozadí, pokud byt chybí, obnovte stránku za chvíli.</p>`;
+}
+async function setRadius(id,v){
+ try{ await api(`/flats/${id}/valuation`,'PUT',{radius_km:parseFloat(v)}); await loadPortfolio(); render() }
+ catch(e){ toast(e.message) }
+}
 function valueTab(){
  if(!PORT){
   if(!PORT_LOADING) loadPortfolio().then(render);
@@ -747,7 +762,7 @@ function valueTab(){
  const ch=P.change_1m, pct=P.change_1m_pct;
  const hist=P.history.slice(-12).reverse().map(h=>`<div class="line"><span class="mut small">${dmy(h.date)}</span><span>${kc(h.total)}</span></div>`).join('');
  return `<h1>Hodnota portfolia</h1>
- <p class="mut small">Součet odhadů bytů. Odhad vychází z nabídek prodeje se stejnou dispozicí, jinak je to pořizovací cena.</p>
+ <p class="mut small">Součet odhadů z podobných nabídek prodeje v okruhu kolem adresy bytu. Pořizovací cena se nepoužívá.</p>
  <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
  <div class="pwidget fixed">
   <div class="pl">Aktuální hodnota portfolia</div>
@@ -755,6 +770,7 @@ function valueTab(){
   ${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${kc(Math.abs(ch))} (${pctS(pct)}) za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže, až bude snímek starý měsíc</div>'}
   ${P.without_value?`<div class="pc" style="margin-top:4px">Bez hodnoty: ${P.without_value} byt(y)</div>`:''}
  </div>
+ ${valDetails(P)}
  <div class="card"><label class="row" style="cursor:pointer"><span>Zobrazovat hodnotu na hlavní stránce</span><input type="checkbox" ${showValue()?'checked':''} onchange="setShowValue(this.checked);render()"></label></div>
  <h2>Historie</h2>
  <div class="card">${hist||'<div class="mut small">Zatím žádný snímek. Ukládá se při každém týdenním hledání, nejvýš jeden za den.</div>'}</div>`;
@@ -847,6 +863,7 @@ async function searchBench(fid,kind='rent'){
 function addListingForm(){
  modal(`<div class="sheetHead"><h2>Nová nabídka</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Odkaz na inzerát</label><input id="lu" placeholder="https://…">
+ <label>Adresa (ulice a číslo, kvůli okolí bytu)</label><input id="lad" placeholder="Sibiřská 375, Ústí nad Labem">
  <div class="grid2"><div><label>Dispozice</label><input id="ld" placeholder="2+kk"></div><div><label>Plocha (m²)</label><input id="la" type="number" min="0" step="0.01"></div></div>
  <label>Typ</label><select id="lk"><option value="rent">Nájem</option><option value="sale">Prodej</option></select>
  <label>Cena (Kč; u nájmu měsíční, bez záloh)</label><input id="lp" type="number" min="1" step="1">
@@ -856,7 +873,7 @@ async function saveListing(){
  const price=parseFloat(($('#lp').value||'').replace(',','.'));
  if(!(price>0)){toast('Vyplňte nájem');return}
  const areaRaw=($('#la').value||'').replace(',','.').trim();
- try{await api('/benchmark/listings','POST',{kind:$('#lk').value,url:$('#lu').value.trim(),dispo:$('#ld').value.trim(),area_m2:areaRaw===''?null:parseFloat(areaRaw),price});closeModal();toast('Uloženo');BENCH=null;await loadBench();render()}
+ try{await api('/benchmark/listings','POST',{kind:$('#lk').value,url:$('#lu').value.trim(),address:$('#lad').value.trim(),dispo:$('#ld').value.trim(),area_m2:areaRaw===''?null:parseFloat(areaRaw),price});closeModal();toast('Uloženo');BENCH=null;await loadBench();render()}
  catch(e){toast(e.message)}
 }
 async function delListing(id){
