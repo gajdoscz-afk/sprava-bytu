@@ -53,6 +53,17 @@ class BankAssignIn(BaseModel):
     flat_id: int | None = None
 
 
+class ListingIn(BaseModel):
+    """Srovnatelná nabídka zadaná ručně."""
+
+    dispo: str = Field(default="", max_length=20)
+    area_m2: Decimal | None = Field(default=None, ge=0)
+    price: Decimal = Field(gt=0)
+    url: str = Field(default="", max_length=500)
+    title: str = Field(default="", max_length=300)
+    locality: str = Field(default="", max_length=120)
+
+
 class AcquisitionIn(BaseModel):
     acquired_on: date | None = None
     price: Decimal | None = Field(default=None, ge=0)

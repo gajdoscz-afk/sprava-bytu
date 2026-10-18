@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from . import bank
+from . import benchmark as bm
 from . import documents
 from . import models as m
 from . import schemas as s
@@ -233,6 +234,75 @@ def merge_flats(flat_id: int, other_id: int, db: Session = Depends(get_db)):
     db.delete(get_flat(db, other_id))
     db.commit()
     return flat_out(get_flat(db, flat_id))
+
+
+# ---------- Price Benchmark ----------
+
+def listing_out(l: m.Listing) -> dict:
+    return {
+        "id": l.id, "kind": l.kind, "locality": l.locality, "dispo": l.dispo,
+        "area_m2": float(l.area_m2) if l.area_m2 is not None else None,
+        "price": float(l.price), "url": l.url, "title": l.title, "source": l.source,
+    }
+
+
+@app.get("/benchmark")
+def benchmark_overview(db: Session = Depends(get_db)):
+    rents = db.scalars(select(m.Listing).where(m.Listing.kind == "rent")).all()
+    flats = []
+    for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
+        cur = f.leases[-1].rent if f.leases else None
+        e = bm.estimate(f.dispo, f.area_m2, rents)
+        sug = bm.suggest_rent(cur, e["estimate"]) if e else None
+        flats.append({
+            "id": f.id, "addr": f.addr, "dispo": f.dispo,
+            "area_m2": float(f.area_m2) if f.area_m2 is not None else None,
+            "current_rent": float(cur) if cur is not None else None,
+            "estimate": e,
+            "diff": float(cur) - e["estimate"] if (cur is not None and e) else None,
+            "suggested_rent": float(sug) if sug is not None else None,
+        })
+    listings = sorted(rents, key=lambda l: l.found_at, reverse=True)[:300]
+    return {"min_diff": float(bm.MIN_DIFF_KC), "flats": flats, "listings": [listing_out(l) for l in listings]}
+
+
+@app.post("/flats/{flat_id}/benchmark/search")
+def search_benchmark(flat_id: int, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    try:
+        found = bm.search_listings(bm.DEFAULT_LOCALITY, f.dispo)
+    except bm.SearchError as e:
+        raise HTTPException(502, str(e))
+    known = set(db.scalars(select(m.Listing.url)).all())
+    new = 0
+    for it in found:
+        if it["url"] in known:
+            continue
+        known.add(it["url"])
+        db.add(m.Listing(kind="rent", locality=it["locality"], dispo=it["dispo"], area_m2=it["area_m2"],
+                         price=it["price"], url=it["url"], title=it["title"], source="web"))
+        new += 1
+    db.commit()
+    return {"found": len(found), "new": new}
+
+
+@app.post("/benchmark/listings", status_code=201)
+def add_listing(body: s.ListingIn, db: Session = Depends(get_db)):
+    l = m.Listing(kind="rent", locality=body.locality or bm.DEFAULT_LOCALITY, dispo=body.dispo,
+                  area_m2=body.area_m2, price=money(body.price), url=body.url, title=body.title, source="ručně")
+    db.add(l)
+    db.commit()
+    return listing_out(l)
+
+
+@app.delete("/benchmark/listings/{listing_id}", status_code=204)
+def delete_listing(listing_id: int, db: Session = Depends(get_db)):
+    l = db.get(m.Listing, listing_id)
+    if l is None:
+        raise HTTPException(404, "Nabídka nenalezena")
+    db.delete(l)
+    db.commit()
+    return Response(status_code=204)
 
 
 # ---------- pořízení bytu ----------

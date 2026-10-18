@@ -79,6 +79,7 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
+<button data-t="bench" onclick="go('bench')">Benchmark</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
@@ -147,7 +148,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='mail'?mailTab():historyTab();
+ m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='mail'?mailTab():historyTab();
 }
 
 // ---------- přehled ----------
@@ -612,6 +613,65 @@ function inboxCard(d){
  ${d.note?`<button class="btn sm sec" onclick="classifyDoc(${d.id})">Přečíst znovu</button>`:''}
  <button class="btn sm danger" onclick="deleteDoc(${d.id})">Smazat</button></div></div>`;
 }
+// Price Benchmark: odhad tržního nájmu, spolehlivost a návrh nového nájmu
+let BENCH=null;
+async function loadBench(){BENCH=await api('/benchmark')}
+const kcOrDash=v=>v==null?'—':kc(v);
+const CONF_CLASS={'vysoká':'ok','střední':'','nízká':'warn'};
+function benchTab(){
+ if(!BENCH){loadBench().then(render).catch(e=>toast(e.message));return '<p class="mut">Načítám…</p>'}
+ const rows=BENCH.flats.map(b=>{
+  const e=b.estimate;
+  const conf=e?`<span class="tag ${CONF_CLASS[e.confidence]||''}">${e.confidence}</span>`:'<span class="tag warn">málo dat</span>';
+  const range=e?`${kc(e.low)} – ${kc(e.high)}`:'—';
+  const diffTxt=b.diff==null?'—':(b.diff<0?`o ${kc(-b.diff)} pod odhadem`:`o ${kc(b.diff)} nad odhadem`);
+  const sug=b.suggested_rent!=null?`<div class="bad small">Navrhuju nájem <b>${kc(b.suggested_rent)}</b> (o více než ${kc(BENCH.min_diff)} pod odhadem)</div>`:'';
+  return `<div class="card">
+   <div class="row"><div><b>${esc(b.addr)}</b><div class="mut small">${esc(b.dispo)||'bez dispozice'} · ${b.area_m2!=null?String(b.area_m2).replace('.',',')+' m²':'plocha neznámá'}</div></div>${conf}</div>
+   <div class="mini">
+    <div><span>Nájem teď</span><b>${kcOrDash(b.current_rent)}</b></div>
+    <div><span>Odhad tržního nájmu</span><b>${e?kc(e.estimate):'—'}</b></div>
+    <div><span>Rozpětí</span><b>${range}</b></div>
+    <div><span>Srovnatelných nabídek</span><b>${e?e.n:0}</b></div>
+   </div>
+   <p class="small mut">${e?`Podle: ${e.basis}. Nájem je ${diffTxt}.`:'Zatím nejsou srovnatelné nabídky se stejnou dispozicí.'}</p>
+   ${sug}
+   <div class="btns"><button class="btn sec sm" onclick="searchBench(${b.id})">Hledat nabídky na webu</button></div>
+  </div>`;
+ }).join('');
+ const lst=BENCH.listings.map(l=>`<div class="line"><span>${l.url?`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title||l.url)}</a>`:esc(l.title||'nabídka')}<span class="mut small"> · ${esc(l.dispo)||'—'}${l.area_m2!=null?' · '+String(l.area_m2).replace('.',',')+' m²':''} · ${l.source}</span></span><span>${kc(l.price)} <button class="link small" onclick="delListing(${l.id})">smazat</button></span></div>`).join('');
+ return `<div class="row"><h1>Benchmark nájmů</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addListingForm()">+ Přidat nabídku</button><button class="btn sm sec" onclick="BENCH=null;render()">↻ Obnovit</button></div></div>
+ <p class="mut small">Odhad vychází z nabídek se stejnou dispozicí. Pokud znám plochu bytu, počítá se cena za m². Návrh nájmu se zobrazí, jen když je nájem o více než ${kc(BENCH.min_diff)} pod odhadem.</p>
+ ${rows||'<div class="card mut">Zatím nejsou žádné byty.</div>'}
+ <h2>Nabídky na trhu (${BENCH.listings.length})</h2>
+ <div class="card">${lst||'<div class="mut small">Zatím žádné nabídky. Najděte je na webu u konkrétního bytu, nebo je přidejte ručně.</div>'}</div>`;
+}
+async function searchBench(fid){
+ progress('Hledám nabídky na webu… to může trvat minutu');
+ try{const r=await api(`/flats/${fid}/benchmark/search`,'POST');toast(`Nalezeno ${r.found}, nových ${r.new}`);BENCH=null;await loadBench();render()}
+ catch(e){toast(e.message)}
+ finally{progress('')}
+}
+function addListingForm(){
+ modal(`<div class="sheetHead"><h2>Nová nabídka</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <label>Odkaz na inzerát</label><input id="lu" placeholder="https://…">
+ <div class="grid2"><div><label>Dispozice</label><input id="ld" placeholder="2+kk"></div><div><label>Plocha (m²)</label><input id="la" type="number" min="0" step="0.01"></div></div>
+ <label>Měsíční nájem (Kč, bez záloh)</label><input id="lp" type="number" min="1" step="1">
+ <div class="btns"><button class="btn" onclick="saveListing()">Uložit</button></div>`);
+}
+async function saveListing(){
+ const price=parseFloat(($('#lp').value||'').replace(',','.'));
+ if(!(price>0)){toast('Vyplňte nájem');return}
+ const areaRaw=($('#la').value||'').replace(',','.').trim();
+ try{await api('/benchmark/listings','POST',{url:$('#lu').value.trim(),dispo:$('#ld').value.trim(),area_m2:areaRaw===''?null:parseFloat(areaRaw),price});closeModal();toast('Uloženo');BENCH=null;await loadBench();render()}
+ catch(e){toast(e.message)}
+}
+async function delListing(id){
+ if(!confirm('Smazat nabídku?'))return;
+ try{await api(`/benchmark/listings/${id}`,'DELETE');BENCH=null;await loadBench();render()}
+ catch(e){toast(e.message)}
+}
+
 // Skupiny dokumentů: pořadí tady je i pořadí na obrazovce
 const DOC_GROUPS=[
  ['Smlouvy a dodatky',['smlouva','dodatek','kupni_smlouva'],true],
