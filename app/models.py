@@ -32,6 +32,7 @@ class Flat(Base):
     statements: Mapped[list["Statement"]] = relationship(
         back_populates="flat", cascade="all, delete-orphan", order_by="Statement.year"
     )
+    costs: Mapped[list["FlatCost"]] = relationship(cascade="all, delete-orphan", order_by="FlatCost.id")
 
 
 class Lease(Base):
@@ -137,3 +138,14 @@ class FlatAlias(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
     alias: Mapped[str] = mapped_column(String(200))
+
+
+class FlatCost(Base):
+    """Měsíční platba, kterou platíte vy (např. záloha SVJ na teplo). Nájemníkovi se nepřeúčtuje."""
+
+    __tablename__ = "flat_costs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)

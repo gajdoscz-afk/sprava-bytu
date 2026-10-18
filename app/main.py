@@ -110,6 +110,7 @@ def flat_out(f: m.Flat) -> dict:
         },
         "leases": [lease_out(l) for l in f.leases],
         "statements": [statement_out(st) for st in f.statements],
+        "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount)} for c in f.costs],
     }
 
 
@@ -189,6 +190,26 @@ def merge_flats(flat_id: int, other_id: int, db: Session = Depends(get_db)):
 
     # Po přesunu už druhý byt nemá žádné napojené záznamy, takže ho lze smazat
     db.delete(get_flat(db, other_id))
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
+
+
+# ---------- platby, které platíte vy (SVJ) ----------
+
+@app.post("/flats/{flat_id}/costs", status_code=201)
+def add_cost(flat_id: int, data: s.CostIn, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    db.add(m.FlatCost(flat_id=f.id, name=data.name, amount=money(data.amount)))
+    db.commit()
+    return flat_out(f)
+
+
+@app.delete("/flats/{flat_id}/costs/{cost_id}")
+def delete_cost(flat_id: int, cost_id: int, db: Session = Depends(get_db)):
+    c = db.get(m.FlatCost, cost_id)
+    if c is None or c.flat_id != flat_id:
+        raise HTTPException(404, "Položka nenalezena")
+    db.delete(c)
     db.commit()
     return flat_out(get_flat(db, flat_id))
 
