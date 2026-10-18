@@ -657,16 +657,25 @@ async function shrink(file){
  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
  return new File([blob],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});
 }
+// Průběh nahrávání: plovoucí lišta dole, vidět na každé obrazovce (prázdný text ji skryje)
+function progress(t){
+ let b=$('#upBar');
+ if(!t){if(b)b.remove();return}
+ if(!b){b=document.createElement('div');b.id='upBar';
+  b.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:92vw;background:#2f5d50;color:#fff;padding:10px 16px;border-radius:10px;z-index:99;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.25)';
+  document.body.appendChild(b)}
+ b.textContent=t;
+}
 async function uploadDocs(input,flatId){
  const all=[...input.files];
  const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
  const skipped=all.length-files.length;
  input.value='';
  if(!files.length){toast('Žádný podporovaný soubor (PDF nebo obrázek)');return}
- const box=$('#up');let ok=0,fail=0;
+ let ok=0,fail=0;
  // posíláme po jednom souboru, ať je vidět průběh a jeden pomalý soubor nic nezastaví
  for(let i=0;i<files.length;i++){
-  box.textContent=`Nahrávám a čtu ${i+1} z ${files.length}: ${files[i].name}`;
+  progress(`Nahrávám a čtu ${i+1} z ${files.length}: ${files[i].name}`);
   try{
    const fd=new FormData();
    fd.append('files',await shrink(files[i]).catch(()=>files[i]));
@@ -676,7 +685,7 @@ async function uploadDocs(input,flatId){
    ok++;
   }catch(e){fail++;toast(files[i].name+': '+e.message)}
  }
- box.textContent='';
+ progress('');
  toast(`Nahráno ${ok}${fail?', chyb '+fail:''}${skipped?', přeskočeno '+skipped:''}`);
  await reload();render();
 }
