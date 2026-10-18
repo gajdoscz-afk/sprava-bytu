@@ -591,7 +591,16 @@ def benchmark_overview(db: Session = Depends(get_db)):
         cur = f.leases[-1].rent if f.leases else None
         e = bm.estimate(f.dispo, f.area_m2, rents)
         sug = bm.suggest_rent(cur, e["estimate"]) if e else None
-        es = bm.estimate(f.dispo, f.area_m2, sales)
+        # Prodejní odhad je stejný jako hodnota v portfoliu: podobné nabídky v okruhu kolem adresy
+        v = gx.valuation(f.lat, f.lon, f.dispo, f.area_m2, f.valuation_radius_km or gx.DEFAULT_RADIUS_KM, sales)
+        es = None
+        if v["value"] is not None:
+            es = {
+                "estimate": v["value"],
+                "per_m2": round(v["value"] / float(f.area_m2)) if f.area_m2 else None,
+                "n": v["n"], "confidence": v["confidence"], "basis": v["basis"],
+                "radius_km": v["radius_km"], "comps": v["comps"], "low": None, "high": None,
+            }
         g1, g12 = _snapshot_growth(db, "sale", f.dispo) if f.dispo else (None, None)
         if es is not None:
             es["growth_1m"], es["growth_12m"] = g1, g12
@@ -603,6 +612,7 @@ def benchmark_overview(db: Session = Depends(get_db)):
             "diff": float(cur) - e["estimate"] if (cur is not None and e) else None,
             "suggested_rent": float(sug) if sug is not None else None,
             "sale": es,
+            "sale_reason": v["reason"],
         })
     listings = sorted(all_listings, key=lambda l: l.found_at, reverse=True)[:300]
     return {"min_diff": float(bm.MIN_DIFF_KC), "flats": flats, "listings": [listing_out(l) for l in listings]}

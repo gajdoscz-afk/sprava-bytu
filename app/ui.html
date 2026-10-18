@@ -677,7 +677,7 @@ function saleBlock(b){
    <div><span>Růst za měsíc</span><b>${pctTxt(s&&s.growth_1m)}</b></div>
    <div><span>Růst za rok</span><b>${pctTxt(s&&s.growth_12m)}</b></div>
   </div>
-  <p class="small mut">${s?`Podle ${s.n} nabídek prodeje, ${s.basis}. Růst vzniká z týdenních snímků, první údaje budou za měsíc.`:'Zatím žádné nabídky prodeje pro tuto dispozici.'}</p>
+  <p class="small mut">${s?`Podle ${s.n} podobných nabídek prodeje v okruhu ${String(s.radius_km).replace('.',',')} km, ${s.basis}. Růst vzniká z týdenních snímků, první údaje budou za měsíc.`:esc(b.sale_reason||'Zatím žádné nabídky prodeje pro tuto dispozici.')}</p>
   <div class="btns"><button class="btn sec sm" onclick="searchBench(${b.id},'sale')">Hledat prodej na webu</button></div>
  </div>`;
 }
