@@ -201,7 +201,7 @@ function flatDetail(){
    <div><span>Kauce</span><b>${kc(l.kauce)}</b></div>
    <div><span>Účet nájemce</span><b>${esc(f.bank.acc)||'—'}</b></div>
   </div>`:''}
-  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button></div>
+  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
@@ -271,6 +271,21 @@ async function saveLease(fid){
  $('#la').value.split('\n').forEach(line=>{const i=line.lastIndexOf(':');if(i>0){const v=parseFloat(line.slice(i+1).replace(/\s/g,'').replace(',','.'));if(!isNaN(v))adv[line.slice(0,i).trim()]=v}});
  const body={valid_from:from,valid_to:$('#lt').value||null,rent:+$('#lr').value||0,deposit:+$('#lk').value||0,advances:adv};
  try{await api(`/flats/${fid}/leases`,'POST',body);closeModal();toast('Předpis uložen');await reload();render()}
+ catch(e){toast(e.message)}
+}
+
+function mergeForm(fid){
+ const others=S.flats.filter(x=>x.id!=fid);
+ if(!others.length){toast('Není s čím sloučit');return}
+ modal(`<div class="sheetHead"><h2>Sloučit byty</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <p class="small mut">Dokumenty, předpisy, vyúčtování a historie z vybraného bytu přejdou sem. Vybraný byt se pak smaže. Adresa se uloží jako zápis, který aplikace pozná.</p>
+ <label>Byt, který se sloučí a smaže</label><select id="mg">${others.map(x=>`<option value="${x.id}">${esc(x.addr)}</option>`).join('')}</select>
+ <div class="btns"><button class="btn danger" onclick="doMerge(${fid})">Sloučit</button></div>`);
+}
+async function doMerge(fid){
+ const oid=$('#mg').value;
+ if(!confirm('Opravdu sloučit? Vybraný byt zmizí.'))return;
+ try{await api(`/flats/${fid}/merge/${oid}`,'POST');closeModal();toast('Sloučeno');await reload();openFlat(fid)}
  catch(e){toast(e.message)}
 }
 

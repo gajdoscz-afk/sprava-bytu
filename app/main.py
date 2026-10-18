@@ -10,7 +10,7 @@ import mimetypes
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -157,6 +157,40 @@ def delete_flat(flat_id: int, db: Session = Depends(get_db)):
     db.delete(get_flat(db, flat_id))
     db.commit()
     return Response(status_code=204)
+
+
+@app.post("/flats/{flat_id}/merge/{other_id}")
+def merge_flats(flat_id: int, other_id: int, db: Session = Depends(get_db)):
+    """Sloučí byt other_id do flat_id. Dokumenty, předpisy, vyúčtování a historie přejdou na cílový byt, druhý byt se smaže."""
+    if flat_id == other_id:
+        raise HTTPException(400, "Byt nelze sloučit sám se sebou")
+    target = get_flat(db, flat_id)
+    other = get_flat(db, other_id)
+    target_years = set(db.scalars(select(m.Statement.year).where(m.Statement.flat_id == target.id)))
+    other_years = set(db.scalars(select(m.Statement.year).where(m.Statement.flat_id == other.id)))
+    clash = sorted(target_years & other_years)
+    if clash:
+        raise HTTPException(409, f"Oba byty mají vyúčtování za rok {', '.join(map(str, clash))}. Nejdřív jedno z nich smažte.")
+
+    for model in (m.Lease, m.Statement, m.Document, m.Version):
+        db.execute(update(model).where(model.flat_id == other.id).values(flat_id=target.id))
+
+    target_aliases = set(db.scalars(select(m.FlatAlias.alias).where(m.FlatAlias.flat_id == target.id)))
+    for al in db.scalars(select(m.FlatAlias).where(m.FlatAlias.flat_id == other.id)).all():
+        if al.alias in target_aliases:
+            db.delete(al)
+        else:
+            al.flat_id = target.id
+            target_aliases.add(al.alias)
+    other_addr = documents.normalize(other.addr)[:200]
+    if other_addr and other_addr not in target_aliases and other_addr != documents.normalize(target.addr)[:200]:
+        db.add(m.FlatAlias(flat_id=target.id, alias=other_addr))
+    db.commit()
+
+    # Po přesunu už druhý byt nemá žádné napojené záznamy, takže ho lze smazat
+    db.delete(get_flat(db, other_id))
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
 
 
 # ---------- předpisy ----------
