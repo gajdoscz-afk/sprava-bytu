@@ -371,6 +371,24 @@ ${f.owner||'[jméno pronajímatele]'}`;
  <div class="btns"><button class="btn" onclick="openMail()">Otevřít v poště</button><button class="btn sec" onclick="copyMail()">Zkopírovat</button></div>`);
 }
 
+// Telefon do mezinárodního tvaru pro WhatsApp a tel: (9místné české číslo dostane předvolbu 420)
+function phoneIntl(p){
+ let d=(p||'').replace(/\D/g,'');
+ if(d.length===9)d='420'+d;
+ return d;
+}
+// Rychlé akce u bytu: volání, WhatsApp, e-mail nájemníka a mapa adresy
+function contactButtons(f){
+ const ph=phoneIntl(f.tenant.phone), mail=f.tenant.email;
+ const addr=[f.addr,f.zip].filter(Boolean).join(', ');
+ const st='style="text-decoration:none;display:inline-block"';
+ const b=[];
+ if(ph)b.push(`<a class="btn sec sm" ${st} href="tel:+${ph}">Zavolat</a>`,
+              `<a class="btn sec sm" ${st} href="https://wa.me/${ph}" target="_blank" rel="noopener">WhatsApp</a>`);
+ if(mail)b.push(`<a class="btn sec sm" ${st} href="mailto:${esc(mail)}?subject=${encodeURIComponent('Byt '+f.addr)}">Napsat e-mail</a>`);
+ if(addr)b.push(`<a class="btn sec sm" ${st} href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}" target="_blank" rel="noopener">Mapa</a>`);
+ return b.length?`<div class="btns">${b.join('')}</div>`:'';
+}
 function detailsCard(f){
  const rows=[
   ['Adresa a číslo bytu',f.addr],['Dispozice',f.dispo],['Patro',f.floor],['PSČ a město',f.zip],['Plocha (m²)',f.area_m2?String(f.area_m2).replace('.',',')+' m²':''],
@@ -380,6 +398,7 @@ function detailsCard(f){
  const missing=rows.filter(([,v])=>!v).length;
  return `<h2>Údaje o bytu</h2><div class="card">
   <div class="mini">${rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?'':'mut'}">${v?esc(v):'—'}</b></div>`).join('')}</div>
+  ${contactButtons(f)}
   <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p></div>`;
 }
 function acqCard(f){
