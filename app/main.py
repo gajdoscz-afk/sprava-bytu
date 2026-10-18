@@ -6,6 +6,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import mimetypes
+import re
+from collections import defaultdict
+from datetime import date
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
@@ -14,6 +17,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from . import bank
 from . import documents
 from . import models as m
 from . import schemas as s
@@ -437,6 +441,152 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     db.delete(get_document(db, doc_id))
     db.commit()
     return Response(status_code=204)
+
+
+# ---------- výpisy z účtu a ekonomika ----------
+
+@app.post("/bank/import", status_code=201)
+async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Výpis je větší než 15 MB")
+    name = (file.filename or "").lower()
+    try:
+        if name.endswith(".pdf") or file.content_type == "application/pdf":
+            rows = await run_in_threadpool(bank.parse_pdf, data)
+        else:
+            rows = bank.parse_csv(data)
+    except (ValueError, documents.ClassifyError) as e:
+        raise HTTPException(400, str(e))
+
+    flats = db.scalars(select(m.Flat)).all()
+    aliases = db.scalars(select(m.FlatAlias)).all()
+    seen = set(db.scalars(select(m.BankTx.key)))
+    counts: dict[str, int] = {}
+    added = skipped = 0
+    for r in rows:
+        base = bank.tx_key(r)
+        n = counts.get(base, 0)
+        counts[base] = n + 1
+        key = f"{base}#{n}"  # stejná platba dvakrát v jednom výpisu zůstane dvakrát
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        period = r["date"].strftime("%Y-%m")
+        fid, how = bank.auto_match(r, period, flats, aliases)
+        db.add(m.BankTx(
+            key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
+            counterparty=r["counterparty"][:200], note=r["note"], period=period,
+            flat_id=fid, match=how,
+        ))
+        added += 1
+    db.commit()
+    return {"added": added, "skipped": skipped}
+
+
+@app.patch("/bank/{tx_id}")
+def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
+    t = db.get(m.BankTx, tx_id)
+    if t is None:
+        raise HTTPException(404, "Platba nenalezena")
+    if "flat_id" in body.model_fields_set:
+        if body.flat_id is not None:
+            f = get_flat(db, body.flat_id)
+            cp = bank.normalize(t.counterparty)
+            if cp:  # zapamatuje si plátce, aby příště přiřadila sama
+                alias = f"cp:{cp}"[:200]
+                if db.scalar(select(m.FlatAlias).where(m.FlatAlias.flat_id == f.id, m.FlatAlias.alias == alias)) is None:
+                    db.add(m.FlatAlias(flat_id=f.id, alias=alias))
+        t.flat_id = body.flat_id
+        t.match = "ručně" if body.flat_id is not None else "none"
+    db.commit()
+    return {"ok": True}
+
+
+@app.put("/flats/{flat_id}/vs")
+def set_vs(flat_id: int, body: s.VsIn, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    vs = re.sub(r"\D", "", body.vs)
+    if not vs:
+        raise HTTPException(400, "Zadejte variabilní symbol (jen číslice)")
+    alias = f"vs:{vs}"
+    if db.scalar(select(m.FlatAlias).where(m.FlatAlias.alias == alias, m.FlatAlias.flat_id != f.id)) is not None:
+        raise HTTPException(409, "Tento variabilní symbol už má jiný byt")
+    old = db.scalars(select(m.FlatAlias).where(m.FlatAlias.flat_id == f.id, m.FlatAlias.alias.like("vs:%"))).all()
+    same = any(o.alias == alias for o in old)
+    for o in old:
+        if o.alias != alias:
+            db.delete(o)
+    if not same:
+        db.add(m.FlatAlias(flat_id=f.id, alias=alias))
+    db.commit()
+    return {"vs": vs}
+
+
+@app.get("/economics")
+def economics(months: int = 6, db: Session = Depends(get_db)):
+    """Očekávané a přijaté platby po měsících, za každý byt zvlášť, a platby, které zatím nejsou přiřazené."""
+    months = max(1, min(months, 24))
+    today = date.today()
+    periods = []
+    y, mo = today.year, today.month
+    for _ in range(months):
+        periods.append(f"{y:04d}-{mo:02d}")
+        mo -= 1
+        if mo == 0:
+            mo, y = 12, y - 1
+    periods.reverse()
+
+    flats = db.scalars(select(m.Flat).order_by(m.Flat.addr)).all()
+    txs = db.scalars(select(m.BankTx)).all()
+    received: dict[tuple[int, str], Decimal] = defaultdict(lambda: Decimal("0"))
+    unmatched_by: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    for t in txs:
+        if t.flat_id is None:
+            unmatched_by[t.period] += t.amount
+        else:
+            received[(t.flat_id, t.period)] += t.amount
+
+    out = []
+    for p in periods:
+        first, last = bank.month_bounds(p)
+        rows = []
+        exp_total = rec_total = Decimal("0")
+        for f in flats:
+            e = bank.expected_for(f, first, last)
+            r = received.get((f.id, p), Decimal("0"))
+            if e == 0 and r == 0:
+                continue
+            if e == 0:
+                st = "extra"  # platba bez smlouvy, která to pokrývá
+            elif r >= e:
+                st = "paid"
+            elif r > 0:
+                st = "partial"
+            else:
+                st = "unpaid"
+            rows.append({
+                "flat_id": f.id, "addr": f.addr, "tenant": f.tenant_name, "email": f.tenant_email,
+                "expected": float(e), "received": float(r),
+                "missing": float(max(e - r, Decimal("0"))), "status": st,
+            })
+            exp_total += e
+            rec_total += r
+        out.append({
+            "period": p, "expected": float(exp_total), "received": float(rec_total),
+            "unmatched": float(unmatched_by.get(p, Decimal("0"))), "rows": rows,
+        })
+
+    unmatched = sorted((t for t in txs if t.flat_id is None), key=lambda t: t.date, reverse=True)
+    return {
+        "months": out,
+        "unmatched": [
+            {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
+             "counterparty": t.counterparty, "note": t.note, "period": t.period}
+            for t in unmatched[:200]
+        ],
+    }
 
 
 # ---------- záloha ----------

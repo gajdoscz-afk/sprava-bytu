@@ -97,7 +97,7 @@ const TODAY=new Date();
 const years=f=>Object.keys(f.years).map(Number).sort((a,b)=>b-a);
 const flat=id=>S.flats.find(f=>f.id==id);
 
-let S={flats:[],versions:[],docs:[]};
+let S={flats:[],versions:[],docs:[],econ:null};
 let V={tab:'home',flat:null,year:null};
 let pending=null;
 
@@ -125,7 +125,8 @@ function toFlat(f){
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
 }
 async function reload(){
- const [flats,versions,docs]=await Promise.all([api('/flats'),api('/versions'),api('/documents')]);
+ const [flats,versions,docs,econ]=await Promise.all([api('/flats'),api('/versions'),api('/documents'),api('/economics?months=6')]);
+ S.econ=econ;
  S.flats=flats.map(toFlat);
  S.docs=docs;
  S.versions=versions.map(v=>({id:v.id,flat:v.flat_id,name:v.name,action:v.action,old:v.old,new:v.new,
@@ -160,7 +161,7 @@ function notesFor(){
 function home(){
  const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
- return `<h1>Přehled</h1><p class="mut small">Stav k ${fd(TODAY)}</p>
+ return `${econHome()}<h2>Byty a upozornění</h2><p class="mut small">Stav k ${fd(TODAY)}</p>
  <div class="kpis">
   <div class="card"><div class="mut small">Bytů</div><div class="big">${S.flats.length}</div></div>
   <div class="card"><div class="mut small">S nedoplatkem</div><div class="big bad">${debts.length}</div></div>
@@ -218,7 +219,7 @@ function flatDetail(){
    <div><span>Kauce</span><b>${kc(l.kauce)}</b></div>
    <div><span>Účet nájemce</span><b>${esc(f.bank.acc)||'—'}</b></div>
   </div>`:''}
-  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
+  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
 ${svjCard}
@@ -290,6 +291,76 @@ async function saveLease(fid){
  const body={valid_from:from,valid_to:$('#lt').value||null,rent:+$('#lr').value||0,deposit:+$('#lk').value||0,advances:adv};
  try{await api(`/flats/${fid}/leases`,'POST',body);closeModal();toast('Předpis uložen');await reload();render()}
  catch(e){toast(e.message)}
+}
+
+// ---------- ekonomika (úvodní obrazovka) ----------
+const MONTHS=['led','úno','bře','dub','kvě','čvn','čvc','srp','zář','říj','lis','pro'];
+const monthLabel=p=>{const [y,mm]=p.split('-');return MONTHS[+mm-1]+' '+y};
+const STAT={paid:'Zaplaceno',partial:'Částečně',unpaid:'Nezaplaceno',extra:'Bez smlouvy'};
+function econHome(){
+ const e=S.econ;if(!e)return '';
+ const ms=e.months,cur=ms[ms.length-1].period;
+ const head=ms.map(x=>`<th class="r">${monthLabel(x.period)}</th>`).join('');
+ const line=(label,fn,cls='')=>`<tr><td>${label}</td>${ms.map(x=>`<td class="r ${cls}">${fn(x)}</td>`).join('')}</tr>`;
+ const missingOf=x=>x.rows.filter(r=>r.status==='unpaid'||r.status==='partial');
+ const debts=ms.filter(x=>x.period!==cur).map(x=>{
+  const rs=missingOf(x);if(!rs.length)return '';
+  return `<div class="card"><h3>${monthLabel(x.period)}</h3>${rs.map(r=>`<div class="resRow"><div><b>${esc(r.tenant||r.addr)}</b><div class="small mut">${esc(r.addr)} · ${STAT[r.status]}: chybí ${kc(r.missing)}</div></div><button class="btn sm" onclick="reminderDraft(${r.flat_id},'${x.period}',${r.missing})">Připravit upomínku</button></div>`).join('')}</div>`;
+ }).join('');
+ const unm=e.unmatched.length?e.unmatched.map(t=>`<div class="card"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}${t.note?' · '+esc(t.note):''}</div></div></div>
+  <div class="grid2"><div><label>Byt</label><select id="ut${t.id}">${flatOpts(null)}</select></div><div style="align-self:end"><button class="btn sm" onclick="assignTx(${t.id})">Přiřadit</button></div></div></div>`).join(''):'<div class="card mut">Všechny platby z výpisů jsou přiřazené.</div>';
+ return `<div class="row"><h1>Ekonomika</h1>
+  <label style="margin:0;cursor:pointer"><span class="btn sec sm">+ Nahrát výpis (CSV / PDF)</span><input type="file" accept=".csv,.pdf,text/csv,application/pdf" style="display:none" onchange="uploadBank(this)"></label></div>
+ <div id="bk" class="small mut"></div>
+ <p class="mut small">Očekáváno = předpisy (nájem + zálohy) podle smluv. Přišlo = platby z výpisů přiřazené k bytům.</p>
+ <div class="card" style="overflow-x:auto"><table><thead><tr><th></th>${head}</tr></thead><tbody>
+  ${line('Očekáváno',x=>kc(x.expected))}
+  ${line('Přišlo',x=>kc(x.received))}
+  ${line('Rozdíl',x=>(x.received-x.expected>=0?'+':'')+kc(x.received-x.expected),x=>'')}
+  ${line('Nezaplaceno bytů',x=>missingOf(x).length)}
+  ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
+ </tbody></table></div>
+ <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
+ <h2>Platby z výpisu k přiřazení</h2>${unm}
+ <h2>Byty a upozornění</h2>`;
+}
+async function uploadBank(input){
+ const f=input.files[0];input.value='';if(!f)return;
+ const box=$('#bk');box.textContent='Čtu výpis…';
+ const fd=new FormData();fd.append('file',f);
+ try{
+  const r=await fetch('/bank/import',{method:'POST',body:fd});
+  if(!r.ok){let d='Chyba '+r.status;try{d=(await r.json()).detail||d}catch(e){}throw new Error(d)}
+  const j=await r.json();toast(`Přidáno plateb: ${j.added}, už byly: ${j.skipped}`);
+  await reload();render();
+ }catch(e){toast(e.message);box.textContent=''}
+}
+async function assignTx(id){
+ const v=$('#ut'+id).value;if(!v){toast('Vyberte byt');return}
+ try{await api(`/bank/${id}`,'PATCH',{flat_id:+v});toast('Přiřazeno');await reload();render()}
+ catch(e){toast(e.message)}
+}
+async function setVs(fid){
+ const v=prompt('Variabilní symbol pro platby tohoto bytu (jen číslice):','');if(!v)return;
+ try{await api(`/flats/${fid}/vs`,'PUT',{vs:v});toast('Variabilní symbol uložen');await reload();render()}
+ catch(e){toast(e.message)}
+}
+function reminderDraft(fid,period,missing){
+ const f=flat(fid);
+ const subj=`Upomínka: platba za ${monthLabel(period)}, byt ${f.addr}`;
+ const body=`Dobrý den, ${f.tenant.name},
+
+k ${monthLabel(period)} jsme na náš účet nepřijali celou platbu nájmu a záloh. Chybí částka ${kc(missing)}.
+
+Prosíme o doplacení na účet ${f.bank.acc||'[doplňte]'} co nejdříve. Pokud jste platbu už odeslal(a), omluvte tento e-mail.
+
+S pozdravem
+${f.owner||'[jméno pronajímatele]'}`;
+ modal(`<div class="sheetHead"><h2>Upomínka</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <label>E-mail nájemce</label><input id="me" type="email" value="${esc(f.tenant.email)}" placeholder="jmeno@example.cz">
+ <label>Předmět</label><input id="ms" value="${esc(subj)}">
+ <label>Text</label><textarea id="mb" rows="11">${esc(body)}</textarea>
+ <div class="btns"><button class="btn" onclick="openMail()">Otevřít v poště</button><button class="btn sec" onclick="copyMail()">Zkopírovat</button></div>`);
 }
 
 function costForm(fid){

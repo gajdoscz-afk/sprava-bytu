@@ -48,6 +48,14 @@ class ResolveIn(ExtractedIn):
     decisions: dict[str, Literal["replace", "keep"]] = {}
 
 
+class BankAssignIn(BaseModel):
+    flat_id: int | None = None
+
+
+class VsIn(BaseModel):
+    vs: str = Field(min_length=1, max_length=20)
+
+
 class CostIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     amount: Decimal = Field(ge=0)

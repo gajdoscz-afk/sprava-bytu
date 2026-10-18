@@ -101,6 +101,25 @@ def classify(data: bytes, mime: str) -> dict:
     return result
 
 
+def call_claude(blocks: list, prompt: str, max_tokens: int = 4000) -> str:
+    """Obecné volání Claude API: bloky (obrázek nebo PDF) a text. Vrací text odpovědi."""
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        raise ClassifyError("Čtení zatím není zapnuté (chybí ANTHROPIC_API_KEY).")
+    body = {
+        "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": blocks + [{"type": "text", "text": prompt}]}],
+    }
+    headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    try:
+        r = httpx.post("https://api.anthropic.com/v1/messages", headers=headers, json=body, timeout=180)
+        r.raise_for_status()
+        return "".join(c.get("text", "") for c in r.json().get("content", []) if c.get("type") == "text")
+    except httpx.HTTPError as e:
+        raise ClassifyError(f"Čtení selhalo: {e}")
+
+
 def _contains(needle: str, haystack: str) -> bool:
     """Hledá celá slova, takže '375 1' nesedí na '375 12'."""
     return bool(needle) and f" {needle} " in f" {haystack} "

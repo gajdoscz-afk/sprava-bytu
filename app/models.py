@@ -149,3 +149,20 @@ class FlatCost(Base):
     flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+
+
+class BankTx(Base):
+    """Příchozí platba z výpisu účtu. Přiřazení k bytu je buď automatické, nebo ruční."""
+
+    __tablename__ = "bank_txs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), unique=True)  # proti duplicitám při opakovaném importu
+    date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    vs: Mapped[str] = mapped_column(String(20), default="")
+    counterparty: Mapped[str] = mapped_column(String(200), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    period: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM, za který měsíc platba je
+    flat_id: Mapped[int | None] = mapped_column(ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True)
+    match: Mapped[str] = mapped_column(String(20), default="none")  # auto-vs, auto-částka, auto-jméno, ručně, none
