@@ -124,6 +124,7 @@ function toFlat(f){
   leases:f.leases.map(l=>({id:l.id,from:l.valid_from,to:l.valid_to||'',rent:l.rent,kauce:l.deposit,adv:l.advances||{}})),
   svj:(f.svj_costs||[]).map(c=>({id:c.id,name:c.name,amount:c.amount})),
   acq:f.acquisition||null,
+  area_m2:f.area_m2,
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
 }
 async function reload(){
@@ -258,7 +259,7 @@ function flatForm(id){
  modal(`<div class="sheetHead"><h2>${f?'Upravit byt':'Nový byt'}</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Adresa a číslo bytu</label><input id="fa" value="${esc(f?f.addr:'')}" placeholder="Ulice 12/3">
  <div class="grid2"><div><label>Dispozice</label><input id="fd" value="${esc(f?f.dispo:'')}" placeholder="2+kk"></div><div><label>Patro</label><input id="fp" value="${esc(f?f.floor:'')}" placeholder="3. NP"></div></div>
- <label>PSČ a město</label><input id="fz" value="${esc(f?f.zip:'')}">
+ <div class="grid2"><div><label>PSČ a město</label><input id="fz" value="${esc(f?f.zip:'')}"></div><div><label>Plocha (m²)</label><input id="fm" type="number" min="0" step="0.01" value="${f&&f.area_m2!=null?f.area_m2:''}"></div></div>
  <label>Vlastník (pronajímatel)</label><input id="fo" value="${esc(f?f.owner:'')}" placeholder="Michal Gajdoš">
  <label>Nájemce</label><input id="ft" value="${esc(f?f.tenant.name:'')}">
  <label>Další osoby v bytě (čárkou)</label><input id="fx" value="${esc(f?f.tenant.others.join(', '):'')}">
@@ -268,7 +269,8 @@ function flatForm(id){
 }
 async function saveFlat(id){
  const addr=$('#fa').value.trim();if(!addr){toast('Vyplňte adresu');return}
- const body={addr,dispo:$('#fd').value,floor:$('#fp').value,zip:$('#fz').value,owner:$('#fo').value,bank_acc:$('#fb').value,
+ const areaRaw=($('#fm').value||'').replace(',','.').trim();
+ const body={addr,dispo:$('#fd').value,floor:$('#fp').value,zip:$('#fz').value,owner:$('#fo').value,bank_acc:$('#fb').value,area_m2:areaRaw===''?null:parseFloat(areaRaw),
   tenant:{name:$('#ft').value,email:$('#fe').value,phone:$('#fph').value,others:$('#fx').value.split(',').map(s=>s.trim()).filter(Boolean)}};
  try{
   const saved=id?await api(`/flats/${id}`,'PUT',body):await api('/flats','POST',body);
@@ -368,7 +370,7 @@ ${f.owner||'[jméno pronajímatele]'}`;
 
 function detailsCard(f){
  const rows=[
-  ['Adresa a číslo bytu',f.addr],['Dispozice',f.dispo],['Patro',f.floor],['PSČ a město',f.zip],
+  ['Adresa a číslo bytu',f.addr],['Dispozice',f.dispo],['Patro',f.floor],['PSČ a město',f.zip],['Plocha (m²)',f.area_m2?String(f.area_m2).replace('.',',')+' m²':''],
   ['Nájemce',f.tenant.name],['Další osoby v bytě',(f.tenant.others||[]).join(', ')],
   ['E-mail nájemce',f.tenant.email],['Telefon nájemce',f.tenant.phone],['Účet pro platby',f.bank.acc]
  ];

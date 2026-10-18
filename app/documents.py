@@ -43,6 +43,7 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - dispo: dispozice bytu, např. "2+kk", nebo null
 - floor: patro bytu, např. "3. NP", nebo null
 - zip_city: PSČ a město bytu, např. "400 01 Ústí nad Labem", nebo null
+- area_m2: podlahová plocha bytu v m² jako číslo (např. 54.5), nebo null. U výpisu z katastru použij podlahovou plochu jednotky.
 - tenant_email: e-mail nájemníka, nebo null
 - tenant_phone: telefon nájemníka, nebo null
 - tenant_bank_account: číslo účtu, na který nájemník platí, nebo null

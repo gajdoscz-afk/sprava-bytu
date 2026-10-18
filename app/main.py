@@ -13,7 +13,7 @@ from datetime import date
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -44,6 +44,8 @@ def require_auth(creds: HTTPBasicCredentials = Depends(security)) -> None:
 async def lifespan(_app: FastAPI):
     # MVP: tabulky vytvoříme při startu. Až budou změny schématu, přejdeme na Alembic.
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:  # create_all nové sloupce do existujících tabulek nepřidá
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS area_m2 NUMERIC(8,2)"))
     _fix_owners_from_documents()
     yield
 
@@ -121,6 +123,7 @@ def flat_out(f: m.Flat) -> dict:
         "dispo": f.dispo,
         "floor": f.floor,
         "zip": f.zip,
+        "area_m2": float(f.area_m2) if f.area_m2 is not None else None,
         "owner": f.owner,
         "bank_acc": f.bank_acc,
         "tenant": {
@@ -144,6 +147,8 @@ def flat_out(f: m.Flat) -> dict:
 def apply_flat(f: m.Flat, data: s.FlatIn) -> None:
     f.addr = data.addr
     f.dispo, f.floor, f.zip, f.owner, f.bank_acc = data.dispo, data.floor, data.zip, data.owner, data.bank_acc
+    if "area_m2" in data.model_fields_set:
+        f.area_m2 = data.area_m2
     f.tenant_name = data.tenant.name
     f.tenant_email = data.tenant.email
     f.tenant_phone = data.tenant.phone
@@ -399,13 +404,14 @@ FLAT_FIELDS = {
     "dispo": "dispo",
     "floor": "floor",
     "zip_city": "zip",
+    "area_m2": "area_m2",
     "tenant_name": "tenant_name",
     "tenant_email": "tenant_email",
     "tenant_phone": "tenant_phone",
     "tenant_bank_account": "bank_acc",
 }
 FLAT_FIELD_LABELS = {
-    "dispo": "Dispozice", "floor": "Patro", "zip": "PSČ a město",
+    "dispo": "Dispozice", "floor": "Patro", "zip": "PSČ a město", "area_m2": "Plocha (m²)",
     "tenant_name": "Nájemník", "tenant_email": "E-mail nájemníka", "tenant_phone": "Telefon nájemníka",
     "bank_acc": "Účet pro platby",
 }
@@ -423,9 +429,16 @@ def enrich_flat(db: Session, d: m.Document) -> None:
         val = str(ex.get(key) or "").strip()
         if not val or val.lower() in ("null", "none") or getattr(f, attr):
             continue
-        limit = 60 if attr in ("bank_acc", "tenant_phone") else 120
-        val = val[:limit]
-        setattr(f, attr, val)
+        if attr == "area_m2":
+            try:
+                val = str(Decimal(val.replace(",", ".").replace(" ", "")).quantize(Decimal("0.01")))
+            except ArithmeticError:
+                continue
+            setattr(f, attr, Decimal(val))
+        else:
+            limit = 60 if attr in ("bank_acc", "tenant_phone") else 120
+            val = val[:limit]
+            setattr(f, attr, val)
         db.add(m.Version(flat_id=f.id, name=FLAT_FIELD_LABELS[attr], action="doplněno z dokumentu",
                          old=None, new={"value": val, "doc_id": d.id}))
 

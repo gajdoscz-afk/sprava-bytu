@@ -25,6 +25,7 @@ class Flat(Base):
     tenant_email: Mapped[str] = mapped_column(String(200), default="")
     tenant_phone: Mapped[str] = mapped_column(String(60), default="")
     tenant_others: Mapped[str] = mapped_column(Text, default="")  # jména oddělená čárkou
+    area_m2: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)  # podlahová plocha, z dokumentů nebo ručně
 
     leases: Mapped[list["Lease"]] = relationship(
         back_populates="flat", cascade="all, delete-orphan", order_by="Lease.valid_from"
@@ -167,6 +168,23 @@ class BankTx(Base):
     period: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM, za který měsíc platba je
     flat_id: Mapped[int | None] = mapped_column(ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True)
     match: Mapped[str] = mapped_column(String(20), default="none")  # auto-vs, auto-částka, auto-jméno, ručně, none
+
+
+class Listing(Base):
+    """Srovnatelná nabídka na trhu (nájem nebo prodej). Vzniká ručně nebo hledáním na webu."""
+
+    __tablename__ = "listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), default="rent")  # rent | sale
+    locality: Mapped[str] = mapped_column(String(120), default="Ústí nad Labem")
+    dispo: Mapped[str] = mapped_column(String(20), default="")
+    area_m2: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    url: Mapped[str] = mapped_column(String(500), default="")
+    title: Mapped[str] = mapped_column(String(300), default="")
+    source: Mapped[str] = mapped_column(String(40), default="ručně")  # ručně | web
+    found_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class FlatAcquisition(Base):
