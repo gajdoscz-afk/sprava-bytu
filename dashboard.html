@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>StochGrid AOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e1116;
+    --card: #161a22;
+    --card2: #1b2029;
+    --line: #2a313d;
+    --text: #dce0e6;
+    --dim: #828a96;
+    --head: #fad264;
+    --good: #50c878;
+    --bad: #eb5a5a;
+    --warn: #f0b43c;
+    --buy: #5aa0ff;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { padding: 20px 16px 40px; max-width: 1180px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; color: var(--head); letter-spacing: .2px; }
+  h1 span { color: var(--dim); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  #conn { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  #conn.err { color: var(--bad); }
+
+  .inst { background: var(--card); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 18px; overflow: hidden; }
+  .inst-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card2); }
+  .sym { font-size: 18px; font-weight: 600; }
+  .sym small { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; letter-spacing: .3px; }
+  .pill.ok { background: rgba(80,200,120,.14); color: var(--good); }
+  .pill.warn { background: rgba(240,180,60,.14); color: var(--warn); }
+  .pill.bad { background: rgba(235,90,90,.16); color: var(--bad); }
+  .seen { margin-left: auto; font-size: 12px; color: var(--dim); font-family: var(--mono); }
+  .seen.off { color: var(--bad); font-weight: 500; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); }
+  .sec { background: var(--card); padding: 14px 16px; min-width: 0; }
+  .sec h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin: 0 0 10px; font-weight: 500; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13.5px; }
+  .row .k { color: var(--dim); flex-shrink: 0; }
+  .row .v { font-family: var(--mono); font-size: 13px; text-align: right; overflow-wrap: anywhere; }
+  .big { font-family: var(--mono); font-size: 24px; font-weight: 500; margin: 2px 0 6px; }
+  .good { color: var(--good); } .bad { color: var(--bad); } .warn { color: var(--warn); } .dim { color: var(--dim); } .buy { color: var(--buy); }
+
+  .bar { height: 6px; border-radius: 3px; background: var(--card2); overflow: hidden; margin: 6px 0 4px; border: 1px solid var(--line); }
+  .bar i { display: block; height: 100%; border-radius: 3px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: right; color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 4px 0 6px; }
+  th:first-child, td:first-child { text-align: left; }
+  td { text-align: right; padding: 5px 0; border-top: 1px solid var(--line); font-family: var(--mono); }
+  td:first-child { font-family: var(--sans); color: var(--dim); }
+  th + th, td + td { padding-left: 10px; }
+
+  .wide { grid-column: span 3; }
+  .two { grid-column: span 2; }
+  svg.eq { width: 100%; height: 120px; display: block; }
+  .eq-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); font-family: var(--mono); margin-top: 4px; }
+  .empty { padding: 60px 16px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 10px; line-height: 1.6; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr 1fr; }
+    .wide, .two { grid-column: span 2; }
+  }
+  @media (max-width: 600px) {
+    body { padding: 14px 12px 32px; }
+    .grid { grid-template-columns: 1fr; }
+    .wide, .two { grid-column: span 1; }
+    .seen { margin-left: 0; width: 100%; }
+    .hm { display: none; }
+    table { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>StochGrid AOS<span>webový panel</span></h1>
+  <div id="conn">načítám…</div>
+</header>
+<main id="app"></main>
+
+<script>
+const app = document.getElementById("app");
+const conn = document.getElementById("conn");
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = String(text);
+  return e;
+}
+function row(k, v, cls) {
+  const r = el("div", "row");
+  r.append(el("span", "k", k), el("span", "v " + (cls || ""), v));
+  return r;
+}
+function num(x, d = 2) { return (typeof x === "number" && isFinite(x)) ? x.toFixed(d) : "–"; }
+function signed(x, d = 2) { return (typeof x === "number" && isFinite(x)) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d) : "–"; }
+function lvlClass(l) { return l === "ok" ? "good" : l === "warn" ? "warn" : l === "bad" ? "bad" : ""; }
+function ratioClass(used, limit) {
+  if (!limit) return "";
+  if (used >= limit * 0.75) return "bad";
+  if (used >= limit * 0.40) return "warn";
+  return "good";
+}
+function ago(sec) {
+  if (sec < 60) return sec + " s";
+  if (sec < 3600) return Math.floor(sec / 60) + " min";
+  if (sec < 86400) return Math.floor(sec / 3600) + " h";
+  return Math.floor(sec / 86400) + " d";
+}
+
+function sparkline(points, cur) {
+  const wrap = el("div");
+  if (!points || points.length < 2) {
+    wrap.append(el("div", "dim", "Křivka equity se zobrazí po několika aktualizacích."));
+    return wrap;
+  }
+  const W = 600, H = 120, P = 4;
+  const eq = points.map(p => p[1]), bal = points.map(p => p[2]);
+  const all = eq.concat(bal.filter(x => typeof x === "number"));
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
+  const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
+  const x = t => P + (W - 2 * P) * (t - t0) / Math.max(1, t1 - t0);
+  const y = v => P + (H - 2 * P) * (1 - (v - lo) / (hi - lo));
+  const line = (vals) => points.map((p, i) => (i ? "L" : "M") + x(p[0]).toFixed(1) + " " + y(vals[i]).toFixed(1)).join(" ");
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("class", "eq");
+  const up = eq[eq.length - 1] >= eq[0];
+  const area = document.createElementNS(ns, "path");
+  area.setAttribute("d", line(eq) + ` L ${x(t1).toFixed(1)} ${H} L ${x(t0).toFixed(1)} ${H} Z`);
+  area.setAttribute("fill", up ? "rgba(80,200,120,.10)" : "rgba(235,90,90,.10)");
+  const pb = document.createElementNS(ns, "path");
+  pb.setAttribute("d", line(bal));
+  pb.setAttribute("fill", "none");
+  pb.setAttribute("stroke", "#828a96");
+  pb.setAttribute("stroke-width", "1");
+  pb.setAttribute("stroke-dasharray", "4 3");
+  pb.setAttribute("vector-effect", "non-scaling-stroke");
+  const pe = document.createElementNS(ns, "path");
+  pe.setAttribute("d", line(eq));
+  pe.setAttribute("fill", "none");
+  pe.setAttribute("stroke", up ? "#50c878" : "#eb5a5a");
+  pe.setAttribute("stroke-width", "1.6");
+  pe.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.append(area, pb, pe);
+  wrap.append(svg);
+  const meta = el("div", "eq-meta");
+  const fmt = t => new Date(t).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+  meta.append(el("span", "", fmt(t0)), el("span", "", "min " + num(lo) + " · max " + num(hi) + " " + (cur || "")), el("span", "", fmt(t1)));
+  wrap.append(meta);
+  return wrap;
+}
+
+function renderInstance(it) {
+  const s = it.status || {};
+  const acc = s.account || {};
+  const bk = s.basket || {};
+  const cur = acc.currency || "";
+  const card = el("section", "inst");
+
+  // hlavička
+  const head = el("div", "inst-head");
+  const sym = el("div", "sym", s.symbol || it.id);
+  sym.append(el("small", "", (s.tf || "") + (s.version ? "  ·  v" + s.version : "")));
+  head.append(sym);
+  if (it.online) head.append(el("span", "pill " + (s.stateLevel || "ok"), s.state || "?"));
+  else head.append(el("span", "pill bad", "OFFLINE"));
+  const seen = el("span", "seen" + (it.online ? "" : " off"),
+    it.online ? "aktualizováno před " + ago(it.ageSec) : "EA neposílá data " + ago(it.ageSec) + " – zkontrolujte MT4 / VPS");
+  head.append(seen);
+  card.append(head);
+
+  const grid = el("div", "grid");
+
+  // účet
+  const a = el("div", "sec");
+  a.append(el("h2", "", "Účet"));
+  a.append(el("div", "big", num(acc.equity) + " " + cur));
+  a.append(row("Balance", num(acc.balance) + " " + cur));
+  const dd = acc.ddPct || 0, ddl = acc.ddLimit || 0;
+  a.append(row("Ztráta účtu", num(dd) + " %" + (ddl ? "  / limit " + num(ddl, 1) + " %" : ""), ratioClass(dd, ddl)));
+  if (ddl) {
+    const b = el("div", "bar"), i = el("i");
+    i.style.width = Math.min(100, dd / ddl * 100).toFixed(1) + "%";
+    i.style.background = `var(--${ratioClass(dd, ddl) || "good"})`;
+    b.append(i); a.append(b);
+  }
+  const day = acc.dayPct || 0;
+  a.append(row("Dnes vč. otevřených", signed(-day) + " %", day > 0 ? "bad" : "good"));
+  a.append(row("Spread", num(acc.spread, 1) + " p", acc.spreadHigh ? "bad" : ""));
+  grid.append(a);
+
+  // koš
+  const k = el("div", "sec");
+  k.append(el("h2", "", "Otevřený koš"));
+  if (bk.count > 0) {
+    k.append(el("div", "big " + (bk.pl >= 0 ? "good" : "bad"), signed(bk.pl) + " " + cur));
+    k.append(row("Pozice", bk.count + " / " + bk.max + "  " + bk.dir, bk.dir === "BUY" ? "buy" : "bad"));
+    k.append(row("Loty", num(bk.lots)));
+    k.append(row("Průměrná cena", bk.avg || "–"));
+    if (bk.tp) k.append(row("TP koše", bk.tp));
+    if (bk.sl) k.append(row("Hard stop", bk.sl));
+  } else {
+    k.append(el("div", "big dim", "žádný"));
+    k.append(row("Pozice", "0 / " + (bk.max || "–") + " – čeká na signál", "dim"));
+  }
+  grid.append(k);
+
+  // stav a filtry
+  const f = el("div", "sec");
+  f.append(el("h2", "", "Stav a filtry"));
+  f.append(row("Čas SEČ/SELČ", s.cetTime || "–"));
+  f.append(row("Obchodní hodiny", s.hours || "–", s.inHours === false ? "warn" : ""));
+  f.append(row("Zprávy", s.news || "–", s.newsBlocked ? "warn" : ""));
+  f.append(row("Signál", s.signal || "–"));
+  f.append(row("Poslední svíčka", s.lastBar || "–"));
+  f.append(row("Vyhodnocení", s.evalText || "–", lvlClass(s.evalLevel)));
+  f.append(row("Odstup", s.grid || "–"));
+  f.append(row("Úrovně / HardStop", s.levels || "–", s.levelsOver ? "warn" : ""));
+  grid.append(f);
+
+  // zhodnocení
+  const z = el("div", "sec two");
+  z.append(el("h2", "", "Zhodnocení – " + (s.statsScope || "uzavřené obchody")));
+  const t = el("table");
+  const hr = el("tr");
+  [["Období", ""], ["Zisk", ""], ["%", ""], ["Obchodů", ""], ["Ziskových", "hm"]]
+    .forEach(([h, c]) => hr.append(el("th", c, h)));
+  t.append(hr);
+  (s.stats || []).forEach(r => {
+    const tr = el("tr");
+    const c = r.trades ? (r.profit >= 0 ? "good" : "bad") : "dim";
+    tr.append(el("td", "", r.label),
+      el("td", c, signed(r.profit) + " " + cur),
+      el("td", c, signed(r.pct) + " %"),
+      el("td", "", r.trades),
+      el("td", "hm", r.trades ? num(r.winPct, 0) + " %" : "–"));
+    t.append(tr);
+  });
+  z.append(t);
+  grid.append(z);
+
+  // equity
+  const e = el("div", "sec");
+  e.append(el("h2", "", "Equity (od spuštění panelu)"));
+  e.append(sparkline(it.equity, cur));
+  grid.append(e);
+
+  // pozice
+  if ((s.positions || []).length) {
+    const p = el("div", "sec wide");
+    p.append(el("h2", "", "Otevřené pozice"));
+    const pt = el("table");
+    const ph = el("tr");
+    [["Ticket", "hm"], ["Typ", ""], ["Loty", ""], ["Cena", ""], ["SL", "hm"], ["TP", "hm"], ["Zisk", ""]]
+      .forEach(([h, c]) => ph.append(el("th", c, h)));
+    pt.append(ph);
+    s.positions.forEach(o => {
+      const tr = el("tr");
+      tr.append(el("td", "hm", o.ticket),
+        el("td", o.type === "BUY" ? "buy" : "bad", o.type),
+        el("td", "", num(o.lots)),
+        el("td", "", o.price),
+        el("td", "hm", o.sl || "–"),
+        el("td", "hm", o.tp || "–"),
+        el("td", o.profit >= 0 ? "good" : "bad", signed(o.profit) + " " + cur));
+      pt.append(tr);
+    });
+    p.append(pt);
+    grid.append(p);
+  }
+
+  card.append(grid);
+  return card;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    app.replaceChildren();
+    if (!d.instances.length) {
+      const e = el("div", "empty");
+      e.append(el("div", "", "Zatím nepřišla žádná data z MT4."),
+               el("div", "", "Zkontrolujte, že je v EA vyplněná adresa a token a že je adresa povolená ve WebRequest."));
+      app.append(e);
+    } else {
+      d.instances.forEach(it => app.append(renderInstance(it)));
+    }
+    conn.className = "";
+    conn.textContent = "obnoveno " + new Date().toLocaleTimeString("cs-CZ");
+  } catch (err) {
+    conn.className = "err";
+    conn.textContent = "spojení se serverem selhalo – zkouším znovu";
+  }
+}
+refresh();
+setInterval(refresh, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+</script>
+</body>
+</html>

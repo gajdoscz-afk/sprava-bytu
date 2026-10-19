@@ -1,0 +1,13 @@
+{
+  "name": "stochgrid-panel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Webový panel pro StochGrid AOS (MT4)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
