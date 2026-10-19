@@ -109,6 +109,13 @@
   .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--dim); transition: transform .15s, background .15s; }
   .switch input:checked { background: rgba(80,200,120,.25); border-color: rgba(80,200,120,.5); }
   .switch input:checked::after { transform: translateX(18px); background: var(--good); }
+  .share-btn { float: right; font: inherit; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--head); background: none; border: 1px solid rgba(250,210,100,.35); border-radius: 6px; padding: 1px 8px; cursor: pointer; margin-top: -2px; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal-box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; max-width: 420px; width: 100%; max-height: 100%; overflow: auto; }
+  .modal-box img { width: 100%; border-radius: 8px; display: block; }
+  .modal-box .toolbar { margin: 12px 0 0; justify-content: flex-end; }
+  .linkbox { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .linkbox code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
   .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
   .ctl .btn { font-size: 13px; padding: 7px 14px; }
   .ctl-info { font-size: 12px; color: var(--dim); margin-left: 4px; }
@@ -480,9 +487,16 @@ function ddText(r, cur) {
   return "−" + num(r.ddAbs) + " " + cur + (r.ddPct != null ? "  (" + num(r.ddPct) + " %)" : "");
 }
 
-function statCard(title, r, cur) {
+function statCard(title, r, cur, lvl) {
   const c = el("div", "scard");
-  c.append(el("h3", "", title));
+  const h = el("h3", "", title);
+  if (r.trades) {
+    const sb = el("button", "share-btn", "Sdílet");
+    sb.title = "Sdílet jako obrázek";
+    sb.onclick = () => sharePeriod(title, r, lvl);
+    h.append(sb);
+  }
+  c.append(h);
   const cls = r.trades ? (r.net >= 0 ? "good" : "bad") : "dim";
   c.append(el("div", "net " + cls, signed(r.net) + " " + cur));
   c.append(el("div", "pct " + cls, r.pct != null ? signed(r.pct) + " %" : "–"));
@@ -492,6 +506,197 @@ function statCard(title, r, cur) {
   c.append(row("Max DD", r.hasDD ? "−" + num(r.ddAbs) + " " + cur : "–", ddc));
   c.append(row("Max DD %", r.hasDD && r.ddPct != null ? "−" + num(r.ddPct) + " %" : "–", ddc));
   return c;
+}
+
+// ================= Sdílení =================
+const logoImg = new Image(); logoImg.src = "/icon-192.png";
+const SHARE_W = 1080, SHARE_H = 1350;
+const pctTxt = (x) => (typeof x === "number" && isFinite(x)) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(2) + " %" : "–";
+function durTxt(s) { if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min"; if (s < 86400) return (s / 3600).toFixed(1).replace(".", ",") + " h"; return (s / 86400).toFixed(1).replace(".", ",") + " d"; }
+function assetLabel() { return assetSel.options[assetSel.selectedIndex] ? assetSel.options[assetSel.selectedIndex].text : "Všechna aktiva"; }
+
+function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+
+// Společný rámec obrázku: logo, název, podnadpis, velké číslo, 3 boxy, (graf), patička s ©
+function drawCard({ kicker, title, big, bigColor, bigLabel, boxes, bars }) {
+  const c = document.createElement("canvas"); c.width = SHARE_W; c.height = SHARE_H;
+  const g = c.getContext("2d");
+  const grd = g.createLinearGradient(0, 0, 0, SHARE_H); grd.addColorStop(0, "#1b2029"); grd.addColorStop(1, "#0b0d12");
+  g.fillStyle = grd; g.fillRect(0, 0, SHARE_W, SHARE_H);
+  // jemný akcent
+  const glow = g.createRadialGradient(SHARE_W - 120, 140, 10, SHARE_W - 120, 140, 520);
+  glow.addColorStop(0, bigColor === "#eb5a5a" ? "rgba(235,90,90,.16)" : "rgba(80,200,120,.16)"); glow.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = glow; g.fillRect(0, 0, SHARE_W, SHARE_H);
+  const sans = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
+  const mono = '"IBM Plex Mono", ui-monospace, Consolas, monospace';
+  // hlavička
+  if (logoImg.complete && logoImg.naturalWidth) { g.save(); rr(g, 80, 80, 120, 120, 28); g.clip(); g.drawImage(logoImg, 80, 80, 120, 120); g.restore(); }
+  g.fillStyle = "#fad264"; g.font = `600 58px ${sans}`; g.fillText("StochGrid AOS", 232, 136);
+  g.fillStyle = "#828a96"; g.font = `400 32px ${sans}`; g.fillText("Automatický obchodní systém", 232, 184);
+  g.fillStyle = "#2a313d"; g.fillRect(80, 252, SHARE_W - 160, 2);
+  // nadpis
+  g.fillStyle = "#828a96"; g.font = `500 30px ${sans}`; g.fillText(kicker.toUpperCase(), 80, 330);
+  g.fillStyle = "#dce0e6"; g.font = `500 50px ${sans}`; g.fillText(title, 80, 396);
+  // velké číslo
+  g.fillStyle = bigColor; g.font = `500 190px ${mono}`; g.fillText(big, 72, 610);
+  g.fillStyle = "#828a96"; g.font = `400 32px ${sans}`; g.fillText(bigLabel, 82, 664);
+  // boxy
+  const bw = (SHARE_W - 160 - 2 * 24) / 3;
+  boxes.forEach((b, i) => {
+    const x = 80 + i * (bw + 24), y = 730;
+    g.fillStyle = "#161a22"; rr(g, x, y, bw, 170, 18); g.fill();
+    g.strokeStyle = "#2a313d"; g.lineWidth = 2; rr(g, x, y, bw, 170, 18); g.stroke();
+    g.fillStyle = "#828a96"; g.font = `500 26px ${sans}`; g.fillText(b.label.toUpperCase(), x + 26, y + 54);
+    g.fillStyle = b.color || "#dce0e6"; g.font = `500 54px ${mono}`; g.fillText(b.value, x + 26, y + 128);
+  });
+  // sloupcový graf
+  if (bars && bars.length > 1) {
+    const x0 = 80, y0 = 960, w = SHARE_W - 160, h = 200, mid = y0 + h / 2;
+    g.fillStyle = "#2a313d"; g.fillRect(x0, mid, w, 2);
+    const mx = Math.max(0.01, ...bars.map((v) => Math.abs(v || 0)));
+    const step = w / bars.length, bw2 = Math.max(4, step * 0.62);
+    bars.forEach((v, i) => {
+      const hh = Math.max(3, Math.abs(v || 0) / mx * (h / 2 - 6));
+      g.fillStyle = (v || 0) >= 0 ? "#50c878" : "#eb5a5a";
+      rr(g, x0 + i * step + (step - bw2) / 2, (v || 0) >= 0 ? mid - hh : mid + 2, bw2, hh, Math.min(6, bw2 / 2)); g.fill();
+    });
+  }
+  // patička
+  g.fillStyle = "#2a313d"; g.fillRect(80, SHARE_H - 140, SHARE_W - 160, 2);
+  g.fillStyle = "#828a96"; g.font = `400 30px ${sans}`;
+  g.fillText("© 2026 Michal Gajdos", 80, SHARE_H - 78);
+  const dt = new Date().toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" });
+  g.textAlign = "right"; g.fillText(dt, SHARE_W - 80, SHARE_H - 78); g.textAlign = "left";
+  return c;
+}
+
+function openShareModal(canvas, filename, text) {
+  canvas.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const file = new File([blob], filename, { type: "image/png" });
+    const m = el("div", "modal");
+    const box = el("div", "modal-box");
+    const img = document.createElement("img"); img.src = url; img.alt = "Náhled obrázku ke sdílení";
+    const bar = el("div", "toolbar");
+    const close = el("button", "btn ghost", "Zavřít");
+    close.onclick = () => { URL.revokeObjectURL(url); m.remove(); };
+    const dl = el("button", "btn ghost", "Stáhnout");
+    dl.onclick = () => { const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); };
+    bar.append(close, dl);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      const sh = el("button", "btn", "Sdílet…");
+      sh.onclick = async () => { try { await navigator.share({ files: [file], title: "StochGrid AOS", text }); } catch (e) {} };
+      bar.append(sh);
+    }
+    box.append(img, bar);
+    m.append(box);
+    m.onclick = (e) => { if (e.target === m) close.onclick(); };
+    document.body.append(m);
+  }, "image/png");
+}
+
+function periodBars(lvl) {
+  const t = (lastStats && lastStats.tables) || {};
+  if (lvl === "week") return (t.day || []).slice(0, 7).reverse().map((r) => r.pct || 0);
+  if (lvl === "month") { const k = (lastStats.current.month || {}).key; return (t.day || []).filter((r) => r.key.startsWith(k)).reverse().map((r) => r.pct || 0); }
+  if (lvl === "year" || lvl === "total") return (t.month || []).slice().reverse().map((r) => r.pct || 0);
+  return null;
+}
+
+async function sharePeriod(title, r, lvl) {
+  try { await document.fonts.ready; } catch (e) {}
+  const sub = lvl === "total" ? "od spuštění" : keyLabel(r.key, lvl === "day" ? "day" : lvl);
+  const canvas = drawCard({
+    kicker: title + " · " + assetLabel(),
+    title: sub.charAt(0).toUpperCase() + sub.slice(1),
+    big: pctTxt(r.pct), bigColor: (r.pct || 0) >= 0 ? "#50c878" : "#eb5a5a", bigLabel: "zhodnocení účtu",
+    boxes: [
+      { label: "Obchodů", value: String(r.trades) },
+      { label: "Úspěšnost", value: r.winPct != null ? r.winPct.toFixed(0) + " %" : "–", color: (r.winPct || 0) >= 50 ? "#50c878" : "#f0b43c" },
+      { label: "Max DD", value: r.hasDD && r.ddPct != null ? "−" + r.ddPct.toFixed(1) + " %" : "–", color: "#eb5a5a" },
+    ],
+    bars: periodBars(lvl),
+  });
+  openShareModal(canvas, `stochgrid-${lvl}-${r.key}.png`, `StochGrid AOS – ${title.toLowerCase()}: ${pctTxt(r.pct)}`);
+}
+
+async function shareBasket(b) {
+  try { await document.fonts.ready; } catch (e) {}
+  const dt = new Date(b.close * 1000);
+  const canvas = drawCard({
+    kicker: "Uzavřený obchod",
+    title: `${b.sym} · ${b.dir || ""}`.trim(),
+    big: pctTxt(b.pct), bigColor: (b.pct || 0) >= 0 ? "#50c878" : "#eb5a5a",
+    bigLabel: dt.toLocaleString("cs-CZ", { weekday: "long", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }),
+    boxes: [
+      { label: "Pozic", value: String(b.n) },
+      { label: "Doba", value: durTxt(b.close - b.open) },
+      { label: "Výsledek", value: (b.pct || 0) >= 0 ? "zisk" : "ztráta", color: (b.pct || 0) >= 0 ? "#50c878" : "#eb5a5a" },
+    ],
+  });
+  openShareModal(canvas, `stochgrid-obchod-${b.close}.png`, `StochGrid AOS – ${b.sym}: ${pctTxt(b.pct)}`);
+}
+
+function recentSection(d) {
+  const box = el("section", "inst");
+  const head = el("div", "inst-head"); head.append(el("div", "sym", "Poslední obchody")); box.append(head);
+  const wrap = el("div", "sec");
+  const list = d.recent || [];
+  if (!list.length) { wrap.append(el("div", "dim", "Zatím žádné uzavřené obchody.")); box.append(wrap); return box; }
+  const t = el("table"); const hr = el("tr");
+  [["Uzavřeno", ""], ["Trh", ""], ["Směr", "hm"], ["Poz.", "hm"], ["Doba", "hm"], ["Výsledek", ""], ["", ""]].forEach(([h, c]) => hr.append(el("th", c, h)));
+  t.append(hr);
+  list.slice(0, 15).forEach((b) => {
+    const tr = el("tr"); const dt = new Date(b.close * 1000);
+    const btn = el("button", "share-btn", "Sdílet"); btn.style.float = "none"; btn.onclick = () => shareBasket(b);
+    const tdb = el("td"); tdb.append(btn);
+    tr.append(el("td", "", dt.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })),
+      el("td", "", b.sym), el("td", "hm " + (b.dir === "BUY" ? "buy" : "bad"), b.dir || "–"), el("td", "hm", b.n),
+      el("td", "hm", durTxt(b.close - b.open)),
+      el("td", (b.pct || 0) >= 0 ? "good" : "bad", pctTxt(b.pct) + "  (" + signed(b.net) + ")"), tdb);
+    t.append(tr);
+  });
+  wrap.append(t); box.append(wrap);
+  return box;
+}
+
+let shareCfg = null;
+function publicBox(d) {
+  const box = el("section", "inst");
+  const head = el("div", "inst-head"); head.append(el("div", "sym", "Veřejná stránka"));
+  const pill = el("span", "pill warn", "…"); head.append(pill); box.append(head);
+  const wrap = el("div", "sec"); box.append(wrap);
+  const paint = () => {
+    wrap.replaceChildren();
+    const on = shareCfg && shareCfg.enabled;
+    pill.className = "pill " + (on ? "ok" : "warn"); pill.textContent = on ? "zapnuto" : "vypnuto";
+    wrap.append(el("p", "note", "Stránka bez přihlášení pro sociální sítě. Ukazuje jen % výsledky, počty obchodů, úspěšnost a drawdown v % – žádné částky ani velikost účtu."));
+    const row1 = el("div", "toolbar");
+    const sel = document.createElement("select");
+    sel.append(new Option("Všechna aktiva", "ALL")); (d.options || []).forEach((o) => sel.append(new Option(o.label, o.id)));
+    sel.value = (shareCfg && shareCfg.asset) || "ALL";
+    sel.onchange = () => saveShare({ asset: sel.value });
+    const tg = el("button", on ? "btn danger" : "btn", on ? "Vypnout" : "Zapnout veřejnou stránku");
+    tg.onclick = () => saveShare({ enabled: !on, asset: sel.value });
+    row1.append(el("label", "", "Aktivum"), sel, tg);
+    wrap.append(row1);
+    if (on && shareCfg.token) {
+      const link = location.origin + "/p/" + shareCfg.token;
+      const lb = el("div", "linkbox");
+      lb.append(el("code", "", link));
+      const cp = el("button", "btn ghost", "Kopírovat");
+      cp.onclick = async () => { try { await navigator.clipboard.writeText(link); cp.textContent = "Zkopírováno ✔"; } catch (e) { prompt("Odkaz:", link); } setTimeout(() => (cp.textContent = "Kopírovat"), 2500); };
+      const op = el("button", "btn ghost", "Otevřít"); op.onclick = () => window.open(link, "_blank");
+      const nw = el("button", "btn ghost", "Nový odkaz");
+      nw.onclick = () => { if (confirm("Vytvořit nový odkaz? Starý okamžitě přestane fungovat.")) saveShare({ regenerate: true }); };
+      lb.append(cp, op, nw);
+      wrap.append(lb);
+    }
+  };
+  const load = async () => { try { shareCfg = await api("/api/share"); } catch (e) {} paint(); };
+  shareCfg ? paint() : load();
+  async function saveShare(body) { try { shareCfg = await api("/api/share", body); } catch (e) { alert("Nepodařilo se uložit: " + e.message); } paint(); }
+  return box;
 }
 
 function renderStats(d) {
@@ -512,9 +717,9 @@ function renderStats(d) {
   const cur = d.currency || "";
 
   const cards = el("div", "cards");
-  cards.append(statCard("Dnes", d.current.day, cur), statCard("Tento týden", d.current.week, cur),
-               statCard("Tento měsíc", d.current.month, cur), statCard("Tento rok", d.current.year, cur),
-               statCard("Celkem", d.current.total, cur));
+  cards.append(statCard("Dnes", d.current.day, cur, "day"), statCard("Tento týden", d.current.week, cur, "week"),
+               statCard("Tento měsíc", d.current.month, cur, "month"), statCard("Tento rok", d.current.year, cur, "year"),
+               statCard("Celkem", d.current.total, cur, "total"));
   statsBody.append(cards);
 
   const box = el("section", "inst");
@@ -563,6 +768,8 @@ function renderStats(d) {
     "Období podle kalendáře v Praze. Max DD = největší pokles od maxima v daném období, z hodinových údajů včetně otevřených pozic" +
     (d.filter === "ALL" ? " – pro všechna aktiva z equity celého účtu (v %)" : " – pro vybrané aktivum z P/L tohoto EA (v % z balance na začátku období)") +
     "." + (since ? " Drawdown se sleduje od " + since + "." : " Drawdown se začne sledovat po spuštění EA v1.60.")));
+
+  statsBody.append(recentSection(d), publicBox(d));
 }
 
 async function refreshStats() {

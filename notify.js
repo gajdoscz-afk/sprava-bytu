@@ -16,6 +16,8 @@ let version = 0;          // roste při každé změně registrací (EA si podle
 let restored = false;     // po startu serveru: už EA vrátilo zálohu?
 let vapid = null;
 const log = [];           // posledních pár odeslaných upozornění (pro aplikaci)
+// nastavení veřejné stránky – zálohuje se spolu s registracemi přes EA
+let share = { enabled: false, token: null, asset: "ALL", updated: 0 };
 
 function init({ publicKey, privateKey, subject }) {
   if (!publicKey || !privateKey) {
@@ -79,7 +81,14 @@ async function test(endpoint) {
 
 // ---- záloha přes EA (server na free tarifu po restartu zapomíná)
 function exportData() {
-  return JSON.stringify({ version, items: [...subs.values()] });
+  return JSON.stringify({ version, items: [...subs.values()], share });
+}
+function getShare() { return { ...share }; }
+function setShare(cfg) {
+  share = { enabled: !!cfg.enabled, token: cfg.token || null, asset: String(cfg.asset || "ALL"), updated: Date.now() };
+  version++;
+  restored = true;
+  return getShare();
 }
 function importData(text) {
   restored = true;
@@ -92,10 +101,15 @@ function importData(text) {
       n++;
     }
   }
+  // veřejná stránka: vezmeme zálohu, pokud je novější než to, co server má
+  if (d && d.share && d.share.token && (d.share.updated || 0) > (share.updated || 0)) {
+    share = { enabled: !!d.share.enabled, token: String(d.share.token), asset: String(d.share.asset || "ALL"), updated: d.share.updated || 0 };
+    n++;
+  }
   if (n) version++;
   return n;
 }
-const needRestore = () => !restored && subs.size === 0;
+const needRestore = () => !restored && subs.size === 0 && !share.token;
 const getVersion = () => version;
 
 // ---- události z rozdílu dvou po sobě jdoucích stavů jedné instance
@@ -143,7 +157,7 @@ function onCommand(sym, label, result) {
 }
 
 module.exports = {
-  onCommand,
+  onCommand, getShare, setShare,
   EVENTS, init, enabled, publicKey, subscribe, unsubscribe, prefsFor, test,
   exportData, importData, needRestore, getVersion, onStatus, onOffline, onOnline,
   recent: () => log.slice(0, 10), count: () => subs.size,

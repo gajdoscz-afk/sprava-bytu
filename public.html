@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>StochGrid AOS – výsledky</title>
+<meta name="author" content="Michal Gajdos">
+<meta name="copyright" content="© 2026 Michal Gajdos">
+<meta property="og:title" content="StochGrid AOS – výsledky obchodování">
+<meta property="og:description" content="Automatický obchodní systém · © 2026 Michal Gajdos">
+<meta property="og:image" content="/icon-512.png">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0e1116">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0e1116; --card:#161a22; --card2:#1b2029; --line:#2a313d; --text:#dce0e6; --dim:#828a96; --head:#fad264; --good:#50c878; --bad:#eb5a5a; --warn:#f0b43c; --buy:#5aa0ff;
+          --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace; --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { padding: 24px 16px 40px; max-width: 920px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  header img { width: 52px; height: 52px; border-radius: 12px; }
+  h1 { margin: 0; font-size: 22px; color: var(--head); font-weight: 600; }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  .live { margin-left: auto; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; }
+  .live.on { background: rgba(80,200,120,.14); color: var(--good); }
+  .live.off { background: rgba(130,138,150,.14); color: var(--dim); }
+  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+  .card h3 { margin: 0 0 6px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .big { font-family: var(--mono); font-size: 24px; font-weight: 500; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0; }
+  .row .k { color: var(--dim); } .row .v { font-family: var(--mono); }
+  .good { color: var(--good); } .bad { color: var(--bad); } .dim { color: var(--dim); } .buy { color: var(--buy); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; }
+  section h2 { margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .bars { display: flex; align-items: center; gap: 3px; height: 120px; }
+  .bars div { flex: 1; position: relative; height: 100%; }
+  .bars i { position: absolute; left: 0; right: 0; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: right; color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; padding: 4px 0 6px; }
+  th:first-child, td:first-child { text-align: left; }
+  td { text-align: right; padding: 6px 0; border-top: 1px solid var(--line); font-family: var(--mono); }
+  td:first-child { font-family: var(--sans); color: var(--dim); }
+  th + th, td + td { padding-left: 10px; }
+  footer { margin-top: 26px; text-align: center; font-size: 12px; color: var(--dim); line-height: 1.7; }
+  .empty { padding: 60px 16px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 10px; }
+  @media (max-width: 760px) { .cards { grid-template-columns: repeat(2, 1fr); } .hm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <img src="/icon-192.png" alt="">
+  <div><h1>StochGrid AOS</h1><div class="sub" id="label">Výsledky automatického obchodního systému</div></div>
+  <span class="live off" id="live">–</span>
+</header>
+<main id="app"><div class="empty">Načítám…</div></main>
+<footer>
+  Výsledky v % z velikosti účtu, obchod = uzavřený koš pozic. Minulé výsledky nezaručují budoucí výnosy.<br>
+  © 2026 Michal Gajdos · všechna práva vyhrazena
+</footer>
+<script>
+const GONE = "__GONE__" === "1";
+const app = document.getElementById("app");
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = String(x); return e; };
+const sp = (x, d = 2) => (typeof x === "number" && isFinite(x)) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d) + " %" : "–";
+const n0 = (x) => (typeof x === "number" && isFinite(x)) ? x.toFixed(0) + " %" : "–";
+const MONTHS = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
+const DAYS = ["ne","po","út","st","čt","pá","so"];
+function row(k, v, c) { const r = el("div", "row"); r.append(el("span", "k", k), el("span", "v " + (c || ""), v)); return r; }
+function dur(s) { if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min"; if (s < 86400) return (s / 3600).toFixed(1) + " h"; return (s / 86400).toFixed(1) + " d"; }
+
+function card(title, r) {
+  const c = el("div", "card");
+  c.append(el("h3", "", title));
+  const cls = r && r.trades ? (r.pct >= 0 ? "good" : "bad") : "dim";
+  c.append(el("div", "big " + cls, r ? sp(r.pct) : "–"));
+  c.append(row("Obchodů", r ? r.trades : "–"), row("Úspěšnost", r ? n0(r.winPct) : "–"),
+           row("Max DD", r && r.ddPct != null ? "−" + r.ddPct.toFixed(2) + " %" : "–", r && r.ddPct ? "bad" : "dim"));
+  return c;
+}
+
+function bars(days) {
+  const s = el("section");
+  s.append(el("h2", "", "Denní výsledky (posledních " + days.length + " dní)"));
+  const b = el("div", "bars");
+  const list = [...days].reverse();
+  const mx = Math.max(0.01, ...list.map((d) => Math.abs(d.pct || 0)));
+  list.forEach((d) => {
+    const col = el("div"); col.title = d.key + ": " + sp(d.pct);
+    const v = d.pct || 0, h = Math.abs(v) / mx * 50;
+    const i = el("i"); i.style.height = Math.max(1, h) + "%";
+    i.style.background = v >= 0 ? "var(--good)" : "var(--bad)";
+    if (v >= 0) i.style.bottom = "50%"; else i.style.top = "50%";
+    col.append(i); b.append(col);
+  });
+  s.append(b);
+  return s;
+}
+
+function render(d) {
+  document.getElementById("label").textContent = (d.label || "Výsledky") + " · aktualizováno " + new Date(d.updated || Date.now()).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  const live = document.getElementById("live");
+  live.className = "live " + (d.live ? "on" : "off"); live.textContent = d.live ? "systém běží" : "systém offline";
+  app.replaceChildren();
+  if (d.empty) { app.append(el("div", "empty", "Zatím žádné uzavřené obchody.")); return; }
+  const cards = el("div", "cards");
+  cards.append(card("Dnes", d.current.day), card("Tento týden", d.current.week), card("Tento měsíc", d.current.month),
+               card("Tento rok", d.current.year), card("Celkem", d.current.total));
+  app.append(cards);
+  if ((d.days || []).length) app.append(bars(d.days));
+
+  if ((d.months || []).length) {
+    const s = el("section"); s.append(el("h2", "", "Po měsících"));
+    const t = el("table"); const h = el("tr");
+    [["Měsíc",""],["Výsledek",""],["Obchodů",""],["Úspěšnost",""],["Max DD","hm"]].forEach(([x,c]) => h.append(el("th", c, x)));
+    t.append(h);
+    d.months.forEach((r) => {
+      const [y, m] = r.key.split("-"); const tr = el("tr");
+      tr.append(el("td", "", MONTHS[+m - 1] + " " + y), el("td", r.trades ? (r.pct >= 0 ? "good" : "bad") : "dim", sp(r.pct)),
+        el("td", "", r.trades), el("td", "", n0(r.winPct)), el("td", "hm " + (r.ddPct ? "bad" : "dim"), r.ddPct != null ? "−" + r.ddPct.toFixed(2) + " %" : "–"));
+      t.append(tr);
+    });
+    s.append(t); app.append(s);
+  }
+
+  if ((d.recent || []).length) {
+    const s = el("section"); s.append(el("h2", "", "Poslední obchody"));
+    const t = el("table"); const h = el("tr");
+    [["Uzavřeno",""],["Trh",""],["Směr","hm"],["Pozic","hm"],["Doba",""],["Výsledek",""]].forEach(([x,c]) => h.append(el("th", c, x)));
+    t.append(h);
+    d.recent.forEach((b) => {
+      const dt = new Date(b.close * 1000); const tr = el("tr");
+      tr.append(el("td", "", DAYS[dt.getDay()] + " " + dt.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })),
+        el("td", "", b.sym), el("td", "hm " + (b.dir === "BUY" ? "buy" : "bad"), b.dir || "–"), el("td", "hm", b.n), el("td", "", dur(b.dur)),
+        el("td", b.pct >= 0 ? "good" : "bad", sp(b.pct)));
+      t.append(tr);
+    });
+    s.append(t); app.append(s);
+  }
+}
+
+async function load() {
+  if (GONE) { app.replaceChildren(el("div", "empty", "Tento odkaz už neplatí.")); document.getElementById("live").textContent = "–"; return; }
+  try {
+    const r = await fetch(location.pathname.replace(/\/$/, "") + "/data", { cache: "no-store" });
+    if (r.status === 404) { app.replaceChildren(el("div", "empty", "Tento odkaz už neplatí.")); return; }
+    render(await r.json());
+  } catch (e) { /* zkusí se znovu */ }
+}
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

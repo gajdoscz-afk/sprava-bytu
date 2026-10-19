@@ -51,7 +51,7 @@ function baskets(trades) {
     if (cur && t.c - cur.c <= BASKET_GAP_SEC) {
       cur.p += t.p; cur.n++; cur.c = t.c; cur.o = Math.min(cur.o, t.o);
     } else {
-      cur = { c: t.c, o: t.o, p: t.p, n: 1 };
+      cur = { c: t.c, o: t.o, p: t.p, n: 1, ty: t.ty };
       out.push(cur);
     }
   }
@@ -194,7 +194,20 @@ function computeStats(hist, filter) {
     hasDD: series.length > 0,
   };
 
+  // poslední uzavřené koše s výsledkem v % z balance těsně před uzavřením
+  const flowsSorted = [...flows].sort((x, y) => y.t - x.t); // od nejnovějších
+  const recent = [...bs].sort((x, y) => y.c - x.c).slice(0, 30).map((bk) => {
+    let after = 0;
+    for (const f of flowsSorted) { if (f.t <= bk.c) break; after += f.a; }
+    const before = balanceNow - after - bk.p;
+    return {
+      sym: bk.sym, dir: bk.ty === 0 ? "BUY" : bk.ty === 1 ? "SELL" : "", n: bk.n,
+      open: bk.o, close: bk.c, net: bk.p, pct: before > 0 ? (bk.p / before) * 100 : null,
+    };
+  });
+
   return {
+    recent,
     options, filter: isAll ? "ALL" : filter, currency, balanceNow,
     ddFrom: series.length ? series[0][0] : null,
     current,

@@ -48,6 +48,24 @@ function pendingFor(id) {
 }
 const html = fs.readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
 
+const publicHtml = fs.readFileSync(path.join(__dirname, "public.html"), "utf8");
+
+// Veřejná data: jen procenta, počty a úspěšnost – žádné částky ani velikost účtu.
+function publicData(cfg) {
+  const st = computeStats(hist, cfg.asset);
+  const live = Object.values(instances).some((i) => Date.now() - i.lastSeen < STALE_SEC * 1000);
+  if (st.empty) return { empty: true, live };
+  const label = cfg.asset === "ALL" ? "Všechna aktiva" : ((st.options.find((o) => o.id === cfg.asset) || {}).label || "");
+  const pick = (r) => (r ? { trades: r.trades, winPct: r.winPct, pct: r.pct, ddPct: r.hasDD ? r.ddPct : null } : null);
+  return {
+    label, live, updated: Date.now(),
+    current: { day: pick(st.current.day), week: pick(st.current.week), month: pick(st.current.month), year: pick(st.current.year), total: pick(st.current.total) },
+    days: st.tables.day.slice(0, 31).map((r) => ({ key: r.key, ...pick(r) })),
+    months: st.tables.month.slice(0, 12).map((r) => ({ key: r.key, ...pick(r) })),
+    recent: (st.recent || []).slice(0, 15).map((b) => ({ sym: b.sym, dir: b.dir, n: b.n, close: b.close, dur: b.close - b.open, pct: b.pct })),
+  };
+}
+
 function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
@@ -303,6 +321,17 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, lines.join("\n"), "text/plain; charset=utf-8");
   }
 
+  // --- veřejná stránka (bez přihlášení, jen % údaje)
+  const pm = url.pathname.match(/^\/p\/([A-Za-z0-9_-]{16,64})(\/data)?$/);
+  if (pm) {
+    const cfg = notify.getShare();
+    if (!cfg.enabled || !cfg.token || !safeEqual(pm[1], cfg.token)) {
+      return send(res, 404, pm[2] ? '{"error":"odkaz neplatný"}' : publicHtml.replace("__GONE__", "1"), pm[2] ? undefined : "text/html; charset=utf-8");
+    }
+    if (pm[2]) return send(res, 200, JSON.stringify(publicData(cfg)));
+    return send(res, 200, publicHtml.replace("__GONE__", "0"), "text/html; charset=utf-8", { "X-Robots-Tag": "noindex, nofollow" });
+  }
+
   // --- přihlášení
   if (url.pathname === "/login" && req.method === "POST") {
     const form = new URLSearchParams(await readBody(req, 4096));
@@ -346,6 +375,20 @@ const server = http.createServer(async (req, res) => {
       out.push({ id, cid: c.cid });
     }
     return send(res, 200, JSON.stringify({ ok: true, queued: out }));
+  }
+
+  // --- nastavení veřejné stránky
+  if (url.pathname === "/api/share" && req.method === "GET") {
+    return send(res, 200, JSON.stringify(notify.getShare()));
+  }
+  if (url.pathname === "/api/share" && req.method === "POST") {
+    let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    const cur = notify.getShare();
+    const token = d.regenerate || !cur.token ? crypto.randomBytes(18).toString("base64url") : cur.token;
+    return send(res, 200, JSON.stringify(notify.setShare({
+      enabled: d.enabled !== undefined ? !!d.enabled : cur.enabled,
+      asset: d.asset || cur.asset, token,
+    })));
   }
 
   // --- upozornění (prohlížeč)
