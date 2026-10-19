@@ -232,6 +232,8 @@ function renderInstance(it) {
   f.append(row("Vyhodnocení", s.evalText || "–", lvlClass(s.evalLevel)));
   f.append(row("Odstup", s.grid || "–"));
   f.append(row("Úrovně / HardStop", s.levels || "–", s.levelsOver ? "warn" : ""));
+  if (s.adr) f.append(row("ADR", s.adr));
+  if (s.adrDays) f.append(row("Rozsahy dní", s.adrDays, "dim"));
   grid.append(f);
 
   // zhodnocení
