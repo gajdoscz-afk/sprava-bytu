@@ -87,6 +87,29 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/healthz") return send(res, 200, "ok", "text/plain");
 
+  // ikony a manifest – veřejné (telefon je stahuje bez přihlášení), neobsahují žádná data
+  const STATIC = {
+    "/icon.svg": "image/svg+xml",
+    "/favicon.ico": "image/png",
+    "/apple-touch-icon.png": "image/png",
+    "/apple-touch-icon-precomposed.png": "image/png",
+    "/icon-192.png": "image/png",
+    "/icon-512.png": "image/png",
+    "/icon-maskable.png": "image/png",
+    "/manifest.webmanifest": "application/manifest+json",
+  };
+  if (STATIC[url.pathname]) {
+    const file = { "/favicon.ico": "icon-192.png", "/apple-touch-icon-precomposed.png": "apple-touch-icon.png" }[url.pathname]
+      || url.pathname.slice(1);
+    try {
+      const data = fs.readFileSync(path.join(__dirname, file));
+      res.writeHead(200, { "Content-Type": STATIC[url.pathname], "Cache-Control": "public, max-age=86400" });
+      return res.end(data);
+    } catch (e) {
+      return send(res, 404, "not found", "text/plain");
+    }
+  }
+
   // --- EA -> server
   if (url.pathname === "/api/push" && req.method === "POST") {
     if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, '{"error":"bad token"}');
