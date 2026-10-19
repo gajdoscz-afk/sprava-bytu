@@ -6,10 +6,11 @@ const EVENTS = {
   open:    "Nový koš",
   add:     "Přikoupení",
   close:   "Uzavření koše",
+  risk:    "Ztráta koše od nastavené hranice",
   halt:    "Ochrana účtu / zastavení",
   offline: "Výpadek EA nebo VPS",
 };
-const DEFAULT_PREFS = { open: true, add: true, close: true, halt: true, offline: true };
+const DEFAULT_PREFS = { open: true, add: true, close: true, risk: true, halt: true, offline: true };
 
 const subs = new Map(); // endpoint -> { sub, prefs, added }
 let version = 0;          // roste při každé změně registrací (EA si podle toho dělá zálohu)
@@ -18,6 +19,9 @@ let vapid = null;
 const log = [];           // posledních pár odeslaných upozornění (pro aplikaci)
 // nastavení veřejné stránky – zálohuje se spolu s registracemi přes EA
 let share = { enabled: false, token: null, asset: "ALL", updated: 0 };
+// obecná nastavení upozornění (zálohují se také přes EA)
+let settings = { riskPct: 5, updated: 0 };
+const riskLevel = new Map(); // symbol -> poslední oznámená úroveň ztráty v %
 
 function init({ publicKey, privateKey, subject }) {
   if (!publicKey || !privateKey) {
@@ -70,7 +74,7 @@ async function broadcast(event, title, body, tag) {
   log.unshift({ t: Date.now(), event, title, body });
   log.length = Math.min(log.length, 30);
   const payload = { title, body, tag: (tag || event).slice(0, 32), url: "/" };
-  await Promise.all([...subs.values()].filter((s) => s.prefs[event]).map((s) => sendTo(s, payload)));
+  await Promise.all([...subs.values()].filter((s) => s.prefs[event] !== false).map((s) => sendTo(s, payload)));
 }
 
 async function test(endpoint) {
@@ -81,9 +85,18 @@ async function test(endpoint) {
 
 // ---- záloha přes EA (server na free tarifu po restartu zapomíná)
 function exportData() {
-  return JSON.stringify({ version, items: [...subs.values()], share });
+  return JSON.stringify({ version, items: [...subs.values()], share, settings });
 }
 function getShare() { return { ...share }; }
+function getSettings() { return { ...settings }; }
+function setSettings(cfg) {
+  const r = Number(cfg.riskPct);
+  settings = { riskPct: isFinite(r) && r >= 0.5 && r <= 50 ? Math.round(r * 10) / 10 : settings.riskPct, updated: Date.now() };
+  riskLevel.clear();
+  version++;
+  restored = true;
+  return getSettings();
+}
 function setShare(cfg) {
   share = { enabled: !!cfg.enabled, token: cfg.token || null, asset: String(cfg.asset || "ALL"), updated: Date.now() };
   version++;
@@ -104,6 +117,10 @@ function importData(text) {
   // veřejná stránka: vezmeme zálohu, pokud je novější než to, co server má
   if (d && d.share && d.share.token && (d.share.updated || 0) > (share.updated || 0)) {
     share = { enabled: !!d.share.enabled, token: String(d.share.token), asset: String(d.share.asset || "ALL"), updated: d.share.updated || 0 };
+    n++;
+  }
+  if (d && d.settings && (d.settings.updated || 0) > (settings.updated || 0)) {
+    settings = { riskPct: Number(d.settings.riskPct) || 5, updated: d.settings.updated || 0 };
     n++;
   }
   if (n) version++;
@@ -136,6 +153,24 @@ function onStatus(prev, cur) {
       `Pozic ${pn}, balance ${Number(a.balance || 0).toFixed(2)} ${c}`, `basket-${sym}`);
   }
 
+  // ztráta otevřeného koše vůči balance: upozornit na hranici a pak po každé další polovině hranice
+  const X = settings.riskPct || 5;
+  const bal = a.balance || 0;
+  const lossPct = n > 0 && bal > 0 && (b.pl || 0) < 0 ? -(b.pl || 0) / bal * 100 : 0;
+  const last = riskLevel.get(sym) || 0;
+  if (n === 0 || lossPct < X * 0.6) {
+    riskLevel.delete(sym);
+  } else if (lossPct >= X) {
+    const level = X + Math.floor((lossPct - X) / (X / 2)) * (X / 2);
+    if (level > last) {
+      riskLevel.set(sym, level);
+      const r = cur.risk || {};
+      const sl = typeof r.lossFullPct === "number" ? ` · na hard stopu až ${r.lossFullPct.toFixed(1)} %` : "";
+      broadcast("risk", `${sym}: ztráta koše ${lossPct.toFixed(1)} %`,
+        `P/L ${money(b.pl || 0, c)} · pozic ${n}/${b.max || "?"}${sl}`, `risk-${sym}`);
+    }
+  }
+
   if (!isHalted(prev) && isHalted(cur)) {
     broadcast("halt", `${sym}: ZASTAVENO`, `${cur.state.replace(/^ZASTAVENO – /, "")}. Equity ${Number(a.equity || 0).toFixed(2)} ${c}`, `halt-${sym}`);
   } else if (isHalted(prev) && !isHalted(cur)) {
@@ -157,7 +192,7 @@ function onCommand(sym, label, result) {
 }
 
 module.exports = {
-  onCommand, getShare, setShare,
+  onCommand, getShare, setShare, getSettings, setSettings,
   EVENTS, init, enabled, publicKey, subscribe, unsubscribe, prefsFor, test,
   exportData, importData, needRestore, getVersion, onStatus, onOffline, onOnline,
   recent: () => log.slice(0, 10), count: () => subs.size,

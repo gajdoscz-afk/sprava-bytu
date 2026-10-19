@@ -399,6 +399,13 @@ const server = http.createServer(async (req, res) => {
       prefs: ep ? notify.prefsFor(ep) : null, devices: notify.count(), recent: notify.recent(),
     }));
   }
+  if (url.pathname === "/api/notify/settings") {
+    if (req.method === "POST") {
+      let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+      return send(res, 200, JSON.stringify(notify.setSettings(d)));
+    }
+    return send(res, 200, JSON.stringify(notify.getSettings()));
+  }
   if (url.pathname === "/api/notify/subscribe" && req.method === "POST") {
     let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
     return send(res, notify.subscribe(d.subscription, d.prefs) ? 200 : 400, '{"ok":true}');

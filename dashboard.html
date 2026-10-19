@@ -173,6 +173,10 @@
       <div id="n-prefs" class="hidden">
         <h2 style="margin-top:16px">Kdy upozornit</h2>
         <div id="n-list"></div>
+        <div class="switch">
+          <span>Hranice ztráty koše<br><span class="dim" style="font-size:12px">upozornit při ztrátě otevřeného koše od této hodnoty v % balance, pak po každé další polovině</span></span>
+          <span style="display:flex;align-items:center;gap:6px;flex-shrink:0"><input id="n-risk" type="number" min="0.5" max="50" step="0.5" style="width:70px;font:inherit;font-size:15px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;appearance:auto;height:auto"> %</span>
+        </div>
       </div>
     </div>
     <div class="sec" style="border-top:1px solid var(--line)">
@@ -345,6 +349,31 @@ function renderInstance(it) {
   }
   grid.append(k);
 
+  // riziko
+  const rk = s.risk || {};
+  const rsec = el("div", "sec");
+  rsec.append(el("h2", "", "Riziko"));
+  const pctCls = (v) => v >= 10 ? "bad" : v >= 5 ? "warn" : "";
+  if (bk.count > 0) {
+    if (typeof rk.lossFullPct === "number") {
+      rsec.append(el("div", "big " + (pctCls(rk.lossFullPct) || "dim"), "−" + num(rk.lossFullPct, 1) + " %"));
+      rsec.append(row("Ztráta na hard stopu", "−" + num(rk.lossFull) + " " + cur + (rk.plannedAdds ? `  (vč. ${rk.plannedAdds} dalších přikoupení)` : ""), pctCls(rk.lossFullPct)));
+      rsec.append(row("Jen otevřené pozice", "−" + num(rk.lossNow) + " " + cur + "  (" + num(rk.lossNowPct, 1) + " %)"));
+      rsec.append(row("Hard stop", (rk.slPrice || "–") + "  · za " + num(rk.slDist, 0) + " p"));
+    } else {
+      rsec.append(el("div", "big dim", "bez hard stopu"));
+    }
+    if (rk.nextIdx) rsec.append(row("Další přikoupení", `${rk.nextIdx}. @ ${rk.nextPrice} · ${num(rk.nextLots)} lot · za ${num(rk.nextDist, 1)} p`));
+    else rsec.append(row("Další přikoupení", "síť je plná", "warn"));
+  } else {
+    rsec.append(el("div", "big dim", typeof rk.newBasketPct === "number" ? "−" + num(rk.newBasketPct, 1) + " %" : "–"));
+    rsec.append(row("Max. riziko nového koše", typeof rk.newBasketLoss === "number" ? "−" + num(rk.newBasketLoss) + " " + cur + " (plná síť až po hard stop)" : "–", pctCls(rk.newBasketPct || 0)));
+  }
+  if (typeof rk.ddLeft === "number" && rk.ddLeft >= 0) rsec.append(row("Do limitu ochrany účtu", num(rk.ddLeft, 2) + " %", rk.ddLeft < 3 ? "bad" : rk.ddLeft < 5 ? "warn" : "good"));
+  if (typeof rk.freeMargin === "number") rsec.append(row("Volná marže", num(rk.freeMargin) + " " + cur + (rk.margin > 0 ? "  · úroveň " + num(rk.marginLevel, 0) + " %" : ""), rk.margin > 0 && rk.marginLevel < 300 ? "warn" : ""));
+  if (!s.risk) rsec.append(el("div", "note", "Údaje o riziku pošle EA od verze 1.90."));
+  grid.append(rsec);
+
   // stav a filtry
   const f = el("div", "sec");
   f.append(el("h2", "", "Stav a filtry"));
@@ -382,7 +411,7 @@ function renderInstance(it) {
   grid.append(z);
 
   // equity
-  const e = el("div", "sec");
+  const e = el("div", "sec wide");
   e.append(el("h2", "", "Equity (od spuštění panelu)"));
   e.append(sparkline(it.equity, cur));
   grid.append(e);
@@ -853,6 +882,11 @@ async function renderNotify() {
           ? "Na iPhonu otevřete panel z ikony na ploše (Safari → Sdílet → Přidat na plochu), jinak iOS upozornění nedovolí."
           : "Telefon vás požádá o povolení upozornění – potvrďte Povolit.");
   }
+  // hranice ztráty
+  const riskInp = document.getElementById("n-risk");
+  try { const st = await api("/api/notify/settings"); riskInp.value = st.riskPct; } catch (e) {}
+  riskInp.onchange = async () => { try { const st = await api("/api/notify/settings", { riskPct: Number(riskInp.value) }); riskInp.value = st.riskPct; } catch (e) {} };
+
   // přepínače
   nList.replaceChildren();
   const prefs = nCfg.prefs || {};
