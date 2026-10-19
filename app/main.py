@@ -88,6 +88,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
+        conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -915,6 +916,65 @@ def enrich_flat(db: Session, d: m.Document) -> None:
     f.field_dates = dates
 
 
+def _dec(v) -> Decimal | None:
+    try:
+        return Decimal(str(v).replace(" ", "").replace(",", ".")).quantize(Decimal("0.01"))
+    except (ArithmeticError, ValueError):
+        return None
+
+
+def _day(v) -> date | None:
+    try:
+        return date.fromisoformat(str(v or "")[:10])
+    except ValueError:
+        return None
+
+
+def sync_lease(db: Session, d: m.Document) -> None:
+    """Nájem ze smlouvy nebo dodatku. Novější smlouva předchozí nájem ukončí. Starší smlouva nepřepíše novější nájem."""
+    if d.flat_id is None or d.doc_type not in ("smlouva", "dodatek"):
+        return
+    ex = d.extracted or {}
+    rent = _dec(ex.get("rent"))
+    if rent is None or rent <= 0:
+        return
+    when = doc_date(d)
+    vf = _day(ex.get("lease_from")) or when
+    vt = _day(ex.get("lease_to"))
+    deposit = _dec(ex.get("deposit")) or Decimal("0")
+    raw_adv = ex.get("advances") if isinstance(ex.get("advances"), dict) else {}
+    adv = {}
+    for k, v in raw_adv.items():
+        val = _dec(v)
+        if val is not None:
+            adv[str(k)[:200]] = val
+    f = db.get(m.Flat, d.flat_id)
+    leases = sorted(f.leases, key=lambda l: l.valid_from)
+    same = next((l for l in leases if l.valid_from == vf), None)
+    if same is not None:
+        if same.source_date and when < same.source_date:
+            return
+        old_adv = {a.name: float(a.amount) for a in same.advances}
+        new_adv_f = {k: float(v) for k, v in adv.items()}
+        if (same.rent, same.deposit, same.valid_to) != (rent, deposit, vt) or old_adv != new_adv_f:
+            db.add(m.Version(flat_id=f.id, name=f"Předpis od {vf.isoformat()}", action="přepsáno z dokumentu",
+                             old={"rent": float(same.rent), "advances": old_adv},
+                             new={"rent": float(rent), "advances": new_adv_f, "doc_id": d.id}))
+        same.rent, same.deposit, same.valid_to, same.source_date = rent, deposit, vt, when
+        same.advances = [m.Advance(name=k, amount=v) for k, v in adv.items()]
+        return
+    if any(l.valid_from > vf for l in leases):
+        return  # tato smlouva je starší než předpis, který už je v bytu
+    for p in leases:
+        if p.valid_from < vf and (p.valid_to is None or p.valid_to >= vf):
+            p.valid_to = vf - timedelta(days=1)  # předchozí nájem končí den před začátkem nového
+    lease = m.Lease(flat=f, valid_from=vf, valid_to=vt, rent=rent, deposit=deposit, source_date=when,
+                    advances=[m.Advance(name=k, amount=v) for k, v in adv.items()])
+    db.add(lease)
+    db.add(m.Version(flat_id=f.id, name=f"Předpis od {vf.isoformat()}", action="doplněno z dokumentu",
+                     old=None, new={"rent": float(rent), "advances": {k: float(v) for k, v in adv.items()}, "doc_id": d.id}))
+
+
 def rematch_all(db: Session) -> None:
     """Po založení nebo úpravě bytu znovu projde dokumenty. Nezařazené zkusí přiřadit (jen při jisté shodě),
     u zařazených doplní prázdné údaje bytu."""
@@ -933,6 +993,7 @@ def rematch_all(db: Session) -> None:
                 d.status = "zarazeno"
         enrich_flat(db, d)
         sync_acquisition(db, d)
+        sync_lease(db, d)
 
 
 def run_classification(d: m.Document, db: Session) -> None:
@@ -964,6 +1025,7 @@ def run_classification(d: m.Document, db: Session) -> None:
     elif d.flat_id is None:
         d.status = "ke_kontrole"
     sync_acquisition(db, d)
+    sync_lease(db, d)
     enrich_flat(db, d)
 
 
@@ -1065,6 +1127,7 @@ def update_document(doc_id: int, body: s.DocumentUpdate, db: Session = Depends(g
             if exists is None:
                 db.add(m.FlatAlias(flat_id=body.flat_id, alias=addr[:200]))
     sync_acquisition(db, d)
+    sync_lease(db, d)
     enrich_flat(db, d)
     db.commit()
     return doc_out(d)

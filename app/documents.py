@@ -49,6 +49,11 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - tenant_phone: telefon nájemníka, nebo null
 - tenant_bank_account: číslo účtu, na který nájemník platí, nebo null
   Dispozici, patro, PSČ, vlastníka, kontakty a účet vyplň jen tehdy, když jsou v dokumentu výslovně uvedeny.
+- rent: u smlouvy a dodatku měsíční nájem bez záloh v Kč jako číslo, jinak null
+- deposit: u smlouvy kauce (jistota) v Kč jako číslo, jinak null
+- lease_from: u smlouvy a dodatku den začátku nájmu ve formátu YYYY-MM-DD, jinak null
+- lease_to: u smlouvy a dodatku den konce nájmu YYYY-MM-DD, u neurčitého nájmu null
+- advances: u smlouvy a dodatku zálohy na služby jako objekt {"název služby": částka v Kč}, jinak {}
 - summary: 1 až 2 věty česky o tom, co dokument je a co obsahuje
 - confidence: číslo 0 až 1, jak jsi si jistá typem i adresou
 - items: u vyúčtování seznam položek, každá {"name", "cost", "paid", "unit", "quantity", "category"}.

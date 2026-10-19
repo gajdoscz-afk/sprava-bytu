@@ -195,6 +195,7 @@ function notesFor(){
   if(y&&bal(f.years[y])<0)out.push({t:`${f.addr}: nedoplatek ${y}, ${kc(-bal(f.years[y]))}`,k:'bad',id:f.id});
   const l=f.leases[f.leases.length-1];
   if(l&&l.to&&new Date(l.to)<TODAY)out.push({t:`${f.addr}: smlouva skončila ${fd(l.to)}. Ověřte, zda nájem pokračuje.`,k:'warn',id:f.id});
+  if(l&&l.to){const dl=Math.ceil((new Date(l.to)-TODAY)/86400000);if(dl>=0&&dl<=60)out.push({t:`${f.addr}: smlouva končí za ${dl} dní (${fd(l.to)}). Připravte prodloužení nebo novou smlouvu.`,k:'warn',id:f.id})}
  });
  return out;
 }
