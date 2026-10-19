@@ -53,11 +53,61 @@ function safeEqual(a, b) {
   return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
 }
 
+// --- přihlášení: cookie podepsaná heslem (iPhone v režimu aplikace neumí okno Basic auth)
+const SESSION_DAYS = 365;
+const sessionSig = (exp) => crypto.createHmac("sha256", DASH_PASSWORD).update(`${DASH_USER}|${exp}`).digest("hex");
+
+function cookies(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
 function authorized(req) {
+  // 1) cookie z přihlašovací obrazovky
+  const c = cookies(req).sg_session || "";
+  const [exp, sig] = c.split(".");
+  if (exp && sig && Number(exp) > Date.now() && safeEqual(sig, sessionSig(exp))) return true;
+  // 2) Basic auth (starší způsob, pro jistotu ponechán)
   const h = req.headers.authorization || "";
   if (!h.startsWith("Basic ")) return false;
   const [user, ...rest] = Buffer.from(h.slice(6), "base64").toString("utf8").split(":");
   return safeEqual(user, DASH_USER) && safeEqual(rest.join(":"), DASH_PASSWORD);
+}
+
+function loginPage(error) {
+  return `<!doctype html><html lang="cs"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>StochGrid AOS</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0e1116"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="StochGrid">
+<style>
+  :root{--bg:#0e1116;--card:#161a22;--line:#2a313d;--text:#dce0e6;--dim:#828a96;--head:#fad264;--bad:#eb5a5a}
+  *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  body{display:flex;align-items:center;justify-content:center;padding:24px 16px;min-height:100vh}
+  form{width:100%;max-width:340px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 22px}
+  img{width:64px;height:64px;border-radius:14px;display:block;margin:0 auto 14px}
+  h1{font-size:20px;text-align:center;color:var(--head);margin:0 0 4px}
+  p{text-align:center;color:var(--dim);font-size:13px;margin:0 0 20px}
+  label{display:block;font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin:12px 0 6px}
+  input{width:100%;font:inherit;font-size:16px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+  input:focus{outline:none;border-color:var(--head)}
+  button{width:100%;margin-top:20px;font:inherit;font-size:16px;font-weight:600;color:#0e1116;background:var(--head);border:0;border-radius:8px;padding:12px;cursor:pointer}
+  .err{color:var(--bad);text-align:center;font-size:13px;margin-top:12px}
+</style></head><body>
+<form method="post" action="/login">
+  <img src="/icon-192.png" alt="">
+  <h1>StochGrid AOS</h1><p>Přihlaste se do panelu</p>
+  <label for="u">Jméno</label><input id="u" name="user" autocomplete="username" autocapitalize="none" required>
+  <label for="p">Heslo</label><input id="p" name="password" type="password" autocomplete="current-password" required>
+  <button type="submit">Přihlásit</button>
+  ${error ? `<div class="err">${error}</div>` : ""}
+</form></body></html>`;
 }
 
 function send(res, code, body, type = "application/json; charset=utf-8", extra = {}) {
@@ -250,11 +300,30 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, lines.join("\n"), "text/plain; charset=utf-8");
   }
 
-  // --- prohlížeč (heslo)
+  // --- přihlášení
+  if (url.pathname === "/login" && req.method === "POST") {
+    const form = new URLSearchParams(await readBody(req, 4096));
+    await new Promise((r) => setTimeout(r, 400)); // zpomalení zkoušení hesel
+    if (safeEqual(form.get("user") || "", DASH_USER) && safeEqual(form.get("password") || "", DASH_PASSWORD)) {
+      const exp = Date.now() + SESSION_DAYS * 86400000;
+      res.writeHead(303, {
+        Location: "/",
+        "Set-Cookie": `sg_session=${exp}.${sessionSig(exp)}; Max-Age=${SESSION_DAYS * 86400}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+        "Cache-Control": "no-store",
+      });
+      return res.end();
+    }
+    return send(res, 401, loginPage("Špatné jméno nebo heslo."), "text/html; charset=utf-8");
+  }
+  if (url.pathname === "/logout") {
+    res.writeHead(303, { Location: "/", "Set-Cookie": "sg_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax" });
+    return res.end();
+  }
+
+  // --- prohlížeč (přihlášený)
   if (!authorized(req)) {
-    return send(res, 401, "Přihlášení vyžadováno", "text/plain; charset=utf-8", {
-      "WWW-Authenticate": 'Basic realm="StochGrid AOS", charset="UTF-8"',
-    });
+    if (url.pathname.startsWith("/api/")) return send(res, 401, '{"error":"login"}');
+    return send(res, 200, loginPage(), "text/html; charset=utf-8");
   }
 
   if (url.pathname === "/api/state") return send(res, 200, JSON.stringify(snapshot()));
