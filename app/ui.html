@@ -272,7 +272,7 @@ ${svjCard}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
  ${pendingBanner(pendingGroups(f.id))}
- <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0"><button class="btn sm" onclick="addPage(f.id)">📷 Vyfotit dokument po stránkách</button><button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
+ <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0">${pageLabel(f.id,pendKey(f.id),'📷 Vyfotit dokument po stránkách','btn sm')}<button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
@@ -923,7 +923,7 @@ function docsTab(){
  <p class="mut small">Hotové PDF nebo fotky jednotlivých dokumentů nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
-  <button class="btn" onclick="addPage(null)" style="margin:0"><b>📷 Vyfotit dokument po stránkách</b></button>
+  ${pageLabel(null,pendKey(null),'<b>📷 Vyfotit dokument po stránkách</b>','btn','margin:0')}
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát hotové soubory</b>
   <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Celá složka</b>
@@ -1042,17 +1042,20 @@ function pendingGroups(flatId){
 const stranky=n=>n===1?'stránka':(n>=2&&n<=4?'stránky':'stránek');
 function pendingBanner(gs){
  return gs.map(g=>`<div class="card pend"><div class="row"><div><b>Je to všechno?</b><div class="small mut">Rozpracovaný dokument: ${g.pages} ${stranky(g.pages)}${g.flat_id?'':' · zatím bez bytu'}. Nic se ještě nečte, dokud to nepotvrdíte.</div></div></div>
-  <div class="btns" style="margin:10px 0 0"><button class="btn sm sec" onclick="addPage(${g.flat_id})">📷 Ne, vyfotit další stránku</button><button class="btn sm" onclick="finishGroup('${g.key}')">Ano, vytvořit PDF</button><button class="btn sm sec" onclick="cancelGroup('${g.key}')">Zrušit</button></div></div>`).join('');
+  <div class="btns" style="margin:10px 0 0">${pageLabel(g.flat_id,g.key,'📷 Ne, vyfotit další stránku','btn sm sec')}<button class="btn sm" onclick="finishGroup('${g.key}')">Ano, vytvořit PDF</button><button class="btn sm sec" onclick="cancelGroup('${g.key}')">Zrušit</button></div></div>`).join('');
 }
-function addPage(flatId){
- const open=pendingGroups(flatId===undefined?null:flatId)[0];
- const key=open?open.key:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2));
- // Input musí být v dokumentu, jinak ho mobilní prohlížeč neotevře
- const i=document.createElement('input');
- i.type='file';i.accept='image/*';i.multiple=true;
- i.style.display='none';document.body.appendChild(i);
- i.onchange=()=>{const files=[...i.files];i.remove();if(files.length)uploadFiles(files,flatId,key)};
- i.click();
+function newKey(){ return crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2) }
+// Klíč rozpracovaného dokumentu pro byt (nebo nový)
+function pendKey(flatId){ const g=pendingGroups(flatId===undefined?null:flatId)[0]; return g?g.key:newKey() }
+// Štítek, který je zároveň tlačítko: iOS otevře výběr fotek přímo, bez JavaScriptu
+function pageLabel(flatId,key,text,cls,extra){
+ const fid=(flatId===null||flatId===undefined)?'null':flatId;
+ return `<label class="${cls}" style="display:inline-block;cursor:pointer;${extra||''}">${text}<input type="file" accept="image/*" multiple style="display:none" onchange="pagesPicked(this,${fid},'${key}')"></label>`;
+}
+function pagesPicked(input,flatId,key){
+ const files=[...input.files];
+ input.value='';
+ if(files.length)uploadFiles(files,flatId,key);
 }
 async function finishGroup(key){
  const n=S.docs.filter(d=>d.group_key===key).length;
