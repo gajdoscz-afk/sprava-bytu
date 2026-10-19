@@ -17,7 +17,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
@@ -55,9 +55,14 @@ def _valid_session(token: str, user: str, pwd: str) -> bool:
     return secrets.compare_digest(token, _session_token(user, pwd, expires))
 
 
+PUBLIC_PATHS = {"/manifest.json", "/icon-180.png", "/icon-192.png", "/icon-512.png"}  # ikona na ploše, bez dat
+
+
 def require_auth(request: Request, response: Response, creds: HTTPBasicCredentials | None = Depends(security)) -> None:
     """Jeden uživatel. Přihlášení přes BASIC_USER a BASIC_PASS, pak se nastaví přihlašovací cookie na 90 dní,
     takže se při každém obnovení stránky znovu neptá. Bez BASIC_USER a BASIC_PASS se server nespustí."""
+    if request.url.path in PUBLIC_PATHS:
+        return
     user, pwd = os.getenv("BASIC_USER"), os.getenv("BASIC_PASS")
     if not user or not pwd:
         if os.getenv("ALLOW_NO_AUTH") == "1":  # jen pro lokální vývoj a testy
@@ -1376,6 +1381,30 @@ def export_all(db: Session = Depends(get_db)):
 
 
 # ---------- jednoduchá stránka pro správu (chráněná stejným přihlášením) ----------
+
+ICON_DIR = Path(__file__).parent / "icons"
+
+
+@app.get("/icon-{size}.png")
+def app_icon(size: int):
+    if size not in (180, 192, 512):
+        raise HTTPException(404, "Ikona neexistuje")
+    return FileResponse(ICON_DIR / f"icon-{size}.png", media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/manifest.json")
+def web_manifest():
+    return JSONResponse({
+        "name": "MG Property", "short_name": "MG Property", "lang": "cs",
+        "start_url": "/", "display": "standalone",
+        "background_color": "#EEF4F0", "theme_color": "#1F5C4A",
+        "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }, media_type="application/manifest+json")
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(_: None = Depends(require_auth)):
