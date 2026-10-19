@@ -1047,9 +1047,11 @@ function pendingBanner(gs){
 function addPage(flatId){
  const open=pendingGroups(flatId===undefined?null:flatId)[0];
  const key=open?open.key:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2));
+ // Input musí být v dokumentu, jinak ho mobilní prohlížeč neotevře
  const i=document.createElement('input');
- i.type='file';i.accept='image/*';i.multiple=true;i.setAttribute('capture','environment');
- i.onchange=()=>uploadFiles([...i.files],flatId,key);
+ i.type='file';i.accept='image/*';i.multiple=true;
+ i.style.display='none';document.body.appendChild(i);
+ i.onchange=()=>{const files=[...i.files];i.remove();if(files.length)uploadFiles(files,flatId,key)};
  i.click();
 }
 async function finishGroup(key){
