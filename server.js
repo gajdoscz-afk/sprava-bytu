@@ -20,6 +20,12 @@ if (!PUSH_TOKEN || !DASH_PASSWORD) {
 }
 
 const { computeStats } = require("./stats");
+const notify = require("./notify");
+notify.init({
+  publicKey: process.env.VAPID_PUBLIC_KEY,
+  privateKey: process.env.VAPID_PRIVATE_KEY,
+  subject: process.env.VAPID_SUBJECT,
+});
 
 const instances = {}; // id -> { status, lastSeen, equity: [[ts, equity, balance]] }
 // id -> { symbol, magic, account, currency, balance, updated, full, trades: Map, flow: Map, hours: Map }
@@ -97,13 +103,17 @@ const server = http.createServer(async (req, res) => {
     "/icon-512.png": "image/png",
     "/icon-maskable.png": "image/png",
     "/manifest.webmanifest": "application/manifest+json",
+    "/sw.js": "text/javascript; charset=utf-8",
   };
   if (STATIC[url.pathname]) {
     const file = { "/favicon.ico": "icon-192.png", "/apple-touch-icon-precomposed.png": "apple-touch-icon.png" }[url.pathname]
       || url.pathname.slice(1);
     try {
       const data = fs.readFileSync(path.join(__dirname, file));
-      res.writeHead(200, { "Content-Type": STATIC[url.pathname], "Cache-Control": "public, max-age=86400" });
+      res.writeHead(200, {
+        "Content-Type": STATIC[url.pathname],
+        "Cache-Control": url.pathname === "/sw.js" ? "no-cache" : "public, max-age=86400",
+      });
       return res.end(data);
     } catch (e) {
       return send(res, 404, "not found", "text/plain");
@@ -122,15 +132,32 @@ const server = http.createServer(async (req, res) => {
     }
     const id = String(data.id || `${data.symbol || "?"}_${data.magic || 0}`).slice(0, 64);
     const inst = instances[id] || (instances[id] = { equity: [] });
+    const prevStatus = inst.status;
     inst.status = data;
     inst.lastSeen = Date.now();
+    try { notify.onStatus(prevStatus, data); } catch (e) { console.error("notify", e); }
+    if (inst.offline) { inst.offline = false; notify.onOnline(data.symbol || id); }
     const acc = data.account || {};
     if (typeof acc.equity === "number") {
       inst.equity.push([inst.lastSeen, acc.equity, acc.balance]);
       if (inst.equity.length > MAX_POINTS) inst.equity.splice(0, inst.equity.length - MAX_POINTS);
     }
     const h = hist.get(id);
-    return send(res, 200, JSON.stringify({ ok: true, needHistory: !(h && h.full) }));
+    return send(res, 200, JSON.stringify({
+      ok: true, needHistory: !(h && h.full),
+      subsVersion: notify.getVersion(), needSubs: notify.needRestore(),
+    }));
+  }
+
+  // --- záloha registrací telefonů přes EA
+  if (url.pathname === "/api/subs/export" && req.method === "GET") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    return send(res, 200, notify.exportData());
+  }
+  if (url.pathname === "/api/subs/import" && req.method === "POST") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, '{"error":"bad token"}');
+    const n = notify.importData((await readBody(req)).replace(/\u0000+$/, ""));
+    return send(res, 200, JSON.stringify({ ok: true, imported: n }));
   }
 
   // --- EA -> server: historie obchodů, pohybů na účtu a hodinové equity
@@ -191,6 +218,29 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/state") return send(res, 200, JSON.stringify(snapshot()));
+  // --- upozornění (prohlížeč)
+  if (url.pathname === "/api/notify/config") {
+    const ep = url.searchParams.get("endpoint");
+    return send(res, 200, JSON.stringify({
+      enabled: notify.enabled(), publicKey: notify.publicKey(), events: notify.EVENTS,
+      prefs: ep ? notify.prefsFor(ep) : null, devices: notify.count(), recent: notify.recent(),
+    }));
+  }
+  if (url.pathname === "/api/notify/subscribe" && req.method === "POST") {
+    let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    return send(res, notify.subscribe(d.subscription, d.prefs) ? 200 : 400, '{"ok":true}');
+  }
+  if (url.pathname === "/api/notify/unsubscribe" && req.method === "POST") {
+    let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    notify.unsubscribe(String(d.endpoint || ""));
+    return send(res, 200, '{"ok":true}');
+  }
+  if (url.pathname === "/api/notify/test" && req.method === "POST") {
+    let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    const code = await notify.test(String(d.endpoint || ""));
+    return send(res, 200, JSON.stringify({ ok: code >= 200 && code < 300, code }));
+  }
+
   if (url.pathname === "/api/stats") {
     try {
       return send(res, 200, JSON.stringify(computeStats(hist, url.searchParams.get("symbol") || "ALL")));
@@ -203,5 +253,17 @@ const server = http.createServer(async (req, res) => {
 
   send(res, 404, '{"error":"not found"}');
 });
+
+// hlídání výpadku: instance, která déle než STALE_SEC neposlala stav
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, inst] of Object.entries(instances)) {
+    const age = (now - inst.lastSeen) / 1000;
+    if (!inst.offline && age > STALE_SEC + 60) {
+      inst.offline = true;
+      notify.onOffline((inst.status && inst.status.symbol) || id, age);
+    }
+  }
+}, 30000);
 
 server.listen(PORT, () => console.log(`StochGrid panel běží na portu ${PORT}`));

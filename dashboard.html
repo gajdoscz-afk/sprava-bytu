@@ -96,6 +96,19 @@
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button[aria-pressed="true"] { background: var(--card2); color: var(--text); }
   .note { font-size: 12px; color: var(--dim); line-height: 1.6; margin-top: 12px; }
+  .btn { font: inherit; font-size: 14px; font-weight: 500; color: #0e1116; background: var(--head); border: 0; border-radius: 8px; padding: 9px 16px; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  .btn.danger { background: transparent; color: var(--bad); box-shadow: inset 0 0 0 1px rgba(235,90,90,.5); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .switch:first-child { border-top: 0; }
+  .switch input { width: 42px; height: 24px; appearance: none; background: var(--card2); border: 1px solid var(--line); border-radius: 999px; position: relative; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+  .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--dim); transition: transform .15s, background .15s; }
+  .switch input:checked { background: rgba(80,200,120,.25); border-color: rgba(80,200,120,.5); }
+  .switch input:checked::after { transform: translateX(18px); background: var(--good); }
+  .recent-row { display: flex; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+  .recent-row:first-child { border-top: 0; }
+  .recent-row time { font-family: var(--mono); font-size: 12px; color: var(--dim); flex-shrink: 0; }
 
   @media (max-width: 900px) {
     .cards { grid-template-columns: repeat(2, 1fr); }
@@ -118,6 +131,7 @@
   <div class="tabs" role="tablist">
     <button role="tab" id="tab-live" aria-selected="true">Přehled</button>
     <button role="tab" id="tab-stats" aria-selected="false">Statistiky</button>
+    <button role="tab" id="tab-notify" aria-selected="false">Upozornění</button>
   </div>
   <div id="conn">načítám…</div>
 </header>
@@ -128,6 +142,29 @@
     <select id="asset"><option value="ALL">Všechna aktiva</option></select>
   </div>
   <div id="stats-body"><div class="empty">Načítám statistiky…</div></div>
+</section>
+<section id="notify" class="hidden">
+  <div class="inst">
+    <div class="inst-head">
+      <div class="sym">Upozornění do telefonu</div>
+      <span id="n-state" class="pill warn">zjišťuji…</span>
+    </div>
+    <div class="sec">
+      <p id="n-hint" class="note" style="margin-top:0"></p>
+      <div class="toolbar" style="margin-bottom:6px">
+        <button id="n-toggle" class="btn">Zapnout na tomto zařízení</button>
+        <button id="n-test" class="btn ghost hidden">Poslat zkušební upozornění</button>
+      </div>
+      <div id="n-prefs" class="hidden">
+        <h2 style="margin-top:16px">Kdy upozornit</h2>
+        <div id="n-list"></div>
+      </div>
+    </div>
+    <div class="sec" style="border-top:1px solid var(--line)">
+      <h2>Poslední upozornění</h2>
+      <div id="n-recent" class="dim" style="font-size:13px">–</div>
+    </div>
+  </div>
 </section>
 
 <script>
@@ -479,24 +516,156 @@ async function refreshStats() {
   }
 }
 
+// ================= Upozornění =================
+const notifyEl = document.getElementById("notify");
+const tabNotify = document.getElementById("tab-notify");
+const nState = document.getElementById("n-state"), nHint = document.getElementById("n-hint");
+const nToggle = document.getElementById("n-toggle"), nTest = document.getElementById("n-test");
+const nPrefs = document.getElementById("n-prefs"), nList = document.getElementById("n-list");
+const nRecent = document.getElementById("n-recent");
+let swReg = null, nCfg = null;
+
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+function b64ToBytes(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+async function currentSub() {
+  if (!swReg) return null;
+  try { return await swReg.pushManager.getSubscription(); } catch (e) { return null; }
+}
+function readPrefs() {
+  const p = {};
+  nList.querySelectorAll("input[data-ev]").forEach((i) => (p[i.dataset.ev] = i.checked));
+  return p;
+}
+
+async function renderNotify() {
+  if (!pushSupported) {
+    nState.className = "pill bad"; nState.textContent = "nepodporováno";
+    nHint.textContent = isIOS
+      ? "Na iPhonu fungují upozornění jen z aplikace přidané na plochu (Safari → Sdílet → Přidat na plochu) a v iOS 16.4 nebo novějším. Otevřete panel z ikony na ploše a zapněte je tady."
+      : "Tento prohlížeč upozornění nepodporuje. Zkuste Chrome, Edge nebo Firefox.";
+    nToggle.classList.add("hidden"); return;
+  }
+  try { nCfg = await api("/api/notify/config" + ((await currentSub()) ? "?endpoint=" + encodeURIComponent((await currentSub()).endpoint) : "")); }
+  catch (e) { nHint.textContent = "Nepodařilo se načíst nastavení ze serveru."; return; }
+  if (!nCfg.enabled) {
+    nState.className = "pill bad"; nState.textContent = "na serveru vypnuto";
+    nHint.textContent = "Server zatím nemá nastavené klíče pro upozornění."; nToggle.classList.add("hidden"); return;
+  }
+  const sub = await currentSub();
+  const perm = Notification.permission;
+  if (sub && perm === "granted") {
+    nState.className = "pill ok"; nState.textContent = "zapnuto";
+    nToggle.textContent = "Vypnout na tomto zařízení"; nToggle.className = "btn danger";
+    nTest.classList.remove("hidden"); nPrefs.classList.remove("hidden");
+    nHint.textContent = "Upozornění chodí na toto zařízení" + (nCfg.devices > 1 ? ` a dalších ${nCfg.devices - 1}` : "") + ". Vyberte, o čem chcete vědět:";
+  } else {
+    nState.className = perm === "denied" ? "pill bad" : "pill warn";
+    nState.textContent = perm === "denied" ? "zablokováno" : "vypnuto";
+    nToggle.textContent = "Zapnout na tomto zařízení"; nToggle.className = "btn";
+    nToggle.disabled = perm === "denied";
+    nTest.classList.add("hidden"); nPrefs.classList.add("hidden");
+    nHint.textContent = perm === "denied"
+      ? "Upozornění jsou pro tento web v nastavení telefonu/prohlížeče zakázaná. Povolte je tam a stránku obnovte."
+      : (isIOS && !isStandalone
+          ? "Na iPhonu otevřete panel z ikony na ploše (Safari → Sdílet → Přidat na plochu), jinak iOS upozornění nedovolí."
+          : "Telefon vás požádá o povolení upozornění – potvrďte Povolit.");
+  }
+  // přepínače
+  nList.replaceChildren();
+  const prefs = nCfg.prefs || {};
+  for (const [k, label] of Object.entries(nCfg.events || {})) {
+    const row = el("label", "switch");
+    const inp = document.createElement("input");
+    inp.type = "checkbox"; inp.dataset.ev = k; inp.checked = prefs[k] !== false;
+    inp.onchange = async () => { const s = await currentSub(); if (s) await api("/api/notify/subscribe", { subscription: s.toJSON(), prefs: readPrefs() }); };
+    row.append(el("span", "", label), inp);
+    nList.append(row);
+  }
+  // poslední upozornění
+  nRecent.replaceChildren();
+  if (!(nCfg.recent || []).length) nRecent.textContent = "Zatím žádná.";
+  (nCfg.recent || []).forEach((r) => {
+    const d = el("div", "recent-row");
+    const t = el("time", "", new Date(r.t).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }));
+    const tx = el("div"); tx.append(el("div", "", r.title), el("div", "dim", r.body));
+    d.append(t, tx); nRecent.append(d);
+  });
+}
+
+nToggle.onclick = async () => {
+  nToggle.disabled = true;
+  try {
+    const sub = await currentSub();
+    if (sub && Notification.permission === "granted") {
+      await api("/api/notify/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe();
+    } else {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") {
+        const s = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(nCfg.publicKey) });
+        await api("/api/notify/subscribe", { subscription: s.toJSON(), prefs: null });
+      }
+    }
+  } catch (e) {
+    nHint.textContent = "Nepodařilo se změnit nastavení: " + e.message;
+  }
+  nToggle.disabled = false;
+  renderNotify();
+};
+nTest.onclick = async () => {
+  nTest.disabled = true;
+  const s = await currentSub();
+  try {
+    const r = await api("/api/notify/test", { endpoint: s.endpoint });
+    nTest.textContent = r.ok ? "Odesláno ✔" : "Nepodařilo se odeslat (" + r.code + ")";
+  } catch (e) { nTest.textContent = "Chyba odeslání"; }
+  setTimeout(() => { nTest.textContent = "Poslat zkušební upozornění"; nTest.disabled = false; }, 4000);
+};
+
+// service worker + obnova registrace na serveru při každém otevření (server po restartu zapomíná)
+if (pushSupported) {
+  navigator.serviceWorker.register("/sw.js").then(async (reg) => {
+    swReg = reg;
+    const s = await currentSub();
+    if (s && Notification.permission === "granted") api("/api/notify/subscribe", { subscription: s.toJSON(), prefs: null }).catch(() => {});
+    if (view === "notify") renderNotify();
+  }).catch(() => {});
+}
+
 function setView(v) {
   view = v;
   tabLive.setAttribute("aria-selected", String(v === "live"));
   tabStats.setAttribute("aria-selected", String(v === "stats"));
+  tabNotify.setAttribute("aria-selected", String(v === "notify"));
   app.classList.toggle("hidden", v !== "live");
   statsEl.classList.toggle("hidden", v !== "stats");
+  notifyEl.classList.toggle("hidden", v !== "notify");
   try { localStorage.setItem("sg_view", v); } catch (e) {}
-  v === "live" ? refresh() : refreshStats();
+  if (v === "live") refresh(); else if (v === "stats") refreshStats(); else renderNotify();
 }
 tabLive.onclick = () => setView("live");
 tabStats.onclick = () => setView("stats");
+tabNotify.onclick = () => setView("notify");
 assetSel.onchange = refreshStats;
 
 let startView = "live";
 try { startView = localStorage.getItem("sg_view") || "live"; } catch (e) {}
 setView(startView);
-setInterval(() => (view === "live" ? refresh() : refreshStats()), 10000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) (view === "live" ? refresh() : refreshStats()); });
+function tick() { if (view === "live") refresh(); else if (view === "stats") refreshStats(); }
+setInterval(tick, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
 </script>
 </body>
 </html>
