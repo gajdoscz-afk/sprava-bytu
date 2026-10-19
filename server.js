@@ -1,4 +1,5 @@
 // StochGrid AOS – webový panel
+// © 2026 Michal Gajdos, všechna práva vyhrazena.
 // EA posílá stav (POST /api/push s hlavičkou X-Token), prohlížeč ho zobrazuje (chráněno heslem).
 // Bez závislostí, jen Node.js.
 
@@ -99,6 +100,7 @@ function loginPage(error) {
   input:focus{outline:none;border-color:var(--head)}
   button{width:100%;margin-top:20px;font:inherit;font-size:16px;font-weight:600;color:#0e1116;background:var(--head);border:0;border-radius:8px;padding:12px;cursor:pointer}
   .err{color:var(--bad);text-align:center;font-size:13px;margin-top:12px}
+  .copy{text-align:center;font-size:11px;color:var(--dim);margin-top:18px}
 </style></head><body>
 <form method="post" action="/login">
   <img src="/icon-192.png" alt="">
@@ -107,6 +109,7 @@ function loginPage(error) {
   <label for="p">Heslo</label><input id="p" name="password" type="password" autocomplete="current-password" required>
   <button type="submit">Přihlásit</button>
   ${error ? `<div class="err">${error}</div>` : ""}
+  <div class="copy">© 2026 Michal Gajdos</div>
 </form></body></html>`;
 }
 

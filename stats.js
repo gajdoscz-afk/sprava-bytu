@@ -1,3 +1,4 @@
+// © 2026 Michal Gajdos, všechna práva vyhrazena.
 // Výpočet statistik z historie, kterou posílá EA.
 // Časová pásma: obdobím (den/týden/měsíc/rok) se rozumí kalendář v Praze.
 

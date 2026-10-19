@@ -1,3 +1,4 @@
+// © 2026 Michal Gajdos, všechna práva vyhrazena.
 // Service worker StochGrid AOS – zobrazuje upozornění ze serveru.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));

@@ -1,3 +1,4 @@
+// © 2026 Michal Gajdos, všechna práva vyhrazena.
 // Upozornění: registrace telefonů a události odvozené ze stavu, který posílá EA.
 const webpush = require("./webpush");
 

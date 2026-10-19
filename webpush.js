@@ -1,3 +1,4 @@
+// © 2026 Michal Gajdos, všechna práva vyhrazena.
 // Minimální Web Push bez závislostí: VAPID (RFC 8292) + šifrování aes128gcm (RFC 8291).
 const crypto = require("crypto");
 const https = require("https");
