@@ -710,8 +710,8 @@ function renderStats(d) {
   if (d.empty) {
     const e = el("div", "empty");
     e.append(el("div", "", "Zatím žádná historie obchodů."),
-             el("div", "", "EA v1.60 ji pošle automaticky během minuty po spuštění."));
-    statsBody.append(e);
+             el("div", "", "Statistiky, tlačítka Sdílet a seznam obchodů se objeví, až EA (verze 1.60 a novější) pošle historii."));
+    statsBody.append(e, publicBox(d));
     return;
   }
   const cur = d.currency || "";
