@@ -268,7 +268,7 @@ ${svjCard}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
  ${pendingBanner(pendingGroups(f.id))}
- <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addPage(f.id)">+ Stránky jednoho dokumentu</button><button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
+ <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0"><button class="btn sm" onclick="addPage(f.id)">📷 Vyfotit dokument po stránkách</button><button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
@@ -916,11 +916,11 @@ function docsTab(){
  const filed=S.docs.filter(d=>d.status==='zarazeno');
  const pend=pendingBanner(pendingGroups('all'));
  return `<div class="row"><h1>Dokumenty</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
- <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
+ <p class="mut small">Hotové PDF nebo fotky jednotlivých dokumentů nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
-  <button class="btn sec" onclick="addPage(null)" style="margin:0"><b>+ Stránky jednoho dokumentu</b></button>
-  <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát fotky nebo PDF</b>
+  <button class="btn" onclick="addPage(null)" style="margin:0"><b>📷 Vyfotit dokument po stránkách</b></button>
+  <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát hotové soubory</b>
   <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Celá složka</b>
   <input type="file" multiple webkitdirectory style="display:none" onchange="uploadDocs(this)"></label>
@@ -1037,14 +1037,14 @@ function pendingGroups(flatId){
 }
 const stranky=n=>n===1?'stránka':(n>=2&&n<=4?'stránky':'stránek');
 function pendingBanner(gs){
- return gs.map(g=>`<div class="card pend"><div class="row"><div><b>Rozpracovaný dokument</b><div class="small mut">${g.pages} ${stranky(g.pages)}${g.flat_id?'':' · zatím bez bytu'}</div></div></div>
-  <div class="btns" style="margin:10px 0 0"><button class="btn sm sec" onclick="addPage(${g.flat_id})">+ Další stránka</button><button class="btn sm" onclick="finishGroup('${g.key}')">Je to všechno, vytvořit PDF</button><button class="btn sm sec" onclick="cancelGroup('${g.key}')">Zrušit</button></div></div>`).join('');
+ return gs.map(g=>`<div class="card pend"><div class="row"><div><b>Je to všechno?</b><div class="small mut">Rozpracovaný dokument: ${g.pages} ${stranky(g.pages)}${g.flat_id?'':' · zatím bez bytu'}. Nic se ještě nečte, dokud to nepotvrdíte.</div></div></div>
+  <div class="btns" style="margin:10px 0 0"><button class="btn sm sec" onclick="addPage(${g.flat_id})">📷 Ne, vyfotit další stránku</button><button class="btn sm" onclick="finishGroup('${g.key}')">Ano, vytvořit PDF</button><button class="btn sm sec" onclick="cancelGroup('${g.key}')">Zrušit</button></div></div>`).join('');
 }
 function addPage(flatId){
  const open=pendingGroups(flatId===undefined?null:flatId)[0];
  const key=open?open.key:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2));
  const i=document.createElement('input');
- i.type='file';i.accept='image/*';i.multiple=true;
+ i.type='file';i.accept='image/*';i.multiple=true;i.setAttribute('capture','environment');
  i.onchange=()=>uploadFiles([...i.files],flatId,key);
  i.click();
 }
