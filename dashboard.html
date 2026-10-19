@@ -106,6 +106,11 @@
   .switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--dim); transition: transform .15s, background .15s; }
   .switch input:checked { background: rgba(80,200,120,.25); border-color: rgba(80,200,120,.5); }
   .switch input:checked::after { transform: translateX(18px); background: var(--good); }
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+  .ctl .btn { font-size: 13px; padding: 7px 14px; }
+  .ctl-info { font-size: 12px; color: var(--dim); margin-left: 4px; }
+  .global-ctl { display: flex; justify-content: flex-end; margin: -6px 0 12px; }
+  .global-ctl .btn { font-size: 12.5px; padding: 6px 12px; }
   .recent-row { display: flex; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
   .recent-row:first-child { border-top: 0; }
   .recent-row time { font-family: var(--mono); font-size: 12px; color: var(--dim); flex-shrink: 0; }
@@ -263,6 +268,35 @@ function renderInstance(it) {
   head.append(seen);
   card.append(head);
 
+  // ovládání na dálku
+  const ctl = el("div", "ctl");
+  const pending = it.pending || [];
+  const busy = (a) => pending.some((p) => p.action === a);
+  const mk = (label, cls, action, confirmText, disabled) => {
+    const b = el("button", "btn " + cls, busy(action) ? "Čeká na EA…" : label);
+    b.disabled = !!disabled || busy(action) || !it.online;
+    b.onclick = () => sendCmd(it.id, action, confirmText);
+    return b;
+  };
+  if (s.halted || s.paused) {
+    ctl.append(mk(s.halted ? "Obnovit obchodování" : "Obnovit", "", "resume",
+      s.halted ? `Obnovit obchodování ${s.symbol}? Zastavení ochranou účtu se zruší a limit ztráty se začne počítat od aktuálního stavu.` : null));
+  } else {
+    ctl.append(mk("Pozastavit", "ghost", "pause",
+      `Pozastavit ${s.symbol}? Nové koše ani přikupování se neotevřou, otevřený koš se dál spravuje.`));
+  }
+  ctl.append(mk("Zavřít koš", "danger", "close_basket",
+    `Zavřít koš ${s.symbol} za tržní cenu?\n\nPozic: ${bk.count || 0}, aktuální P/L: ${signed(bk.pl || 0)} ${cur}`, !(bk.count > 0)));
+  const info = el("span", "ctl-info");
+  if (!it.online) info.textContent = "EA je offline – příkazy nelze doručit";
+  else if (pending.length) info.textContent = "Příkaz odeslán, EA ho vyzvedne do pár sekund…";
+  else if ((it.done || [])[0]) {
+    const d = it.done[0];
+    info.textContent = `${d.label}: ${d.result} (${new Date(d.done).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })})`;
+  }
+  ctl.append(info);
+  card.append(ctl);
+
   const grid = el("div", "grid");
 
   // účet
@@ -369,6 +403,17 @@ function renderInstance(it) {
   return card;
 }
 
+async function sendCmd(id, action, confirmText) {
+  if (confirmText && !window.confirm(confirmText)) return;
+  try {
+    const r = await fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "HTTP " + r.status);
+  } catch (e) {
+    alert("Příkaz se nepodařilo odeslat: " + e.message);
+  }
+  refresh();
+}
+
 async function refresh() {
   try {
     const r = await fetch("/api/state", { cache: "no-store" });
@@ -381,7 +426,19 @@ async function refresh() {
                el("div", "", "Zkontrolujte, že je v EA vyplněná adresa a token a že je adresa povolená ve WebRequest."));
       app.append(e);
     } else {
+      const open = d.instances.filter((it) => it.online && it.status && it.status.basket && it.status.basket.count > 0);
+      if (open.length) {
+        const g = el("div", "global-ctl");
+        const total = open.reduce((s, it) => s + (it.status.basket.pl || 0), 0);
+        const cur = (open[0].status.account || {}).currency || "";
+        const b = el("button", "btn danger", `Zavřít všechny koše (${open.length})`);
+        b.onclick = () => sendCmd("ALL", "close_basket",
+          `Zavřít VŠECHNY otevřené koše za tržní cenu?\n\n${open.map((it) => it.status.symbol + ": " + signed(it.status.basket.pl || 0) + " " + cur).join("\n")}\n\nCelkem: ${signed(total)} ${cur}`);
+        g.append(b);
+        app.append(g);
+      }
       d.instances.forEach(it => app.append(renderInstance(it)));
+      if (d.instances.some((it) => (it.pending || []).length)) setTimeout(refresh, 2000); // rychlejší obnovení, dokud EA nepotvrdí
     }
     conn.className = "";
     conn.textContent = "obnoveno " + new Date().toLocaleTimeString("cs-CZ");

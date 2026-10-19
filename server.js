@@ -31,6 +31,20 @@ const instances = {}; // id -> { status, lastSeen, equity: [[ts, equity, balance
 // id -> { symbol, magic, account, currency, balance, updated, full, trades: Map, flow: Map, hours: Map }
 const hist = new Map();
 const MAX_HOURS = 24 * 400;
+
+// --- ovládání na dálku: fronta příkazů pro jednotlivé instance EA
+const ACTIONS = { pause: "Pozastavit", resume: "Obnovit", close_basket: "Zavřít koš" };
+const CMD_TTL_MS = 10 * 60 * 1000;
+const cmds = new Map(); // id -> [{ cid, action, created }]
+const cmdDone = new Map(); // id -> [{ cid, action, created, done, result }] (posledních 5)
+let cidSeq = Date.now() % 1000000000; // rostoucí, unikátní i po restartu serveru
+
+function pendingFor(id) {
+  const now = Date.now();
+  const list = (cmds.get(id) || []).filter((c) => now - c.created < CMD_TTL_MS);
+  cmds.set(id, list);
+  return list;
+}
 const html = fs.readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
 
 function safeEqual(a, b) {
@@ -83,6 +97,8 @@ function snapshot() {
         online: now - v.lastSeen < STALE_SEC * 1000,
         status: v.status,
         equity: v.equity,
+        pending: pendingFor(id).map((c) => ({ cid: c.cid, action: c.action, label: ACTIONS[c.action], ageSec: Math.round((now - c.created) / 1000) })),
+        done: (cmdDone.get(id) || []).slice(0, 3),
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   };
@@ -147,6 +163,30 @@ const server = http.createServer(async (req, res) => {
       ok: true, needHistory: !(h && h.full),
       subsVersion: notify.getVersion(), needSubs: notify.needRestore(),
     }));
+  }
+
+  // --- EA si vyzvedává příkazy (text "cid|akce", prázdné = nic)
+  if (url.pathname === "/api/cmd/poll" && req.method === "GET") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    const c = pendingFor(String(url.searchParams.get("id") || ""))[0];
+    return send(res, 200, c ? `${c.cid}|${c.action}` : "", "text/plain; charset=utf-8");
+  }
+  // --- EA potvrzuje provedení
+  if (url.pathname === "/api/cmd/ack" && req.method === "POST") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, '{"error":"bad token"}');
+    let d; try { d = JSON.parse((await readBody(req)).replace(/\u0000+$/, "")); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    const id = String(d.id || ""), cid = Number(d.cid);
+    const list = cmds.get(id) || [];
+    const c = list.find((x) => x.cid === cid);
+    if (c) {
+      cmds.set(id, list.filter((x) => x.cid !== cid));
+      const done = cmdDone.get(id) || [];
+      done.unshift({ cid, action: c.action, label: ACTIONS[c.action], created: c.created, done: Date.now(), result: String(d.result || "").slice(0, 200) });
+      cmdDone.set(id, done.slice(0, 5));
+      const sym = (instances[id] && instances[id].status && instances[id].status.symbol) || id;
+      notify.onCommand(sym, ACTIONS[c.action], String(d.result || ""));
+    }
+    return send(res, 200, '{"ok":true}');
   }
 
   // --- záloha registrací telefonů přes EA
@@ -218,6 +258,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/state") return send(res, 200, JSON.stringify(snapshot()));
+  // --- ovládání na dálku (prohlížeč): { id: "<instance>" | "ALL", action }
+  if (url.pathname === "/api/cmd" && req.method === "POST") {
+    let d; try { d = JSON.parse(await readBody(req)); } catch (e) { return send(res, 400, '{"error":"bad json"}'); }
+    const action = String(d.action || "");
+    if (!ACTIONS[action]) return send(res, 400, '{"error":"neznámý příkaz"}');
+    const ids = d.id === "ALL" ? Object.keys(instances) : [String(d.id || "")].filter((x) => instances[x]);
+    if (!ids.length) return send(res, 404, '{"error":"instance nenalezena"}');
+    const out = [];
+    for (const id of ids) {
+      const list = pendingFor(id).filter((c) => c.action !== action); // stejný příkaz jen jednou
+      const c = { cid: ++cidSeq, action, created: Date.now() };
+      list.push(c);
+      cmds.set(id, list);
+      out.push({ id, cid: c.cid });
+    }
+    return send(res, 200, JSON.stringify({ ok: true, queued: out }));
+  }
+
   // --- upozornění (prohlížeč)
   if (url.pathname === "/api/notify/config") {
     const ep = url.searchParams.get("endpoint");

@@ -136,7 +136,13 @@ function onOnline(sym) {
   broadcast("offline", `${sym}: EA opět posílá data`, "Spojení obnoveno.", `offline-${sym}`);
 }
 
+// provedený příkaz z aplikace (posílá se se skupinou "zastavení")
+function onCommand(sym, label, result) {
+  broadcast("halt", `${sym}: ${label}`, result || "provedeno", `cmd-${sym}`);
+}
+
 module.exports = {
+  onCommand,
   EVENTS, init, enabled, publicKey, subscribe, unsubscribe, prefsFor, test,
   exportData, importData, needRestore, getVersion, onStatus, onOffline, onOnline,
   recent: () => log.slice(0, 10), count: () => subs.size,
