@@ -660,13 +660,13 @@ function docRow(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
  <div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''}</div>
  ${d.summary?`<div class="small" style="margin-top:4px">${esc(d.summary)}</div>`:''}</div>
- <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div></div>`;
+ <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
  ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
  ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
- <a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a></div>
+ <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div>
  <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id)}</select></div>
  <div><label>Typ</label><select id="dt${d.id}">${docTypeOpts(d.doc_type)}</select></div></div>
  <div class="btns"><button class="btn sm" onclick="confirmDoc(${d.id})">Potvrdit</button>
@@ -1026,6 +1026,33 @@ window.addEventListener('paste',e=>{
  e.preventDefault();
  uploadFiles(files,t.flatId);
 });
+
+// ---------- sdílení dokumentu (WhatsApp, Messenger, e-mail… přes systémový výběr telefonu) ----------
+const SHARE_CACHE={};
+async function docFile(id){
+ if(SHARE_CACHE[id])return SHARE_CACHE[id];
+ const res=await fetch(`/documents/${id}/file`);
+ if(!res.ok)throw new Error('Soubor se nepodařilo načíst');
+ const blob=await res.blob();
+ const d=S.docs.find(x=>x.id===id);
+ const f=new File([blob],d?d.filename:'dokument',{type:blob.type||(d&&d.mime)||'application/octet-stream'});
+ SHARE_CACHE[id]=f;
+ return f;
+}
+async function shareDoc(id){
+ const d=S.docs.find(x=>x.id===id);
+ let f;
+ try{ f=await docFile(id) }catch(e){ toast(e.message); return }
+ if(navigator.canShare&&navigator.canShare({files:[f]})){
+  try{ await navigator.share({files:[f],title:f.name,text:(d&&d.summary)||f.name}); return }
+  catch(e){ if(e.name==='AbortError')return; toast('Klepněte na Sdílet ještě jednou'); return }
+ }
+ // Telefon neumí sdílet soubory přímo: uložíme ho do souborů
+ const url=URL.createObjectURL(f);
+ const a=document.createElement('a');a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),4000);
+ toast('Soubor se uložil, sdílejte ho z downloadů');
+}
 
 // ---------- stránky jednoho dokumentu (více fotek = jedno PDF) ----------
 // flatId: číslo bytu, null = bez přiřazení, 'all' = všechny skupiny (Dokumenty)
