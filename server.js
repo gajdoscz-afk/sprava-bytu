@@ -127,7 +127,7 @@ function loginPage(error) {
   <label for="p">Heslo</label><input id="p" name="password" type="password" autocomplete="current-password" required>
   <button type="submit">Přihlásit</button>
   ${error ? `<div class="err">${error}</div>` : ""}
-  <div class="copy">© 2026 Michal Gajdos</div>
+  <div class="copy">© 2026 StochGrid AOS</div>
 </form></body></html>`;
 }
 

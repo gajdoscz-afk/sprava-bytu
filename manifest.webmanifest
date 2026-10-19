@@ -1,7 +1,7 @@
 {
   "name": "StochGrid AOS",
   "short_name": "StochGrid",
-  "description": "StochGrid AOS – © 2026 Michal Gajdos",
+  "description": "StochGrid AOS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0e1116",
