@@ -19,7 +19,12 @@ if (!PUSH_TOKEN || !DASH_PASSWORD) {
   process.exit(1);
 }
 
+const { computeStats } = require("./stats");
+
 const instances = {}; // id -> { status, lastSeen, equity: [[ts, equity, balance]] }
+// id -> { symbol, magic, account, currency, balance, updated, full, trades: Map, flow: Map, hours: Map }
+const hist = new Map();
+const MAX_HOURS = 24 * 400;
 const html = fs.readFileSync(path.join(__dirname, "dashboard.html"), "utf8");
 
 function safeEqual(a, b) {
@@ -101,7 +106,58 @@ const server = http.createServer(async (req, res) => {
       inst.equity.push([inst.lastSeen, acc.equity, acc.balance]);
       if (inst.equity.length > MAX_POINTS) inst.equity.splice(0, inst.equity.length - MAX_POINTS);
     }
-    return send(res, 200, '{"ok":true}');
+    const h = hist.get(id);
+    return send(res, 200, JSON.stringify({ ok: true, needHistory: !(h && h.full) }));
+  }
+
+  // --- EA -> server: historie obchodů, pohybů na účtu a hodinové equity
+  if (url.pathname === "/api/history" && req.method === "POST") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, '{"error":"bad token"}');
+    let d;
+    try {
+      d = JSON.parse((await readBody(req, 8 * 1024 * 1024)).replace(/\u0000+$/, ""));
+    } catch (e) {
+      return send(res, 400, '{"error":"bad json"}');
+    }
+    const id = String(d.id || "").slice(0, 64);
+    if (!id) return send(res, 400, '{"error":"missing id"}');
+    let h = hist.get(id);
+    if (!h) {
+      h = { trades: new Map(), flow: new Map(), hours: new Map() };
+      hist.set(id, h);
+    }
+    // plné odeslání nahradí obchody a pohyby (zdroj pravdy je historie MT4);
+    // hodinová data se vždy jen slučují, aby se nic neztratilo
+    if (d.full) { h.trades = new Map(); h.flow = new Map(); }
+    Object.assign(h, {
+      symbol: String(d.symbol || "?"), magic: d.magic || 0, account: d.account || 0,
+      currency: String(d.currency || ""), balance: Number(d.balance) || 0, updated: Date.now(),
+    });
+    if (d.full) h.full = true;
+    for (const t of d.trades || []) {
+      // [ticket, closeUTC, openUTC, type, lots, profit]
+      h.trades.set(t[0], { c: t[1], o: t[2], ty: t[3], l: t[4], p: t[5] });
+    }
+    for (const f of d.flow || []) h.flow.set(f[0], { t: f[1], a: f[2], dep: f[3] === 1 }); // [ticket, timeUTC, amount, 1 = vklad/výběr]
+    for (const r of d.hours || []) {
+      // [hourUTC, eqHigh, eqLow, eaHigh, eaLow] – sloučit s tím, co už máme
+      const e = h.hours.get(r[0]);
+      h.hours.set(r[0], e ? [Math.max(e[0], r[1]), Math.min(e[1], r[2]), Math.max(e[2], r[3]), Math.min(e[3], r[4])]
+                          : [r[1], r[2], r[3], r[4]]);
+    }
+    if (h.hours.size > MAX_HOURS) {
+      const keys = [...h.hours.keys()].sort((a, b) => a - b);
+      for (const k of keys.slice(0, h.hours.size - MAX_HOURS)) h.hours.delete(k);
+    }
+    return send(res, 200, JSON.stringify({ ok: true, trades: h.trades.size, hours: h.hours.size }));
+  }
+
+  // --- server -> EA: obnova hodinových dat po restartu EA (text, snadno čitelný v MQL4)
+  if (url.pathname === "/api/hours" && req.method === "GET") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    const h = hist.get(String(url.searchParams.get("id") || ""));
+    const lines = h ? [...h.hours.entries()].sort((a, b) => a[0] - b[0]).map(([k, v]) => [k, ...v].join(",")) : [];
+    return send(res, 200, lines.join("\n"), "text/plain; charset=utf-8");
   }
 
   // --- prohlížeč (heslo)
@@ -112,6 +168,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === "/api/state") return send(res, 200, JSON.stringify(snapshot()));
+  if (url.pathname === "/api/stats") {
+    try {
+      return send(res, 200, JSON.stringify(computeStats(hist, url.searchParams.get("symbol") || "ALL")));
+    } catch (e) {
+      console.error("stats", e);
+      return send(res, 500, '{"error":"stats failed"}');
+    }
+  }
   if (url.pathname === "/" || url.pathname === "/index.html") return send(res, 200, html, "text/html; charset=utf-8");
 
   send(res, 404, '{"error":"not found"}');

@@ -68,7 +68,28 @@
   .eq-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); font-family: var(--mono); margin-top: 4px; }
   .empty { padding: 60px 16px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 10px; line-height: 1.6; }
 
+  .tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
+  .tabs button { font: inherit; font-size: 13px; color: var(--dim); background: none; border: 0; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--card2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+  .hidden { display: none !important; }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .toolbar label { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .8px; }
+  select { font: inherit; font-size: 14px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px; }
+  .scard { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; min-width: 0; }
+  .scard h3 { margin: 0 0 6px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .scard .net { font-family: var(--mono); font-size: 20px; font-weight: 500; }
+  .scard .pct { font-family: var(--mono); font-size: 13px; margin-bottom: 8px; }
+  .scard .row { font-size: 12.5px; padding: 2px 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 12.5px; background: var(--card); color: var(--dim); border: 0; padding: 6px 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--card2); color: var(--text); }
+  .note { font-size: 12px; color: var(--dim); line-height: 1.6; margin-top: 12px; }
+
   @media (max-width: 900px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
     .grid { grid-template-columns: 1fr 1fr; }
     .wide, .two { grid-column: span 2; }
   }
@@ -85,9 +106,20 @@
 <body>
 <header>
   <h1>StochGrid AOS<span>webový panel</span></h1>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-live" aria-selected="true">Přehled</button>
+    <button role="tab" id="tab-stats" aria-selected="false">Statistiky</button>
+  </div>
   <div id="conn">načítám…</div>
 </header>
 <main id="app"></main>
+<section id="stats" class="hidden">
+  <div class="toolbar">
+    <label for="asset">Aktivum</label>
+    <select id="asset"><option value="ALL">Všechna aktiva</option></select>
+  </div>
+  <div id="stats-body"><div class="empty">Načítám statistiky…</div></div>
+</section>
 
 <script>
 const app = document.getElementById("app");
@@ -312,9 +344,150 @@ async function refresh() {
     conn.textContent = "spojení se serverem selhalo – zkouším znovu";
   }
 }
-refresh();
-setInterval(refresh, 10000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+// ================= Statistiky =================
+const statsEl = document.getElementById("stats");
+const statsBody = document.getElementById("stats-body");
+const assetSel = document.getElementById("asset");
+const tabLive = document.getElementById("tab-live");
+const tabStats = document.getElementById("tab-stats");
+let view = "live", level = "day", lastStats = null;
+try { level = localStorage.getItem("sg_level") || "day"; } catch (e) {}
+
+const MONTHS = ["leden","únor","březen","duben","květen","červen","červenec","srpen","září","říjen","listopad","prosinec"];
+const DAYS = ["ne","po","út","st","čt","pá","so"];
+function keyLabel(k, lvl) {
+  if (lvl === "day") {
+    const [y, m, d] = k.split("-").map(Number);
+    const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    return `${DAYS[wd]} ${d}. ${m}.`;
+  }
+  if (lvl === "week") { const [y, w] = k.split("-W"); return `${Number(w)}. týden ${y}`; }
+  if (lvl === "month") { const [y, m] = k.split("-"); return `${MONTHS[Number(m) - 1]} ${y}`; }
+  return k;
+}
+
+function ddText(r, cur) {
+  if (!r.hasDD) return "–";
+  return "−" + num(r.ddAbs) + " " + cur + (r.ddPct != null ? "  (" + num(r.ddPct) + " %)" : "");
+}
+
+function statCard(title, r, cur) {
+  const c = el("div", "scard");
+  c.append(el("h3", "", title));
+  const cls = r.trades ? (r.net >= 0 ? "good" : "bad") : "dim";
+  c.append(el("div", "net " + cls, signed(r.net) + " " + cur));
+  c.append(el("div", "pct " + cls, r.pct != null ? signed(r.pct) + " %" : "–"));
+  c.append(row("Obchodů", r.trades + (r.positions > r.trades ? "  (" + r.positions + " poz.)" : "")));
+  c.append(row("Úspěšnost", r.winPct != null ? num(r.winPct, 0) + " %" : "–", r.winPct == null ? "dim" : r.winPct >= 50 ? "good" : "warn"));
+  const ddc = r.hasDD && r.ddAbs > 0 ? "bad" : "dim";
+  c.append(row("Max DD", r.hasDD ? "−" + num(r.ddAbs) + " " + cur : "–", ddc));
+  c.append(row("Max DD %", r.hasDD && r.ddPct != null ? "−" + num(r.ddPct) + " %" : "–", ddc));
+  return c;
+}
+
+function renderStats(d) {
+  // výběr aktiva
+  const prev = assetSel.value;
+  assetSel.replaceChildren(new Option("Všechna aktiva", "ALL"));
+  (d.options || []).forEach(o => assetSel.append(new Option(o.label, o.id)));
+  assetSel.value = [...assetSel.options].some(o => o.value === prev) ? prev : "ALL";
+
+  statsBody.replaceChildren();
+  if (d.empty) {
+    const e = el("div", "empty");
+    e.append(el("div", "", "Zatím žádná historie obchodů."),
+             el("div", "", "EA v1.60 ji pošle automaticky během minuty po spuštění."));
+    statsBody.append(e);
+    return;
+  }
+  const cur = d.currency || "";
+
+  const cards = el("div", "cards");
+  cards.append(statCard("Dnes", d.current.day, cur), statCard("Tento týden", d.current.week, cur),
+               statCard("Tento měsíc", d.current.month, cur), statCard("Tento rok", d.current.year, cur),
+               statCard("Celkem", d.current.total, cur));
+  statsBody.append(cards);
+
+  const box = el("section", "inst");
+  const head = el("div", "inst-head");
+  head.append(el("div", "sym", "Historie"));
+  const seg = el("div", "seg");
+  [["day", "Dny"], ["week", "Týdny"], ["month", "Měsíce"], ["year", "Roky"]].forEach(([v, t]) => {
+    const b = el("button", "", t);
+    b.setAttribute("aria-pressed", String(level === v));
+    b.onclick = () => { level = v; try { localStorage.setItem("sg_level", v); } catch (e) {} renderStats(lastStats); };
+    seg.append(b);
+  });
+  seg.style.marginLeft = "auto";
+  head.append(seg);
+  box.append(head);
+
+  const wrap = el("div", "sec");
+  const t = el("table");
+  const hr = el("tr");
+  [["Období", ""], ["Obch.", ""], ["Úspěš.", ""], ["Zisk " + cur, ""], ["%", "hm"], ["Max DD " + cur, ""], ["DD %", "hm"]]
+    .forEach(([h, c]) => hr.append(el("th", c, h)));
+  t.append(hr);
+  const rowsData = (d.tables && d.tables[level]) || [];
+  if (!rowsData.length) {
+    const tr = el("tr"); const td = el("td", "", "Žádná data"); td.colSpan = 7; tr.append(td); t.append(tr);
+  }
+  rowsData.forEach(r => {
+    const tr = el("tr");
+    const c = r.trades ? (r.net >= 0 ? "good" : "bad") : "dim";
+    tr.append(el("td", "", keyLabel(r.key, level)),
+      el("td", "", r.trades),
+      el("td", r.winPct == null ? "dim" : "", r.winPct != null ? num(r.winPct, 0) + " %" : "–"),
+      el("td", c, signed(r.net)),
+      el("td", c + " hm", r.pct != null ? signed(r.pct) + " %" : "–"),
+      el("td", r.hasDD && r.ddAbs > 0 ? "bad" : "dim", r.hasDD ? "−" + num(r.ddAbs) : "–"),
+      el("td", (r.hasDD && r.ddAbs > 0 ? "bad" : "dim") + " hm", r.hasDD && r.ddPct != null ? "−" + num(r.ddPct) + " %" : "–"));
+    t.append(tr);
+  });
+  wrap.append(t);
+  box.append(wrap);
+  statsBody.append(box);
+
+  const since = d.ddFrom ? new Date(d.ddFrom * 1000).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+  statsBody.append(el("div", "note",
+    "Obchod = koš, tedy pozice zavřené společně (první pozice + přikoupení). Úspěšnost = podíl ziskových košů. " +
+    "Období podle kalendáře v Praze. Max DD = největší pokles od maxima v daném období, z hodinových údajů včetně otevřených pozic" +
+    (d.filter === "ALL" ? " – pro všechna aktiva z equity celého účtu (v %)" : " – pro vybrané aktivum z P/L tohoto EA (v % z balance na začátku období)") +
+    "." + (since ? " Drawdown se sleduje od " + since + "." : " Drawdown se začne sledovat po spuštění EA v1.60.")));
+}
+
+async function refreshStats() {
+  try {
+    const r = await fetch("/api/stats?symbol=" + encodeURIComponent(assetSel.value || "ALL"), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    lastStats = await r.json();
+    renderStats(lastStats);
+    conn.className = "";
+    conn.textContent = "obnoveno " + new Date().toLocaleTimeString("cs-CZ");
+  } catch (err) {
+    conn.className = "err";
+    conn.textContent = "statistiky se nepodařilo načíst – zkouším znovu";
+  }
+}
+
+function setView(v) {
+  view = v;
+  tabLive.setAttribute("aria-selected", String(v === "live"));
+  tabStats.setAttribute("aria-selected", String(v === "stats"));
+  app.classList.toggle("hidden", v !== "live");
+  statsEl.classList.toggle("hidden", v !== "stats");
+  try { localStorage.setItem("sg_view", v); } catch (e) {}
+  v === "live" ? refresh() : refreshStats();
+}
+tabLive.onclick = () => setView("live");
+tabStats.onclick = () => setView("stats");
+assetSel.onchange = refreshStats;
+
+let startView = "live";
+try { startView = localStorage.getItem("sg_view") || "live"; } catch (e) {}
+setView(startView);
+setInterval(() => (view === "live" ? refresh() : refreshStats()), 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) (view === "live" ? refresh() : refreshStats()); });
 </script>
 </body>
 </html>
