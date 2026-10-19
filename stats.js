@@ -206,8 +206,12 @@ function computeStats(hist, filter) {
     };
   });
 
+  // kalendář: denní výsledky až ~400 dní zpět
+  const calendar = rows("day", 400).filter((r) => r.trades > 0)
+    .map((r) => ({ k: r.key, p: r.pct, n: r.net, t: r.trades, w: r.wins }));
+
   return {
-    recent,
+    recent, calendar,
     options, filter: isAll ? "ALL" : filter, currency, balanceNow,
     ddFrom: series.length ? series[0][0] : null,
     current,

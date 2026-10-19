@@ -62,6 +62,7 @@ function publicData(cfg) {
     current: { day: pick(st.current.day), week: pick(st.current.week), month: pick(st.current.month), year: pick(st.current.year), total: pick(st.current.total) },
     days: st.tables.day.slice(0, 31).map((r) => ({ key: r.key, ...pick(r) })),
     months: st.tables.month.slice(0, 12).map((r) => ({ key: r.key, ...pick(r) })),
+    calendar: (st.calendar || []).map((d) => ({ k: d.k, p: d.p, t: d.t })),
     recent: (st.recent || []).slice(0, 15).map((b) => ({ sym: b.sym, dir: b.dir, n: b.n, close: b.close, dur: b.close - b.open, pct: b.pct })),
   };
 }
@@ -191,6 +192,7 @@ const server = http.createServer(async (req, res) => {
     "/icon-maskable.png": "image/png",
     "/manifest.webmanifest": "application/manifest+json",
     "/sw.js": "text/javascript; charset=utf-8",
+    "/calendar.js": "text/javascript; charset=utf-8",
   };
   if (STATIC[url.pathname]) {
     const file = { "/favicon.ico": "icon-192.png", "/apple-touch-icon-precomposed.png": "apple-touch-icon.png" }[url.pathname]
@@ -199,7 +201,7 @@ const server = http.createServer(async (req, res) => {
       const data = fs.readFileSync(path.join(__dirname, file));
       res.writeHead(200, {
         "Content-Type": STATIC[url.pathname],
-        "Cache-Control": url.pathname === "/sw.js" ? "no-cache" : "public, max-age=86400",
+        "Cache-Control": url.pathname.endsWith(".js") ? "no-cache" : "public, max-age=86400",
       });
       return res.end(data);
     } catch (e) {

@@ -11,6 +11,7 @@
 <meta property="og:image" content="/icon-512.png">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script src="/calendar.js"></script>
 <meta name="theme-color" content="#0e1116">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -63,6 +64,7 @@
 </footer>
 <script>
 const GONE = "__GONE__" === "1";
+let calKey = null;
 const app = document.getElementById("app");
 const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = String(x); return e; };
 const sp = (x, d = 2) => (typeof x === "number" && isFinite(x)) ? (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d) + " %" : "–";
@@ -110,6 +112,13 @@ function render(d) {
   cards.append(card("Dnes", d.current.day), card("Tento týden", d.current.week), card("Tento měsíc", d.current.month),
                card("Tento rok", d.current.year), card("Celkem", d.current.total));
   app.append(cards);
+  if ((d.calendar || []).length && window.SGCalendar) {
+    const s = el("section"); s.append(el("h2", "", "Kalendář výsledků"));
+    const w = el("div"); w._calKey = calKey; s.append(w); app.append(s);
+    const months = new Map((d.months || []).map((r) => [r.key, r.pct]));
+    SGCalendar.render(w, { days: d.calendar, monthPct: (k) => months.has(k) ? months.get(k) : null });
+    new MutationObserver(() => { calKey = w._calKey; }).observe(w, { childList: true });
+  }
   if ((d.days || []).length) app.append(bars(d.days));
 
   if ((d.months || []).length) {

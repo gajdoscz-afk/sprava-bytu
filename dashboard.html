@@ -9,6 +9,7 @@
 <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/manifest.webmanifest">
+<script src="/calendar.js"></script>
 <meta name="theme-color" content="#0e1116">
 <meta name="apple-mobile-web-app-title" content="StochGrid">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -649,6 +650,17 @@ async function sharePeriod(title, r, lvl) {
   openShareModal(canvas, `stochgrid-${lvl}-${r.key}.png`, `StochGrid AOS – ${title.toLowerCase()}: ${pctTxt(r.pct)}`);
 }
 
+let calShowMoney = false, calMonthKey = null;
+async function shareCalendar(key) {
+  try { await document.fonts.ready; } catch (e) {}
+  const months = new Map(((lastStats.tables && lastStats.tables.month) || []).map((r) => [r.key, r.pct]));
+  const canvas = SGCalendar.drawImage({
+    days: lastStats.calendar || [], key, assetLabel: assetLabel(), logo: logoImg,
+    monthPct: (k) => months.has(k) ? months.get(k) : null,
+  });
+  openShareModal(canvas, `stochgrid-kalendar-${key}.png`, `StochGrid AOS – ${SGCalendar.monthLabel(key)}`);
+}
+
 async function shareBasket(b) {
   try { await document.fonts.ready; } catch (e) {}
   const dt = new Date(b.close * 1000);
@@ -750,6 +762,29 @@ function renderStats(d) {
                statCard("Tento měsíc", d.current.month, cur, "month"), statCard("Tento rok", d.current.year, cur, "year"),
                statCard("Celkem", d.current.total, cur, "total"));
   statsBody.append(cards);
+
+  // kalendář zisků
+  const calBox = el("section", "inst");
+  const calHead = el("div", "inst-head"); calHead.append(el("div", "sym", "Kalendář zisků"));
+  const calMoney = el("button", "share-btn", calShowMoney ? "Zobrazit %" : "Zobrazit " + cur);
+  calMoney.style.cssText = "float:none;margin-left:auto";
+  calMoney.onclick = () => { calShowMoney = !calShowMoney; renderStats(lastStats); };
+  calHead.append(calMoney);
+  calBox.append(calHead);
+  const calWrap = el("div", "sec");
+  calWrap._calKey = calMonthKey;
+  calBox.append(calWrap);
+  statsBody.append(calBox);
+  if (window.SGCalendar) {
+    const months = new Map(((d.tables && d.tables.month) || []).map((r) => [r.key, r.pct]));
+    SGCalendar.render(calWrap, {
+      days: d.calendar || [], money: calShowMoney, cur,
+      monthPct: (k) => months.has(k) ? months.get(k) : null,
+      onShare: (k) => shareCalendar(k),
+    });
+    const keep = new MutationObserver(() => { calMonthKey = calWrap._calKey; });
+    keep.observe(calWrap, { childList: true });
+  }
 
   const box = el("section", "inst");
   const head = el("div", "inst-head");
