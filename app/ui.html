@@ -246,7 +246,7 @@ function flatDetail(){
  const y=V.year?f.years[V.year]:null;
  return `<div class="stickyFlat">${esc(f.addr)}${f.dispo?`<small>${esc(f.dispo)}</small>`:''}</div>
  <button class="link" onclick="go('flats')">← Byty</button>
- <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut small">${esc(f.dispo)} · ${esc(f.floor)} · ${esc(f.zip)}</p>
+ <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut" style="margin:0">${esc(f.dispo)}</p><p class="mut small" style="margin:2px 0 14px">${esc(f.tenant.name)||'Bez nájemníka'}</p>
  <div class="card">
   <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
   ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>'}</div>

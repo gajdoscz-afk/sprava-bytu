@@ -87,6 +87,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -411,10 +412,14 @@ def flat_out(f: m.Flat) -> dict:
     }
 
 
+DATED_ATTRS = ("dispo", "floor", "zip", "area_m2", "tenant_name", "tenant_email", "tenant_phone", "bank_acc")
+
+
 def apply_flat(f: m.Flat, data: s.FlatIn) -> None:
     if (f.addr, f.zip) != (data.addr, data.zip):
         f.lat = f.lon = None  # změnila se adresa, souřadnice se zjistí znovu
     f.addr = data.addr
+    before = {a: getattr(f, a) for a in DATED_ATTRS}
     f.dispo, f.floor, f.zip, f.owner, f.bank_acc = data.dispo, data.floor, data.zip, data.owner, data.bank_acc
     if "area_m2" in data.model_fields_set:
         f.area_m2 = data.area_m2
@@ -422,6 +427,12 @@ def apply_flat(f: m.Flat, data: s.FlatIn) -> None:
     f.tenant_email = data.tenant.email
     f.tenant_phone = data.tenant.phone
     f.tenant_others = ",".join(x.strip() for x in data.tenant.others if x.strip())
+    # Ruční změna je nejnovější údaj: starší dokument ji nepřepíše
+    dates = dict(f.field_dates or {})
+    for a in DATED_ATTRS:
+        if getattr(f, a) != before[a]:
+            dates[a] = date.today().isoformat()
+    f.field_dates = dates
 
 
 # ---------- byty ----------
@@ -847,30 +858,61 @@ FLAT_FIELD_LABELS = {
 }
 
 
+def doc_date(d: m.Document) -> date:
+    """Datum dokumentu: podle něj se pozná, který údaj je novější. Když není v dokumentu, bere se datum nahrání."""
+    ex = d.extracted or {}
+    for key in ("doc_date", "contract_date"):
+        try:
+            return date.fromisoformat(str(ex.get(key) or "")[:10])
+        except ValueError:
+            pass
+    return (d.created_at or datetime.now(timezone.utc)).date()
+
+
 def enrich_flat(db: Session, d: m.Document) -> None:
-    """Doplní prázdné údaje bytu z dokumentu. Vyplněné hodnoty nepřepisuje a každé doplnění zapíše do historie."""
+    """Údaje bytu z dokumentu. Novější dokument přepíše starší údaj, starší dokument nepřepíše novější.
+    Přepsaná hodnota zůstane v historii a starší údaje zůstávají uložené v dokumentech."""
     ex = d.extracted or {}
     if d.flat_id is None or not ex:
         return
     f = db.get(m.Flat, d.flat_id)
     if f is None:
         return
+    when = doc_date(d)
+    dates = dict(f.field_dates or {})
     for key, attr in FLAT_FIELDS.items():
-        val = str(ex.get(key) or "").strip()
-        if not val or val.lower() in ("null", "none") or getattr(f, attr):
+        raw = str(ex.get(key) or "").strip()
+        if not raw or raw.lower() in ("null", "none"):
             continue
         if attr == "area_m2":
             try:
-                val = str(Decimal(val.replace(",", ".").replace(" ", "")).quantize(Decimal("0.01")))
+                new = Decimal(raw.replace(",", ".").replace(" ", "")).quantize(Decimal("0.01"))
             except ArithmeticError:
                 continue
-            setattr(f, attr, Decimal(val))
         else:
-            limit = 60 if attr in ("bank_acc", "tenant_phone") else 120
-            val = val[:limit]
-            setattr(f, attr, val)
-        db.add(m.Version(flat_id=f.id, name=FLAT_FIELD_LABELS[attr], action="doplněno z dokumentu",
-                         old=None, new={"value": val, "doc_id": d.id}))
+            new = raw[:60 if attr in ("bank_acc", "tenant_phone") else 120]
+        old = getattr(f, attr)
+        if old in (None, ""):
+            setattr(f, attr, new)
+            dates[attr] = when.isoformat()
+            db.add(m.Version(flat_id=f.id, name=FLAT_FIELD_LABELS[attr], action="doplněno z dokumentu",
+                             old=None, new={"value": str(new), "doc_id": d.id}))
+            continue
+        prev = dates.get(attr)
+        if prev:
+            try:
+                if when <= date.fromisoformat(prev):
+                    continue  # tento dokument není novější než údaj, který už je v bytu
+            except ValueError:
+                pass
+        if old == new:
+            dates[attr] = when.isoformat()
+            continue
+        db.add(m.Version(flat_id=f.id, name=FLAT_FIELD_LABELS[attr], action="přepsáno z dokumentu",
+                         old={"value": str(old)}, new={"value": str(new), "doc_id": d.id, "date": when.isoformat()}))
+        setattr(f, attr, new)
+        dates[attr] = when.isoformat()
+    f.field_dates = dates
 
 
 def rematch_all(db: Session) -> None:

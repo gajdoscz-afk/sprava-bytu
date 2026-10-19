@@ -33,6 +33,7 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, kupni_smlouva, fotky_stavu, doklad_najemnika, jine]
   kupni_smlouva = kupní smlouva k nemovitosti (koupě bytu, prodávající a kupující).
 - price: u kupní smlouvy kupní cena bytu v Kč jako číslo, jinak null
+- doc_date: datum vystavení nebo podpisu dokumentu ve formátu YYYY-MM-DD (u smlouvy datum podpisu, u vyúčtování a pojistky datum vystavení), jinak null
 - contract_date: u kupní smlouvy datum podpisu ve formátu YYYY-MM-DD, u výpisu z katastru datum titulu (kupní smlouvy), jinak null
   vypis_katastru = výpis z katastru nemovitostí (LV), vlastník, parcela, jednotka, podíly na společných částech.
   vyuctovani_najemnikovi = vyúčtování služeb, které vystavil pronajímatel nájemníkovi (nájemník doplácí nebo má přeplatek).
