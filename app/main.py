@@ -1238,12 +1238,27 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     return {"added": added, "skipped": skipped}
 
 
+def _forget_payer(db: Session, t: m.BankTx, flat_id: int) -> None:
+    """Při opravě odebere zapamatovaného plátce u původního bytu, pokud k němu nezbývá žádná jiná platba od něj."""
+    cp = bank.normalize(t.counterparty)
+    if not cp:
+        return
+    others = db.scalars(select(m.BankTx).where(m.BankTx.flat_id == flat_id, m.BankTx.id != t.id)).all()
+    if any(bank.normalize(o.counterparty) == cp for o in others):
+        return
+    alias = f"cp:{cp}"[:200]
+    for a in db.scalars(select(m.FlatAlias).where(m.FlatAlias.flat_id == flat_id, m.FlatAlias.alias == alias)).all():
+        db.delete(a)
+
+
 @app.patch("/bank/{tx_id}")
 def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
     t = db.get(m.BankTx, tx_id)
     if t is None:
         raise HTTPException(404, "Platba nenalezena")
     if "flat_id" in body.model_fields_set:
+        if t.flat_id is not None and t.flat_id != body.flat_id:
+            _forget_payer(db, t, t.flat_id)  # oprava: původní byt si už plátce nepamatuje
         if body.flat_id is not None:
             f = get_flat(db, body.flat_id)
             cp = bank.normalize(t.counterparty)
@@ -1332,12 +1347,22 @@ def economics(months: int = 6, db: Session = Depends(get_db)):
         })
 
     unmatched = sorted((t for t in txs if t.flat_id is None), key=lambda t: t.date, reverse=True)
+    addr_of = {f.id: f.addr for f in flats}
+    shown = set(periods)
+    assigned = sorted((t for t in txs if t.flat_id is not None and t.period in shown),
+                      key=lambda t: t.date, reverse=True)
     return {
         "months": out,
         "unmatched": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
              "counterparty": t.counterparty, "note": t.note, "period": t.period}
             for t in unmatched[:200]
+        ],
+        "assigned": [
+            {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
+             "counterparty": t.counterparty, "period": t.period, "flat_id": t.flat_id,
+             "flat_addr": addr_of.get(t.flat_id, "?"), "match": t.match}
+            for t in assigned[:300]
         ],
     }
 

@@ -357,6 +357,8 @@ function econHome(){
  }).join('');
  const unm=e.unmatched.length?e.unmatched.map(t=>`<div class="card"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}${t.note?' · '+esc(t.note):''}</div></div></div>
   <div class="grid2"><div><label>Byt</label><select id="ut${t.id}">${flatOpts(null)}</select></div><div style="align-self:end"><button class="btn sm" onclick="assignTx(${t.id})">Přiřadit</button></div></div></div>`).join(''):'<div class="card mut">Všechny platby z výpisů jsou přiřazené.</div>';
+ const asg=(e.assigned||[]).map(t=>`<div class="card"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}</div><div class="small">Přiřazeno: <b>${esc(t.flat_addr)}</b></div></div></div>
+  <div class="grid2"><div><label>Opravit byt</label><select id="ut${t.id}">${flatOpts(t.flat_id)}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="assignTx(${t.id})">Uložit</button><button class="btn sec sm" onclick="assignTx(${t.id},true)">Odpojit</button></div></div></div>`).join('');
  return `<div class="row"><h1>Ekonomika</h1>
   <label style="margin:0;cursor:pointer"><span class="btn sec sm">+ Nahrát výpis (CSV / PDF)</span><input type="file" accept=".csv,.pdf,text/csv,application/pdf" style="display:none" onchange="uploadBank(this)"></label></div>
  <div id="bk" class="small mut"></div>
@@ -369,7 +371,10 @@ function econHome(){
   ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
  </tbody></table></div>
  <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
- <h2>Platby z výpisu k přiřazení</h2>${unm}`;
+ <h2>Platby z výpisu k přiřazení</h2>${unm}
+ <h2>Přiřazené platby (lze opravit)</h2>
+ <p class="mut small">Špatně přiřazenou platbu změňte na správný byt, nebo ji „Odpojit“ a vrátí se mezi nepřiřazené.</p>
+ ${asg||'<div class="card mut">Za zobrazené měsíce nejsou žádné přiřazené platby.</div>'}`;
 }
 async function uploadBank(input){
  const f=input.files[0];input.value='';if(!f)return;
@@ -382,9 +387,11 @@ async function uploadBank(input){
   await reload();render();
  }catch(e){toast(e.message);box.textContent=''}
 }
-async function assignTx(id){
- const v=$('#ut'+id).value;if(!v){toast('Vyberte byt');return}
- try{await api(`/bank/${id}`,'PATCH',{flat_id:+v});toast('Přiřazeno');await reload();render()}
+async function assignTx(id,unassign){
+ const v=unassign?'':$('#ut'+id).value;
+ if(!unassign&&!v){toast('Vyberte byt');return}
+ if(unassign&&!confirm('Odpojit platbu od bytu? Vrátí se mezi nepřiřazené.'))return;
+ try{await api(`/bank/${id}`,'PATCH',{flat_id:unassign?null:+v});toast(unassign?'Platba je zase nepřiřazená':'Přiřazeno');await reload();render()}
  catch(e){toast(e.message)}
 }
 async function setVs(fid){
