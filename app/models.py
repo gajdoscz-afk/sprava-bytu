@@ -120,7 +120,8 @@ class Document(Base):
     flat_id: Mapped[int | None] = mapped_column(
         ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    status: Mapped[str] = mapped_column(String(20), default="ke_kontrole")  # ke_kontrole | zarazeno
+    status: Mapped[str] = mapped_column(String(20), default="ke_kontrole")  # ke_kontrole | zarazeno | rozpracováno (stránka skupiny)
+    group_key: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)  # stránky jednoho dokumentu
     doc_type: Mapped[str] = mapped_column(String(40), default="jine")
     filename: Mapped[str] = mapped_column(String(300))
     mime: Mapped[str] = mapped_column(String(100))

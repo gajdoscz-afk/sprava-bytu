@@ -1,3 +1,4 @@
+import io
 import os
 import secrets
 import statistics
@@ -85,6 +86,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS address VARCHAR(300) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
+        conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -820,7 +822,7 @@ def get_document(db: Session, doc_id: int) -> m.Document:
 
 def doc_out(d: m.Document) -> dict:
     return {
-        "id": d.id, "flat_id": d.flat_id, "status": d.status, "doc_type": d.doc_type,
+        "id": d.id, "flat_id": d.flat_id, "status": d.status, "doc_type": d.doc_type, "group_key": d.group_key,
         "filename": d.filename, "mime": d.mime, "size": d.size, "year": d.year,
         "summary": d.summary, "note": d.note, "suggested_flat_id": d.suggested_flat_id,
         "extracted": d.extracted, "created_at": d.created_at.isoformat(),
@@ -893,6 +895,8 @@ def rematch_all(db: Session) -> None:
 
 def run_classification(d: m.Document, db: Session) -> None:
     """Přečte dokument a nastaví typ, rok, shrnutí a navržený byt. Automaticky zařadí jen při jisté shodě."""
+    if d.status == "rozpracováno":
+        return  # stránka, která čeká na zbytek dokumentu; čte se až celý dokument
     flats = db.scalars(select(m.Flat)).all()
     aliases = db.scalars(select(m.FlatAlias)).all()
     try:
@@ -950,6 +954,7 @@ def sync_acquisition(db: Session, d: m.Document) -> None:
 async def upload_documents(
     files: list[UploadFile] = File(...),
     flat_id: int | None = Form(None),
+    group_key: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     # flat_id posílá karta bytu: dokumenty jdou rovnou k tomuto bytu, bez dotazu
@@ -962,6 +967,17 @@ async def upload_documents(
             raise HTTPException(413, f"{up.filename}: soubor je větší než 15 MB")
         mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "application/octet-stream"
         d = m.Document(filename=(up.filename or "dokument")[:300], mime=mime, size=len(data), data=data)
+        if group_key:
+            # Stránka jednoho dokumentu: čeká, až přijde celý dokument, a teprve pak se spojí do PDF
+            if not mime.startswith("image/"):
+                raise HTTPException(400, f"{up.filename}: do dokumentu po stránkách jdou jen fotky. PDF nahrajte zvlášť.")
+            d.group_key = group_key[:40]
+            d.status = "rozpracováno"
+            d.flat_id = flat_id
+            db.add(d)
+            db.commit()
+            out.append(doc_out(d))
+            continue
         if flat_id is not None:
             d.flat_id = flat_id
             d.status = "zarazeno"
@@ -1018,6 +1034,54 @@ async def reclassify_document(doc_id: int, db: Session = Depends(get_db)):
     await run_in_threadpool(run_classification, d, db)
     db.commit()
     return doc_out(d)
+
+
+def _images_to_pdf(images: list[bytes]) -> bytes:
+    from PIL import Image
+    pages = []
+    for raw in images:
+        pages.append(Image.open(io.BytesIO(raw)).convert("RGB"))
+    out = io.BytesIO()
+    pages[0].save(out, "PDF", save_all=True, append_images=pages[1:], resolution=150.0)
+    return out.getvalue()
+
+
+def _group_pages(db: Session, key: str) -> list[m.Document]:
+    return list(db.scalars(select(m.Document).where(
+        m.Document.group_key == key, m.Document.status == "rozpracováno").order_by(m.Document.id)).all())
+
+
+@app.post("/document-groups/{key}/finish")
+async def finish_document_group(key: str, db: Session = Depends(get_db)):
+    """Spojí stránky do jednoho PDF, zařadí ho a přečte celý najednou (první stránka i ty další)."""
+    docs = _group_pages(db, key)
+    if not docs:
+        raise HTTPException(404, "Rozpracovaný dokument nenalezen")
+    if len(docs) == 1 and docs[0].mime == "application/pdf":
+        pdf_bytes = docs[0].data
+    elif any(x.mime == "application/pdf" for x in docs):
+        raise HTTPException(400, "V dokumentu je PDF i fotky. Spojit se dají jen fotky.")
+    else:
+        pdf_bytes = await run_in_threadpool(_images_to_pdf, [x.data for x in docs])
+    first = docs[0]
+    stem = re.sub(r"\.\w+$", "", first.filename)[:200] or "dokument"
+    name = first.filename if len(docs) == 1 else f"{stem} ({len(docs)} str.).pdf"
+    d = m.Document(filename=name[:300], mime="application/pdf", size=len(pdf_bytes), data=pdf_bytes,
+                   flat_id=first.flat_id, status="zarazeno" if first.flat_id else "ke_kontrole")
+    for x in docs:
+        db.delete(x)
+    db.add(d)
+    db.flush()
+    await run_in_threadpool(run_classification, d, db)
+    db.commit()
+    return doc_out(d)
+
+
+@app.delete("/document-groups/{key}", status_code=204)
+def cancel_document_group(key: str, db: Session = Depends(get_db)):
+    for x in _group_pages(db, key):
+        db.delete(x)
+    db.commit()
 
 
 @app.delete("/documents/{doc_id}", status_code=204)

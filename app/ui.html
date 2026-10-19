@@ -79,6 +79,10 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 @keyframes cspin{to{transform:rotate(360deg)}}
 .bstat{display:flex;align-items:center;min-height:22px;margin:4px 0 14px;font-size:14px}
 @media (prefers-reduced-motion:reduce){.cspin{animation-duration:2.5s}}
+/* Záhlaví bytu zůstává nahoře při listování */
+.stickyFlat{position:sticky;top:0;z-index:4;background:var(--paper);border-bottom:1px solid var(--line);margin:-18px -16px 12px;padding:10px 64px 10px 16px;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stickyFlat small{font-family:system-ui,sans-serif;font-weight:400;color:var(--mut);font-size:13px;margin-left:6px}
+.pend{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
 /* Hodnota portfolia: fialový panel s podsvícením */
 .pwidget{position:relative;margin:4px auto 18px;max-width:440px;text-align:center;padding:18px 18px 16px;border-radius:20px;background:radial-gradient(120% 140% at 50% 0%,#2A1656 0%,#0C0818 62%);border:1px solid #7C3AED;box-shadow:0 0 0 1px rgba(168,85,247,.25),0 0 30px rgba(139,92,246,.45),0 0 70px rgba(139,92,246,.18);color:#E9D5FF;cursor:pointer}
 .pwidget .pl{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#C4B5FD}
@@ -237,7 +241,8 @@ function flatDetail(){
   <div class="line sum"><span>Celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
   <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button></div></div>`;
  const y=V.year?f.years[V.year]:null;
- return `<button class="link" onclick="go('flats')">← Byty</button>
+ return `<div class="stickyFlat">${esc(f.addr)}${f.dispo?`<small>${esc(f.dispo)}</small>`:''}</div>
+ <button class="link" onclick="go('flats')">← Byty</button>
  <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut small">${esc(f.dispo)} · ${esc(f.floor)} · ${esc(f.zip)}</p>
  <div class="card">
   <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
@@ -262,7 +267,9 @@ ${svjCard}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
- <h2>Dokumenty</h2>${docGroups(S.docs.filter(d=>d.flat_id==f.id),'Zatím žádné dokumenty.')}
+ ${pendingBanner(pendingGroups(f.id))}
+ <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0"><button class="btn sm sec" onclick="addPage(f.id)">+ Stránky jednoho dokumentu</button><button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
+ ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
  <h2>Změny u tohoto bytu</h2>${versionsList(v=>v.flat==f.id)}
  <div class="btns"><button class="btn danger sm" onclick="deleteFlat(${f.id})">Smazat byt</button></div>`;
 }
@@ -905,12 +912,14 @@ function docGroups(list,emptyText){
  return h;
 }
 function docsTab(){
- const inbox=S.docs.filter(d=>d.status!=='zarazeno');
+ const inbox=S.docs.filter(d=>d.status==='ke_kontrole');
  const filed=S.docs.filter(d=>d.status==='zarazeno');
+ const pend=pendingBanner(pendingGroups('all'));
  return `<div class="row"><h1>Dokumenty</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
  <p class="mut small">Nahrajte fotky nebo PDF, co nejvíc najednou. Aplikace pozná typ dokumentu a byt. Pokud si nebude jistá, zeptá se.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
+  <button class="btn sec" onclick="addPage(null)" style="margin:0"><b>+ Stránky jednoho dokumentu</b></button>
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát fotky nebo PDF</b>
   <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Celá složka</b>
@@ -918,6 +927,7 @@ function docsTab(){
   </div>
   <div id="up" class="small mut" style="margin-top:8px"></div>
  </div>
+ ${pend}
  <h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')||'<div class="card mut">Nic nečeká.</div>'}
  <h2>Zařazeno</h2>${docGroups(filed,'Zatím nic.')}`;
 }
@@ -946,7 +956,7 @@ async function uploadDocs(input,flatId){
  return uploadFiles(all,flatId);
 }
 // Společné nahrávání pro tlačítka, přetažení i Ctrl+V. flatId vyplněné = dokumenty rovnou patří k bytu
-async function uploadFiles(all,flatId){
+async function uploadFiles(all,flatId,groupKey){
  const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
  const skipped=all.length-files.length;
  if(!files.length){toast('Žádný podporovaný soubor (PDF nebo obrázek)');return}
@@ -958,6 +968,7 @@ async function uploadFiles(all,flatId){
    const fd=new FormData();
    fd.append('files',await shrink(files[i]).catch(()=>files[i]));
    if(flatId)fd.append('flat_id',flatId);
+   if(groupKey)fd.append('group_key',groupKey);
    const res=await fetch('/documents',{method:'POST',body:fd});
    if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
    ok++;
@@ -1012,11 +1023,52 @@ window.addEventListener('paste',e=>{
  uploadFiles(files,t.flatId);
 });
 
+// ---------- stránky jednoho dokumentu (více fotek = jedno PDF) ----------
+// flatId: číslo bytu, null = bez přiřazení, 'all' = všechny skupiny (Dokumenty)
+function pendingGroups(flatId){
+ const by={};
+ for(const d of S.docs){
+  if(d.status!=='rozpracováno'||!d.group_key)continue;
+  if(flatId!=='all'&&(d.flat_id??null)!==(flatId??null))continue;
+  const g=by[d.group_key]||(by[d.group_key]={key:d.group_key,flat_id:d.flat_id??null,pages:0});
+  g.pages++;
+ }
+ return Object.values(by);
+}
+const stranky=n=>n===1?'stránka':(n>=2&&n<=4?'stránky':'stránek');
+function pendingBanner(gs){
+ return gs.map(g=>`<div class="card pend"><div class="row"><div><b>Rozpracovaný dokument</b><div class="small mut">${g.pages} ${stranky(g.pages)}${g.flat_id?'':' · zatím bez bytu'}</div></div></div>
+  <div class="btns" style="margin:10px 0 0"><button class="btn sm sec" onclick="addPage(${g.flat_id})">+ Další stránka</button><button class="btn sm" onclick="finishGroup('${g.key}')">Je to všechno, vytvořit PDF</button><button class="btn sm sec" onclick="cancelGroup('${g.key}')">Zrušit</button></div></div>`).join('');
+}
+function addPage(flatId){
+ const open=pendingGroups(flatId===undefined?null:flatId)[0];
+ const key=open?open.key:(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(36).slice(2));
+ const i=document.createElement('input');
+ i.type='file';i.accept='image/*';i.multiple=true;
+ i.onchange=()=>uploadFiles([...i.files],flatId,key);
+ i.click();
+}
+async function finishGroup(key){
+ const n=S.docs.filter(d=>d.group_key===key).length;
+ if(!confirm(`Spojit ${n} ${stranky(n)} do jednoho PDF a přečíst ho celý najednou?`))return;
+ progress('Spojuji stránky do PDF a čtu dokument…');
+ try{ await api(`/document-groups/${key}/finish`,'POST'); toast('Dokument vytvořen a přečten') }
+ catch(e){ toast(e.message) }
+ progress('');
+ await reload(); render();
+}
+async function cancelGroup(key){
+ if(!confirm('Zrušit rozpracovaný dokument? Nahrané stránky se smažou.'))return;
+ try{ await api(`/document-groups/${key}`,'DELETE') }catch(e){ toast(e.message) }
+ await reload(); render();
+}
+
 // Přečte znovu všechny dokumenty: doplní nová pole (dispozice, PSČ, kontakty, účet) a přepočítá přiřazení
-async function rereadAll(){
- const ids=S.docs.map(d=>d.id);
+async function rereadAll(){ return rereadIds(S.docs.filter(d=>d.status!=='rozpracováno').map(d=>d.id),'Přečíst znovu') }
+async function rereadFlat(flatId){ return rereadIds(S.docs.filter(d=>d.flat_id===flatId&&d.status!=='rozpracováno').map(d=>d.id),'Přečíst znovu dokumenty tohoto bytu') }
+async function rereadIds(ids,title){
  if(!ids.length){toast('Zatím nejsou žádné dokumenty');return}
- if(!confirm(`Přečíst znovu ${ids.length} dokumentů? Typ a údaje se přepočítají, ruční přiřazení k bytu zůstane.`))return;
+ if(!confirm(`${title}: ${ids.length} dokumentů? Typ a údaje se přepočítají, ruční přiřazení k bytu zůstane.`))return;
  let ok=0,fail=0;
  for(let i=0;i<ids.length;i++){
   progress(`Čtu znovu ${i+1} z ${ids.length}`);
