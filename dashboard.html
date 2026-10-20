@@ -314,6 +314,7 @@ function sparkline(points, cur) {
   return wrap;
 }
 
+function f2row(box, k, v, cls) { box.append(row(k, v, cls)); }
 function renderInstance(it) {
   const s = it.status || {};
   const acc = s.account || {};
@@ -435,6 +436,8 @@ function renderInstance(it) {
   f.append(row("Čas SEČ/SELČ", s.cetTime || "–"));
   f.append(row("Obchodní hodiny", s.hours || "–", s.inHours === false ? "warn" : ""));
   f.append(row("Zprávy", s.news || "–", s.newsBlocked ? "warn" : ""));
+  if (s.nextNews) f.append(row("Další zpráva", s.nextNews));
+  if (s.guard !== undefined) f.append(row("Ochrany", s.guard || ("v klidu" + (s.trend ? " (" + s.trend + ")" : "")), s.guard ? "warn" : ""));
   f.append(row("Signál", s.signal || "–"));
   f.append(row("Poslední svíčka", s.lastBar || "–"));
   f.append(row("Vyhodnocení", s.evalText || "–", lvlClass(s.evalLevel)));
@@ -444,6 +447,22 @@ function renderInstance(it) {
   if (s.adr) f.append(row("ADR", s.adr));
   if (s.adrDays) f.append(row("Rozsahy dní", s.adrDays, "dim"));
   grid.append(f);
+
+  // kalendář zpráv s vysokým dopadem pro měny tohoto symbolu
+  const cal = (lastState && lastState.calendar) || {};
+  const sy = String(s.symbol || ""), curs = [sy.slice(0, 3), sy.slice(3, 6)];
+  const nowS = Date.now() / 1000;
+  const evs = (cal.events || []).filter(e => curs.includes(e.cur) && e.t > nowS - 3600 && e.t < nowS + 48 * 3600);
+  const cs = el("div", "sec");
+  cs.append(el("h2", "", "Zprávy (48 h, vysoký dopad)"));
+  if (!cal.lastOk) cs.append(el("div", "dim", "Kalendář se načítá…"));
+  else if (!evs.length) cs.append(el("div", "dim", "Žádné pro " + curs.join("/") + "."));
+  evs.forEach(e => {
+    const d = new Date(e.t * 1000);
+    const when = d.toLocaleString("cs-CZ", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    f2row(cs, when, e.cur + " " + e.title, e.t < nowS ? "dim" : (e.t - nowS < 3 * 3600 ? "warn" : ""));
+  });
+  grid.append(cs);
 
   // zhodnocení
   const z = el("div", "sec two");
@@ -644,7 +663,16 @@ const FIELDS = [
   ["Ochrana a čas", [
     ["StopLossPips", "SL první pozice (p)", "num", "0 = hard stop"], ["HardStopPips", "Hard stop koše (p)", "num", "0 = vypnuto"],
     ["MaxAccountDDPercent", "Max. ztráta účtu %", "num", "0 = vypnuto"],
+    ["MaxDailyLossPercent", "Max. denní ztráta %", "num", "0 = vypnuto; počítá i otevřený koš"],
     ["TradeStartCET", "Obchodovat od", "time"], ["TradeEndCET", "Obchodovat do", "time"],
+  ]],
+  ["Prudké pohyby", [
+    ["UseVolatilityGuard", "Pojistka volatility", "bool", "pauza po prudkém pohybu"],
+    ["VolATRMult", "Spouštěč × ATR(H1)", "num", "rozsah za 15 min větší než X × ATR"], ["VolPauseMinutes", "Pauza (min)", "int"],
+    ["UseTrendFilter", "Trendový filtr", "bool", "nepřikupovat proti silnému trendu"],
+    ["TrendDistanceATR", "Silný trend × ATR", "num", "cena od EMA200 dál než X × ATR"],
+    ["UseFridayGuard", "Páteční ochrana", "bool", "od 18:00 bez nových košů, koš na nule zavřít"],
+    ["MaxBasketHours", "Max. stáří koše (h)", "num", "pak zavřít na nule/v zisku; 0 = vypnuto"],
   ]],
 ];
 
@@ -743,6 +771,7 @@ function renderSettings(resetDraft) {
   }
 
   FIELDS.forEach(([title, fields]) => {
+    if (!fields.some(([key]) => key in setDraft)) return;
     const g = el("div", "set-group"); g.append(el("h3", "", title));
     fields.forEach(([key, label, type, hint, opts]) => {
       if (!(key in setDraft)) return;

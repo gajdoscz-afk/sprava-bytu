@@ -185,6 +185,11 @@ function onStatus(prev, cur) {
     broadcast("halt", `${sym}: obchodování povoleno`, "EA na VPS může opět obchodovat.", `trade-${sym}`);
   }
 
+  // pojistka volatility
+  if (cur.guardVol === true && prev.guardVol !== true) {
+    broadcast("halt", `${sym}: prudký pohyb – pauza`, `${cur.state || ""}. Nové koše ani přikupování se teď neotevírají.`, `vol-${sym}`);
+  }
+
   if (!isHalted(prev) && isHalted(cur)) {
     broadcast("halt", `${sym}: ZASTAVENO`, `${cur.state.replace(/^ZASTAVENO – /, "")}. Equity ${Number(a.equity || 0).toFixed(2)} ${c}`, `halt-${sym}`);
   } else if (isHalted(prev) && !isHalted(cur)) {

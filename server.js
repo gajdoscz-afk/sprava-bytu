@@ -21,6 +21,8 @@ if (!PUSH_TOKEN || !DASH_PASSWORD) {
 }
 
 const { computeStats, baskets } = require("./stats");
+const news = require("./news");
+news.start();
 const REPORT_KEY = process.env.REPORT_KEY || "";
 const notify = require("./notify");
 notify.init({
@@ -51,6 +53,10 @@ const PARAMS = {
   TradeStartCET: ["time"], TradeEndCET: ["time"],
   MaxAccountDDPercent: ["num", 0, 99],
   BasketTPMode: ["int", 0, 1], BasketTPPerPos: ["num", 0.1, 10],
+  MaxDailyLossPercent: ["num", 0, 99],
+  UseVolatilityGuard: ["bool"], VolATRMult: ["num", 0.3, 10], VolPauseMinutes: ["int", 5, 1440],
+  UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
+  UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
 };
 function normParams(obj) {
   const out = [];
@@ -234,6 +240,7 @@ function buildReport(hrs) {
     else L.push(`Koš: žádný otevřený (max ${b.max ?? "?"} pozic)`);
     const r = s.risk || {};
     if (r.newBasketLoss != null) L.push(`Riziko plného koše na hard stopu: ${f2(r.newBasketLoss)} ${cur} (${f2(r.newBasketPct)} % balance)`);
+    L.push(`Ochrany: ${s.guard || "v klidu"}${s.trend ? " · trend H1: " + s.trend : ""} · další zpráva: ${s.nextNews || "?"}`);
     if (s.settings) L.push(`Nastavení: ${Object.entries(s.settings).map(([k, v]) => k + "=" + v).join(", ")}`);
     const h = hist.get(it.id);
     if (!h) { L.push("Historie: zatím žádná"); continue; }
@@ -266,6 +273,12 @@ function buildReport(hrs) {
     const done = (cmdDone.get(it.id) || []).filter((d) => (d.done || 0) / 1000 >= from);
     if (done.length) L.push(`Příkazy z aplikace: ${done.map((d) => d.action + " → " + (d.result || "")).join("; ")}`);
   }
+  const curs = new Set();
+  for (const it of snap.instances) { const sy = String((it.status || {}).symbol || ""); curs.add(sy.slice(0, 3)); curs.add(sy.slice(3, 6)); }
+  const upcoming = news.list(now, now + 36 * 3600).filter((e) => curs.has(e.cur));
+  L.push("", `Zprávy s vysokým dopadem (příštích 36 h, ${[...curs].join("/")}):`);
+  if (!upcoming.length) L.push(news.status().lastOk ? "  žádné" : "  kalendář nenačten: " + (news.status().lastErr || "?"));
+  for (const e of upcoming) L.push(`  ${tPrague(e.t)} ${e.cur} ${e.title}`);
   const notes = notify.recent().filter((n) => n.t / 1000 >= from);
   if (notes.length) { L.push("", "Upozornění za období:"); for (const n of notes) L.push(`  ${tPrague(n.t / 1000)} ${n.title} – ${n.body}`); }
   return L.join("\n") + "\n";
@@ -275,6 +288,7 @@ function snapshot() {
   const now = Date.now();
   return {
     serverNow: now,
+    calendar: { events: news.list(Math.floor(now / 1000) - 3600, Math.floor(now / 1000) + 4 * 86400), ...news.status() },
     staleSec: STALE_SEC,
     instances: Object.entries(instances)
       .map(([id, v]) => ({
@@ -351,6 +365,12 @@ const server = http.createServer(async (req, res) => {
       ok: true, needHistory: !(h && h.full),
       subsVersion: notify.getVersion(), needSubs: notify.needRestore(),
     }));
+  }
+
+  // --- EA si stahuje kalendář zpráv (text "utc|měna|název" po řádcích)
+  if (url.pathname === "/api/news" && req.method === "GET") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    return send(res, 200, news.eaText(), "text/plain; charset=utf-8");
   }
 
   // --- EA si vyzvedává příkazy (text "cid|akce", prázdné = nic)
