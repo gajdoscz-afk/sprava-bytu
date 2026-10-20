@@ -388,6 +388,7 @@ function renderInstance(it) {
   f.append(row("Signál", s.signal || "–"));
   f.append(row("Poslední svíčka", s.lastBar || "–"));
   f.append(row("Vyhodnocení", s.evalText || "–", lvlClass(s.evalLevel)));
+  if (s.tpInfo) f.append(row("TP", s.tpInfo));
   f.append(row("Odstup", s.grid || "–"));
   f.append(row("Úrovně / HardStop", s.levels || "–", s.levelsOver ? "warn" : ""));
   if (s.adr) f.append(row("ADR", s.adr));
