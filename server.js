@@ -368,6 +368,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- EA si stahuje kalendář zpráv (text "utc|měna|název" po řádcích)
+  if (url.pathname === "/api/news" && req.method === "POST") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    const n = news.importText((await readBody(req)).replace(/\u0000+$/, ""));
+    return send(res, 200, JSON.stringify({ ok: true, imported: n }));
+  }
   if (url.pathname === "/api/news" && req.method === "GET") {
     if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
     return send(res, 200, news.eaText(), "text/plain; charset=utf-8");

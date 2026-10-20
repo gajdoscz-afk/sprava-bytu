@@ -2,13 +2,14 @@
 // Ekonomický kalendář: zprávy s vysokým dopadem (stahuje server, EA si je čte přes /api/news).
 const https = require("https");
 
-// [hlavní adresa, záložní CDN]; příští týden zdroj zveřejňuje až během týdne (404 je normální)
+// příští týden zdroj zveřejňuje až během týdne (404 je normální).
+// Sdílené IP Renderu zdroj občas omezuje (429) – pak kalendář dodá EA z VPS (POST /api/news).
 const FEEDS = [
-  ["https://nfs.faireconomy.media/ff_calendar_thisweek.json", "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json"],
-  ["https://nfs.faireconomy.media/ff_calendar_nextweek.json", "https://cdn-nfs.faireconomy.media/ff_calendar_nextweek.json"],
+  ["https://nfs.faireconomy.media/ff_calendar_thisweek.json"],
+  ["https://nfs.faireconomy.media/ff_calendar_nextweek.json"],
 ];
 const REFRESH_MS = 2 * 3600 * 1000;   // zdroj žádá šetrné stahování
-const RETRY_MS = 15 * 60 * 1000;
+const RETRY_MS = 60 * 60 * 1000;
 
 let events = new Map();   // klíč "utc|měna|název" -> { t (s), cur, title }
 let lastOk = 0, lastErr = "", lastTry = 0;
@@ -70,6 +71,21 @@ function start() {
   setInterval(tick, 60 * 1000).unref();
 }
 
+// zprávy, které stáhlo EA přímo z VPS: řádky "utc|měna|název"
+function importText(text) {
+  let n = 0;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const [ts, cur, ...rest] = line.split("|");
+    const t = Number(ts);
+    if (!(t > 1.6e9) || !cur) continue;
+    const c = cur.trim().toUpperCase().slice(0, 4), title = rest.join(" ").trim().slice(0, 60);
+    events.set(`${t}|${c}|${title}`, { t, cur: c, title });
+    n++;
+  }
+  if (n) { lastOk = Date.now(); lastErr = ""; }
+  return n;
+}
+
 function list(fromSec, toSec) {
   return [...events.values()].filter((e) => e.t >= fromSec && e.t <= toSec).sort((a, b) => a.t - b.t);
 }
@@ -82,4 +98,4 @@ function eaText() {
 
 const status = () => ({ count: events.size, lastOk, lastErr });
 
-module.exports = { start, refresh, list, eaText, status };
+module.exports = { start, refresh, list, eaText, status, importText };
