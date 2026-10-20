@@ -192,6 +192,29 @@ function readBody(req, limit = 256 * 1024) {
   });
 }
 
+// Křivka equity: trvalá hodinová historie od EA (přežije restart serveru) + živé body od posledního startu.
+// Hodiny posledních 30 dní po hodině, starší po dnech. Bod = [ms, equity, balance|null].
+function equitySeries(id, live) {
+  const h = hist.get(id);
+  const out = [];
+  if (h && h.hours && h.hours.size) {
+    const firstLive = live.length ? live[0][0] : Infinity;
+    const cut = Date.now() - 30 * 86400000;
+    const days = new Map();
+    for (const hr of [...h.hours.keys()].sort((a, b) => a - b)) {
+      const ms = hr * 1000;
+      if (ms >= firstLive - 3600000) break;
+      const v = h.hours.get(hr);
+      const eq = Math.round((v[0] + v[1]) / 2 * 100) / 100;
+      if (!(eq > 0)) continue;
+      if (ms < cut) days.set(Math.floor(ms / 86400000), [ms, eq, null]);
+      else out.push([ms, eq, null]);
+    }
+    out.unshift(...days.values());
+  }
+  return out.length ? out.concat(live) : live;
+}
+
 function snapshot() {
   const now = Date.now();
   return {
@@ -204,7 +227,7 @@ function snapshot() {
         ageSec: Math.round((now - v.lastSeen) / 1000),
         online: now - v.lastSeen < STALE_SEC * 1000,
         status: v.status,
-        equity: v.equity,
+        equity: equitySeries(id, v.equity),
         pending: pendingFor(id).map((c) => ({ cid: c.cid, action: c.action, label: ACTIONS[c.action], payload: c.payload || "", ageSec: Math.round((now - c.created) / 1000) })),
         done: (cmdDone.get(id) || []).slice(0, 3),
       }))

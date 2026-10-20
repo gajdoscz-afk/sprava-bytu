@@ -77,6 +77,10 @@
   .wide { grid-column: span 3; }
   .two { grid-column: span 2; }
   svg.eq { width: 100%; height: 120px; display: block; }
+  .eq-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .eq-range { display: flex; gap: 4px; }
+  .eq-range button { font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line, #333); background: transparent; color: var(--dim); cursor: pointer; }
+  .eq-range button.on { color: inherit; border-color: currentColor; }
   .eq-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); font-family: var(--mono); margin-top: 4px; }
   .empty { padding: 60px 16px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 10px; line-height: 1.6; }
 
@@ -165,6 +169,8 @@
     .wide, .two { grid-column: span 2; }
   }
   @media (max-width: 600px) {
+    .tabs { width: 100%; }
+    .tabs button { flex: 1; padding: 7px 2px; font-size: 12px; }
     body { padding: 14px 12px 32px; }
     .grid { grid-template-columns: 1fr; }
     .wide, .two { grid-column: span 1; }
@@ -257,6 +263,8 @@ function ago(sec) {
   return Math.floor(sec / 86400) + " d";
 }
 
+let eqRange = "1D";
+try { const r = localStorage.getItem("eqRange"); if (["1D", "7D", "30D", "Vše"].includes(r)) eqRange = r; } catch (e) {}
 function sparkline(points, cur) {
   const wrap = el("div");
   if (!points || points.length < 2) {
@@ -265,6 +273,7 @@ function sparkline(points, cur) {
   }
   const W = 600, H = 120, P = 4;
   const eq = points.map(p => p[1]), bal = points.map(p => p[2]);
+  const balPts = points.map((p, i) => [p[0], bal[i]]).filter(p => typeof p[1] === "number");
   const all = eq.concat(bal.filter(x => typeof x === "number"));
   let lo = Math.min(...all), hi = Math.max(...all);
   if (hi - lo < 1e-9) { hi += 1; lo -= 1; }
@@ -282,7 +291,7 @@ function sparkline(points, cur) {
   area.setAttribute("d", line(eq) + ` L ${x(t1).toFixed(1)} ${H} L ${x(t0).toFixed(1)} ${H} Z`);
   area.setAttribute("fill", up ? "rgba(80,200,120,.10)" : "rgba(235,90,90,.10)");
   const pb = document.createElementNS(ns, "path");
-  pb.setAttribute("d", line(bal));
+  pb.setAttribute("d", balPts.length > 1 ? balPts.map((p, i) => (i ? "L" : "M") + x(p[0]).toFixed(1) + " " + y(p[1]).toFixed(1)).join(" ") : "");
   pb.setAttribute("fill", "none");
   pb.setAttribute("stroke", "#828a96");
   pb.setAttribute("stroke-width", "1");
@@ -297,7 +306,9 @@ function sparkline(points, cur) {
   svg.append(area, pb, pe);
   wrap.append(svg);
   const meta = el("div", "eq-meta");
-  const fmt = t => new Date(t).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+  const fmt = t => (t1 - t0 > 20 * 3600000
+    ? new Date(t).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })
+    : new Date(t).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }));
   meta.append(el("span", "", fmt(t0)), el("span", "", "min " + num(lo) + " · max " + num(hi) + " " + (cur || "")), el("span", "", fmt(t1)));
   wrap.append(meta);
   return wrap;
@@ -457,8 +468,22 @@ function renderInstance(it) {
 
   // equity
   const e = el("div", "sec wide");
-  e.append(el("h2", "", "Equity (od spuštění panelu)"));
-  e.append(sparkline(it.equity, cur));
+  const eh = el("div", "eq-head");
+  eh.append(el("h2", "", "Equity"));
+  const rg = el("div", "eq-range");
+  const box = el("div");
+  const RANGES = [["1D", 86400000], ["7D", 7 * 86400000], ["30D", 30 * 86400000], ["Vše", 0]];
+  const draw = () => {
+    const ms = RANGES.find(r => r[0] === eqRange)[1];
+    const from = ms ? Date.now() - ms : 0;
+    const pts = (it.equity || []).filter(p => p[0] >= from);
+    box.replaceChildren(sparkline(pts, cur));
+    [...rg.children].forEach(b => b.classList.toggle("on", b.textContent === eqRange));
+  };
+  RANGES.forEach(([lbl]) => { const b = el("button", "", lbl); b.type = "button"; b.onclick = () => { eqRange = lbl; try { localStorage.setItem("eqRange", lbl); } catch (er) {} draw(); }; rg.append(b); });
+  eh.append(rg);
+  e.append(eh, box);
+  draw();
   grid.append(e);
 
   // pozice
