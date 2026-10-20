@@ -289,9 +289,8 @@ const server = http.createServer(async (req, res) => {
       h = { trades: new Map(), flow: new Map(), hours: new Map() };
       hist.set(id, h);
     }
-    // plné odeslání nahradí obchody a pohyby (zdroj pravdy je historie MT4);
-    // hodinová data se vždy jen slučují, aby se nic neztratilo
-    if (d.full) { h.trades = new Map(); h.flow = new Map(); }
+    // obchody, pohyby i hodinová data se jen slučují – VPS může vidět jen část historie,
+    // domácí MT4 s celou historií pak doplní zbytek a nic se neztratí
     Object.assign(h, {
       symbol: String(d.symbol || "?"), magic: d.magic || 0, account: d.account || 0,
       currency: String(d.currency || ""), balance: Number(d.balance) || 0, updated: Date.now(),
@@ -313,6 +312,17 @@ const server = http.createServer(async (req, res) => {
       for (const k of keys.slice(0, h.hours.size - MAX_HOURS)) h.hours.delete(k);
     }
     return send(res, 200, JSON.stringify({ ok: true, trades: h.trades.size, hours: h.hours.size }));
+  }
+
+  // --- server -> EA: historie obchodů a pohybů na účtu (EA si ji uloží do souboru)
+  if (url.pathname === "/api/trades" && req.method === "GET") {
+    if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
+    const h = hist.get(String(url.searchParams.get("id") || ""));
+    if (!h) return send(res, 200, "", "text/plain; charset=utf-8");
+    const lines = [];
+    for (const [tk, x] of h.trades) lines.push(`T,${tk},${x.c},${x.o},${x.ty},${Number(x.l).toFixed(2)},${Number(x.p).toFixed(2)}`);
+    for (const [tk, f] of h.flow) lines.push(`F,${tk},${f.t},${Number(f.a).toFixed(2)},${f.dep ? 1 : 0}`);
+    return send(res, 200, lines.join("\n"), "text/plain; charset=utf-8");
   }
 
   // --- server -> EA: obnova hodinových dat po restartu EA (text, snadno čitelný v MQL4)
