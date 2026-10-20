@@ -171,6 +171,13 @@ function onStatus(prev, cur) {
     }
   }
 
+  // EA nemá povolené obchodování (např. odškrtnuté „Umožnit obchodování“ po synchronizaci)
+  if (cur.tradeAllowed === false && (prev.tradeAllowed !== false)) {
+    broadcast("halt", `${sym}: obchodování ZAKÁZÁNO`, (cur.tradeText || "EA nesmí obchodovat") + ". Zkontrolujte nastavení EA a synchronizujte VPS.", `trade-${sym}`);
+  } else if (prev.tradeAllowed === false && cur.tradeAllowed === true) {
+    broadcast("halt", `${sym}: obchodování povoleno`, "EA na VPS může opět obchodovat.", `trade-${sym}`);
+  }
+
   if (!isHalted(prev) && isHalted(cur)) {
     broadcast("halt", `${sym}: ZASTAVENO`, `${cur.state.replace(/^ZASTAVENO – /, "")}. Equity ${Number(a.equity || 0).toFixed(2)} ${c}`, `halt-${sym}`);
   } else if (isHalted(prev) && !isHalted(cur)) {

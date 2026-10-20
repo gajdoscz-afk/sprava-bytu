@@ -278,7 +278,8 @@ function renderInstance(it) {
   const sym = el("div", "sym", s.symbol || it.id);
   sym.append(el("small", "", (s.tf || "") + (s.version ? "  ·  v" + s.version : "")));
   head.append(sym);
-  if (it.online) head.append(el("span", "pill " + (s.stateLevel || "ok"), s.state || "?"));
+  if (it.online && s.tradeAllowed === false) head.append(el("span", "pill bad", "OBCHODOVÁNÍ ZAKÁZÁNO"));
+  else if (it.online) head.append(el("span", "pill " + (s.stateLevel || "ok"), s.state || "?"));
   else head.append(el("span", "pill bad", "OFFLINE"));
   const seen = el("span", "seen" + (it.online ? "" : " off"),
     it.online ? "aktualizováno před " + ago(it.ageSec) : "EA neposílá data " + ago(it.ageSec) + " – zkontrolujte MT4 / VPS");
@@ -380,6 +381,7 @@ function renderInstance(it) {
   // stav a filtry
   const f = el("div", "sec");
   f.append(el("h2", "", "Stav a filtry"));
+  if (s.tradeText) f.append(row("Obchodování", s.tradeText, s.tradeAllowed === false ? "bad" : "good"));
   f.append(row("Čas SEČ/SELČ", s.cetTime || "–"));
   f.append(row("Obchodní hodiny", s.hours || "–", s.inHours === false ? "warn" : ""));
   f.append(row("Zprávy", s.news || "–", s.newsBlocked ? "warn" : ""));
