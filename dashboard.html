@@ -117,6 +117,39 @@
   .modal-box .toolbar { margin: 12px 0 0; justify-content: flex-end; }
   .linkbox { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   .linkbox code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+  .top-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .bal-tile { position: relative; overflow: hidden; border-radius: 14px; padding: 18px 20px;
+    background: linear-gradient(135deg, #2b1d52 0%, #1c1537 55%, #151125 100%);
+    border: 1px solid rgba(170,120,255,.55);
+    box-shadow: 0 0 0 1px rgba(170,120,255,.15), 0 0 32px rgba(150,90,255,.35), inset 0 0 40px rgba(150,90,255,.12); }
+  .bal-tile::after { content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(185,140,255,.35), rgba(185,140,255,0) 70%); pointer-events: none; }
+  .bal-tile h2 { margin: 0 0 4px; font-size: 11px; font-weight: 500; color: #c9b6ff; text-transform: uppercase; letter-spacing: 1.2px; }
+  .bal-num { font-family: var(--mono); font-size: 40px; font-weight: 500; color: #f1eaff; text-shadow: 0 0 18px rgba(170,120,255,.6); line-height: 1.15; }
+  .bal-num small { font-size: 18px; color: #c9b6ff; margin-left: 6px; }
+  .bal-sub { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: #c9b6ff; }
+  .bal-sub b { font-family: var(--mono); font-weight: 500; color: #f1eaff; }
+  .set-status { border-radius: 14px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); font-size: 13px; }
+  .set-status h2 { margin: 0 0 8px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .set-status .when { font-family: var(--mono); font-size: 15px; margin-bottom: 4px; }
+  .set-status .what { color: var(--dim); overflow-wrap: anywhere; }
+  .set-strip { padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--dim); background: var(--card); }
+  .set-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .set-group { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .set-group h3 { margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .fld { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+  .fld:first-of-type { border-top: 0; }
+  .fld label { font-size: 13.5px; } .fld label small { display: block; font-size: 11.5px; color: var(--dim); }
+  .fld input[type=number], .fld input[type=text], .fld select { width: 110px; font: inherit; font-size: 15px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; text-align: right; }
+  .fld select { text-align: left; width: 130px; }
+  .fld.changed input, .fld.changed select { border-color: var(--head); box-shadow: 0 0 0 1px rgba(250,210,100,.35); }
+  .fld input[type=checkbox] { width: 20px; height: 20px; accent-color: #50c878; }
+  .preview { margin: 14px 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .preview .row { font-size: 14px; }
+  .preview h2 { margin: 0 0 10px; font-size: 11px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .sticky-save { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 12px 0 calc(8px + env(safe-area-inset-bottom)); display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+  @media (max-width: 760px) { .top-row, .set-grid { grid-template-columns: 1fr; } .bal-num { font-size: 34px; } }
   .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
   .ctl .btn { font-size: 13px; padding: 7px 14px; }
   .ctl-info { font-size: 12px; color: var(--dim); margin-left: 4px; }
@@ -147,6 +180,7 @@
   <div class="tabs" role="tablist">
     <button role="tab" id="tab-live" aria-selected="true">Přehled</button>
     <button role="tab" id="tab-stats" aria-selected="false">Statistiky</button>
+    <button role="tab" id="tab-set" aria-selected="false">Nastavení</button>
     <button role="tab" id="tab-notify" aria-selected="false">Upozornění</button>
   </div>
   <div id="conn">načítám…</div>
@@ -158,6 +192,9 @@
     <select id="asset"><option value="ALL">Všechna aktiva</option></select>
   </div>
   <div id="stats-body"><div class="empty">Načítám statistiky…</div></div>
+</section>
+<section id="settings" class="hidden">
+  <div id="set-body"><div class="empty">Načítám nastavení…</div></div>
 </section>
 <section id="notify" class="hidden">
   <div class="inst">
@@ -314,6 +351,8 @@ function renderInstance(it) {
   }
   ctl.append(info);
   card.append(ctl);
+  const st = setStatusText(it);
+  if (st) { const sp = el("div", "set-strip"); sp.append(el("span", "", "Nastavení z aplikace: "), el("span", st.cls, st.text)); card.append(sp); }
 
   const grid = el("div", "grid");
 
@@ -467,6 +506,7 @@ async function refresh() {
     if (r.status === 401) return location.reload(); // přihlášení vypršelo
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
+    lastState = d;
     app.replaceChildren();
     if (!d.instances.length) {
       const e = el("div", "empty");
@@ -474,6 +514,7 @@ async function refresh() {
                el("div", "", "Zkontrolujte, že je v EA vyplněná adresa a token a že je adresa povolená ve WebRequest."));
       app.append(e);
     } else {
+      app.append(topRow(d.instances));
       const open = d.instances.filter((it) => it.online && it.status && it.status.basket && it.status.basket.count > 0);
       if (open.length) {
         const g = el("div", "global-ctl");
@@ -495,6 +536,235 @@ async function refresh() {
     conn.textContent = "spojení se serverem selhalo – zkouším znovu";
   }
 }
+// ================= Dlaždice účtu a stav nastavení =================
+let lastState = null;
+function fmtTime(sec) {
+  return new Date(sec * 1000).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+// stav poslední změny nastavení jedné instance: {text, cls, when, what}
+function setStatusText(it) {
+  const s = it.status || {};
+  const pend = (it.pending || []).find((p) => p.action === "set");
+  if (pend) return { cls: "warn", text: "odesláno, čeká na potvrzení EA…", when: "právě teď", what: pend.payload.split(";").join(", ") };
+  const m = s.settingsMeta;
+  if (!m || !m.time) return null;
+  const map = { applied: ["good", "✓ použito"], pending: ["warn", "⏳ čeká na zavření koše"], rejected: ["bad", "✗ odmítnuto"] };
+  const [cls, lab] = map[m.state] || ["dim", m.state || "?"];
+  return { cls, text: `${fmtTime(m.time)} · ${lab}` + (m.summary && m.state !== "pending" ? ` · ${m.summary}` : ""),
+           when: fmtTime(m.time), what: m.state === "pending" ? (m.pending || "").split(";").join(", ") : (m.summary || ""), lab };
+}
+function topRow(list) {
+  const row = el("div", "top-row");
+  const fresh = [...list].filter((it) => it.status && it.status.account).sort((a, b) => b.lastSeen - a.lastSeen)[0];
+  const acc = (fresh && fresh.status.account) || {};
+  const cur = acc.currency || "";
+  const tile = el("div", "bal-tile");
+  tile.append(el("h2", "", "Zůstatek účtu"));
+  const num = el("div", "bal-num", num2(acc.balance)); num.append(el("small", "", cur));
+  tile.append(num);
+  const sub = el("div", "bal-sub");
+  const fl = (acc.equity || 0) - (acc.balance || 0);
+  const add = (k, v) => { const x = el("span", "", k + " "); x.append(el("b", "", v)); sub.append(x); };
+  add("Equity", num2(acc.equity) + " " + cur);
+  add("Otevřené", (fl >= 0 ? "+" : "−") + Math.abs(fl).toFixed(2) + " " + cur);
+  if (typeof acc.ddPct === "number") add("Ztráta účtu", acc.ddPct.toFixed(2) + " %");
+  tile.append(sub);
+  row.append(tile);
+
+  // poslední změna nastavení (nejnovější přes všechny trhy)
+  const box = el("div", "set-status");
+  box.append(el("h2", "", "Poslední změna nastavení"));
+  const items = list.map((it) => ({ it, st: setStatusText(it), t: ((it.status || {}).settingsMeta || {}).time || 0, p: (it.pending || []).some((p) => p.action === "set") }))
+    .filter((x) => x.st).sort((a, b) => (b.p - a.p) || (b.t - a.t));
+  if (!items.length) {
+    box.append(el("div", "when dim", "zatím žádná"));
+    box.append(el("div", "what", list.some((it) => it.status && it.status.settings) ? "Parametry změníte v záložce Nastavení." : "Funguje od EA v1.94."));
+  } else {
+    const x = items[0];
+    box.append(el("div", "when " + x.st.cls, (list.length > 1 ? x.it.status.symbol + " · " : "") + x.st.when + " · " + (x.st.lab || x.st.text)));
+    box.append(el("div", "what", x.st.what || ""));
+  }
+  row.append(box);
+  return row;
+}
+function num2(x) { return typeof x === "number" && isFinite(x) ? x.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "–"; }
+
+// ================= Nastavení =================
+const setEl = document.getElementById("settings");
+const setBody = document.getElementById("set-body");
+const tabSet = document.getElementById("tab-set");
+let setInst = null, setDraft = {}, setBase = {};
+
+const FIELDS = [
+  ["Signál", [
+    ["StochK", "Stochastic %K", "int"], ["StochD", "Stochastic %D", "int"], ["StochSlowing", "Zpomalení", "int"],
+    ["UseLevels", "Jen v zóně 20/80", "bool", "signál jen v přeprodanosti/překoupenosti"],
+    ["LevelLow", "Hladina BUY", "num", "křížení pod touto hodnotou"], ["LevelHigh", "Hladina SELL", "num", "křížení nad touto hodnotou"],
+    ["ZoneLookbackBars", "Zóna – svíček zpět", "int"],
+    ["TradeDirection", "Směr", "sel", "", [["0", "Buy i Sell"], ["1", "Jen Buy"], ["2", "Jen Sell"]]],
+  ]],
+  ["Velikost a síť", [
+    ["StartLots", "Start lot", "num"], ["LotMultiplier", "Násobek lotu", "num"], ["MaxOrders", "Max. pozic v koši", "int"],
+    ["GridMode", "Odstup sítě", "sel", "", [["0", "Pevný (pipy)"], ["1", "% ADR"], ["2", "ATR"]]],
+    ["GridStepPips", "Pevný odstup (p)", "num"], ["ADRPercent", "Odstup % ADR", "num"],
+  ]],
+  ["Výstupy", [
+    ["TPFromADR", "TP z ADR", "bool", "jinak pevný TP v pipech"],
+    ["TakeProfitPips", "TP pevný (p)", "num", "0 = vypnuto"], ["TP_ADRPercent", "TP % ADR", "num"],
+    ["BasketTPPips", "TP koše (p)", "num", "nad průměrnou cenou"], ["BasketTP_ADRPercent", "TP koše % ADR", "num", "0 = použít pipy"],
+    ["UseTrailing", "Trailing stop", "bool"], ["TrailStartPips", "Trailing od (p)", "num"], ["TrailDistancePips", "Trailing odstup (p)", "num"],
+  ]],
+  ["Ochrana a čas", [
+    ["StopLossPips", "SL první pozice (p)", "num", "0 = hard stop"], ["HardStopPips", "Hard stop koše (p)", "num", "0 = vypnuto"],
+    ["MaxAccountDDPercent", "Max. ztráta účtu %", "num", "0 = vypnuto"],
+    ["TradeStartCET", "Obchodovat od", "time"], ["TradeEndCET", "Obchodovat do", "time"],
+  ]],
+];
+
+function normLots(l, ri) {
+  const step = ri.lotStep || 0.01;
+  return Math.max(ri.minLot || 0.01, Math.min(ri.maxLot || 100, Math.floor(l / step + 1e-9) * step));
+}
+// riziko plné sítě až po hard stop (stejný výpočet jako EA)
+function calcRisk(p, ri, bal) {
+  if (!ri || !(p.HardStopPips > 0)) return null;
+  let base = p.GridMode == 0 ? p.GridStepPips : p.GridMode == 1 ? (ri.adr || 0) * p.ADRPercent / 100 : (ri.atrStep || 0);
+  if (p.GridMode != 0) base = base > 0 ? Math.max(ri.gridMin, Math.min(ri.gridMax, base)) : p.GridStepPips;
+  const n = ri.useMart ? p.MaxOrders : 1;
+  let off = 0, loss = 0; const levels = [];
+  for (let k = 0; k < n; k++) {
+    if (k > 0) off += base * Math.pow(ri.gridExp || 1, k - 1);
+    if (off >= p.HardStopPips) break;
+    if (k > 0) levels.push(off);
+    loss += (p.HardStopPips - off) * ri.pipValue * normLots(p.StartLots * Math.pow(p.LotMultiplier, k), ri);
+  }
+  const tp = p.TPFromADR ? Math.max(ri.tpMin, Math.min(ri.tpMax, (ri.adr || 0) * p.TP_ADRPercent / 100)) : p.TakeProfitPips;
+  return { loss, pct: bal > 0 ? loss / bal * 100 : null, base, levels, tp };
+}
+
+async function loadSettingsView() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    if (r.status === 401) return location.reload();
+    lastState = await r.json();
+  } catch (e) { setBody.replaceChildren(el("div", "empty", "Nepodařilo se načíst stav.")); return; }
+  renderSettings(true);
+}
+
+function renderSettings(resetDraft) {
+  const list = (lastState && lastState.instances) || [];
+  setBody.replaceChildren();
+  if (!list.length) { setBody.append(el("div", "empty", "Zatím nepřišla žádná data z MT4.")); return; }
+  if (!setInst || !list.some((it) => it.id === setInst)) setInst = list[0].id;
+  const it = list.find((x) => x.id === setInst);
+  const s = it.status || {};
+
+  // výběr trhu
+  if (list.length > 1) {
+    const tb = el("div", "toolbar"); tb.append(el("label", "", "Trh"));
+    const sel = document.createElement("select");
+    list.forEach((x) => sel.append(new Option((x.status && x.status.symbol) || x.id, x.id)));
+    sel.value = setInst; sel.onchange = () => { setInst = sel.value; renderSettings(true); };
+    tb.append(sel); setBody.append(tb);
+  }
+
+  // stav poslední změny
+  const stBox = el("div", "set-status"); stBox.style.marginBottom = "12px";
+  stBox.append(el("h2", "", "Poslední změna nastavení – " + (s.symbol || it.id)));
+  const st = setStatusText(it);
+  if (st) { stBox.append(el("div", "when " + st.cls, st.when + " · " + (st.lab || st.text))); stBox.append(el("div", "what", st.what || "")); }
+  else stBox.append(el("div", "when dim", "zatím žádná změna z aplikace"));
+  setBody.append(stBox);
+
+  if (!s.settings) {
+    setBody.append(el("div", "empty", "Nastavení z aplikace funguje od EA verze 1.94. Na VPS teď běží v" + (s.version || "?") + "."));
+    return;
+  }
+  if (!it.online) setBody.append(el("div", "note bad", "EA je offline – změny se doručí, až se znovu připojí (do 10 minut, jinak vyprší)."));
+  const bk = s.basket || {};
+  if (bk.count > 0) setBody.append(el("div", "note warn", `Je otevřený koš (${bk.count} poz.) – uložené změny se použijí automaticky až po jeho zavření.`));
+
+  if (resetDraft) { setBase = { ...s.settings }; setDraft = { ...s.settings }; }
+  const grid = el("div", "set-grid");
+  const preview = el("div", "preview");
+  const saveBar = el("div", "sticky-save");
+
+  const changedKeys = () => Object.keys(setDraft).filter((k) => String(setDraft[k]) !== String(setBase[k]));
+  function repaintPreview() {
+    preview.replaceChildren();
+    const bal = (s.account || {}).balance || 0, cur = (s.account || {}).currency || "";
+    const a = calcRisk(setBase, s.riskInputs, bal), b = calcRisk(setDraft, s.riskInputs, bal);
+    preview.append(el("h2", "", "Náhled dopadu"));
+    const fmtR = (x) => x && x.pct != null ? "−" + x.pct.toFixed(1) + " % (" + x.loss.toFixed(2) + " " + cur + ")" : "bez hard stopu";
+    const cls = (x) => !x || x.pct == null ? "dim" : x.pct >= 10 ? "bad" : x.pct >= 5 ? "warn" : "good";
+    preview.append(row("Riziko plné sítě – nyní", fmtR(a), cls(a)));
+    preview.append(row("Riziko plné sítě – po změně", fmtR(b), cls(b)));
+    if (b) {
+      preview.append(row("Odstup sítě", b.base.toFixed(1) + " p"));
+      preview.append(row("Přikoupení od 1. pozice", (b.levels.map((x) => x.toFixed(0)).join(" · ") || "–") + " p"));
+      preview.append(row("TP první pozice", b.tp > 0 ? b.tp.toFixed(1) + " p" : "vypnuto"));
+    }
+    const ch = changedKeys();
+    saveBtn.disabled = !ch.length;
+    info.textContent = ch.length ? `Změněno: ${ch.length}` : "Žádné změny";
+  }
+
+  FIELDS.forEach(([title, fields]) => {
+    const g = el("div", "set-group"); g.append(el("h3", "", title));
+    fields.forEach(([key, label, type, hint, opts]) => {
+      if (!(key in setDraft)) return;
+      const f = el("div", "fld");
+      const lb = el("label", "", label); if (hint) lb.append(el("small", "", hint));
+      let inp;
+      if (type === "bool") { inp = document.createElement("input"); inp.type = "checkbox"; inp.checked = !!setDraft[key]; inp.onchange = () => { setDraft[key] = inp.checked; mark(); }; }
+      else if (type === "sel") { inp = document.createElement("select"); opts.forEach(([v, t]) => inp.append(new Option(t, v))); inp.value = String(setDraft[key]); inp.onchange = () => { setDraft[key] = Number(inp.value); mark(); }; }
+      else if (type === "time") { inp = document.createElement("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.value = setDraft[key]; inp.placeholder = "HH:MM"; inp.oninput = () => { setDraft[key] = inp.value.trim(); mark(); }; }
+      else { inp = document.createElement("input"); inp.type = "number"; inp.inputMode = "decimal"; inp.step = type === "int" ? "1" : "any"; inp.value = setDraft[key]; inp.oninput = () => { setDraft[key] = inp.value === "" ? "" : Number(inp.value); mark(); }; }
+      function mark() { f.classList.toggle("changed", String(setDraft[key]) !== String(setBase[key])); repaintPreview(); }
+      f.classList.toggle("changed", String(setDraft[key]) !== String(setBase[key]));
+      f.append(lb, inp); g.append(f);
+    });
+    grid.append(g);
+  });
+
+  const info = el("span", "dim", "");
+  const reset = el("button", "btn ghost", "Zahodit změny");
+  reset.onclick = () => renderSettings(true);
+  const saveBtn = el("button", "btn", "Uložit do EA");
+  saveBtn.onclick = async () => {
+    const ch = changedKeys();
+    if (!ch.length) return;
+    const lines = ch.map((k) => `${k}: ${setBase[k]} → ${setDraft[k]}`).join("\n");
+    const b = calcRisk(setDraft, s.riskInputs, (s.account || {}).balance || 0);
+    const msg = `Uložit změny pro ${s.symbol}?\n\n${lines}` + (b && b.pct != null ? `\n\nRiziko plné sítě po změně: −${b.pct.toFixed(1)} %` : "") +
+      (bk.count > 0 ? "\n\nJe otevřený koš – změny se použijí až po jeho zavření." : "");
+    if (!confirm(msg)) return;
+    const params = {}; ch.forEach((k) => (params[k] = setDraft[k]));
+    saveBtn.disabled = true;
+    try {
+      const r = await fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: it.id, action: "set", params }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+    } catch (e) { alert("Nepodařilo se odeslat: " + e.message); saveBtn.disabled = false; return; }
+    pollSetResult();
+  };
+  saveBar.append(info, reset, saveBtn);
+
+  setBody.append(grid, preview, saveBar);
+  repaintPreview();
+}
+
+// po uložení obnovovat, dokud EA nepotvrdí
+function pollSetResult(n = 0) {
+  setTimeout(async () => {
+    try { const r = await fetch("/api/state", { cache: "no-store" }); lastState = await r.json(); } catch (e) {}
+    const it = ((lastState && lastState.instances) || []).find((x) => x.id === setInst);
+    const waiting = it && (it.pending || []).some((p) => p.action === "set");
+    if (view === "settings") renderSettings(!waiting);
+    if (waiting && n < 60) pollSetResult(n + 1);
+  }, 2500);
+}
+
 // ================= Statistiky =================
 const statsEl = document.getElementById("stats");
 const statsBody = document.getElementById("stats-body");
@@ -994,15 +1264,18 @@ function setView(v) {
   tabLive.setAttribute("aria-selected", String(v === "live"));
   tabStats.setAttribute("aria-selected", String(v === "stats"));
   tabNotify.setAttribute("aria-selected", String(v === "notify"));
+  tabSet.setAttribute("aria-selected", String(v === "settings"));
+  setEl.classList.toggle("hidden", v !== "settings");
   app.classList.toggle("hidden", v !== "live");
   statsEl.classList.toggle("hidden", v !== "stats");
   notifyEl.classList.toggle("hidden", v !== "notify");
   try { localStorage.setItem("sg_view", v); } catch (e) {}
-  if (v === "live") refresh(); else if (v === "stats") refreshStats(); else renderNotify();
+  if (v === "live") refresh(); else if (v === "stats") refreshStats(); else if (v === "settings") loadSettingsView(); else renderNotify();
 }
 tabLive.onclick = () => setView("live");
 tabStats.onclick = () => setView("stats");
 tabNotify.onclick = () => setView("notify");
+tabSet.onclick = () => setView("settings");
 assetSel.onchange = refreshStats;
 
 let startView = "live";

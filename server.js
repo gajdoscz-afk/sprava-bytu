@@ -34,7 +34,42 @@ const hist = new Map();
 const MAX_HOURS = 24 * 400;
 
 // --- ovládání na dálku: fronta příkazů pro jednotlivé instance EA
-const ACTIONS = { pause: "Pozastavit", resume: "Obnovit", close_basket: "Zavřít koš" };
+const ACTIONS = { pause: "Pozastavit", resume: "Obnovit", close_basket: "Zavřít koš", set: "Změna nastavení" };
+
+// parametry, které lze měnit z aplikace: [typ, min, max]
+const PARAMS = {
+  StochK: ["int", 1, 100], StochD: ["int", 1, 100], StochSlowing: ["int", 1, 100],
+  UseLevels: ["bool"], LevelLow: ["num", 0, 50], LevelHigh: ["num", 50, 100], ZoneLookbackBars: ["int", 2, 20],
+  TradeDirection: ["int", 0, 2],
+  StartLots: ["num", 0.01, 100], LotMultiplier: ["num", 1, 5], MaxOrders: ["int", 1, 20],
+  TPFromADR: ["bool"], TakeProfitPips: ["num", 0, 1000], TP_ADRPercent: ["num", 1, 200],
+  BasketTPPips: ["num", 0, 500], BasketTP_ADRPercent: ["num", 0, 100],
+  StopLossPips: ["num", 0, 2000], HardStopPips: ["num", 0, 5000],
+  GridMode: ["int", 0, 2], GridStepPips: ["num", 1, 1000], ADRPercent: ["num", 1, 100],
+  UseTrailing: ["bool"], TrailStartPips: ["num", 0, 1000], TrailDistancePips: ["num", 1, 1000],
+  TradeStartCET: ["time"], TradeEndCET: ["time"],
+  MaxAccountDDPercent: ["num", 0, 99],
+};
+function normParams(obj) {
+  const out = [];
+  for (const [k, v0] of Object.entries(obj || {})) {
+    const spec = PARAMS[k];
+    if (!spec) throw new Error("neznámý parametr " + k);
+    const [type, min, max] = spec;
+    let v;
+    if (type === "bool") v = v0 === true || v0 === "true" ? "true" : v0 === false || v0 === "false" ? "false" : null;
+    else if (type === "time") v = /^([01]?\d|2[0-4]):[0-5]\d$/.test(String(v0)) ? String(v0).padStart(5, "0") : null;
+    else {
+      const n = Number(v0);
+      if (!isFinite(n) || n < min || n > max || (type === "int" && !Number.isInteger(n))) v = null;
+      else v = type === "int" ? String(n) : String(Math.round(n * 100) / 100);
+    }
+    if (v === null) throw new Error(`neplatná hodnota ${k} = ${v0}`);
+    out.push(`${k}=${v}`);
+  }
+  if (!out.length) throw new Error("žádná změna");
+  return out.join(";");
+}
 const CMD_TTL_MS = 10 * 60 * 1000;
 const cmds = new Map(); // id -> [{ cid, action, created }]
 const cmdDone = new Map(); // id -> [{ cid, action, created, done, result }] (posledních 5)
@@ -169,7 +204,7 @@ function snapshot() {
         online: now - v.lastSeen < STALE_SEC * 1000,
         status: v.status,
         equity: v.equity,
-        pending: pendingFor(id).map((c) => ({ cid: c.cid, action: c.action, label: ACTIONS[c.action], ageSec: Math.round((now - c.created) / 1000) })),
+        pending: pendingFor(id).map((c) => ({ cid: c.cid, action: c.action, label: ACTIONS[c.action], payload: c.payload || "", ageSec: Math.round((now - c.created) / 1000) })),
         done: (cmdDone.get(id) || []).slice(0, 3),
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
@@ -242,7 +277,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/cmd/poll" && req.method === "GET") {
     if (!safeEqual(req.headers["x-token"] || "", PUSH_TOKEN)) return send(res, 401, "bad token", "text/plain");
     const c = pendingFor(String(url.searchParams.get("id") || ""))[0];
-    return send(res, 200, c ? `${c.cid}|${c.action}` : "", "text/plain; charset=utf-8");
+    return send(res, 200, c ? `${c.cid}|${c.action}` + (c.payload ? `|${c.payload}` : "") : "", "text/plain; charset=utf-8");
   }
   // --- EA potvrzuje provedení
   if (url.pathname === "/api/cmd/ack" && req.method === "POST") {
@@ -257,7 +292,7 @@ const server = http.createServer(async (req, res) => {
       done.unshift({ cid, action: c.action, label: ACTIONS[c.action], created: c.created, done: Date.now(), result: String(d.result || "").slice(0, 200) });
       cmdDone.set(id, done.slice(0, 5));
       const sym = (instances[id] && instances[id].status && instances[id].status.symbol) || id;
-      notify.onCommand(sym, ACTIONS[c.action], String(d.result || ""));
+      notify.onCommand(sym, ACTIONS[c.action], String(d.result || ""), c.action === "set" ? "settings" : "halt");
     }
     return send(res, 200, '{"ok":true}');
   }
@@ -378,10 +413,15 @@ const server = http.createServer(async (req, res) => {
     if (!ACTIONS[action]) return send(res, 400, '{"error":"neznámý příkaz"}');
     const ids = d.id === "ALL" ? Object.keys(instances) : [String(d.id || "")].filter((x) => instances[x]);
     if (!ids.length) return send(res, 404, '{"error":"instance nenalezena"}');
+    let payload = "";
+    if (action === "set") {
+      if (d.id === "ALL") return send(res, 400, '{"error":"nastavení jen pro jeden trh"}');
+      try { payload = normParams(d.params); } catch (e) { return send(res, 400, JSON.stringify({ error: e.message })); }
+    }
     const out = [];
     for (const id of ids) {
       const list = pendingFor(id).filter((c) => c.action !== action); // stejný příkaz jen jednou
-      const c = { cid: ++cidSeq, action, created: Date.now() };
+      const c = { cid: ++cidSeq, action, created: Date.now(), payload, by: "app" };
       list.push(c);
       cmds.set(id, list);
       out.push({ id, cid: c.cid });

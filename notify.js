@@ -8,9 +8,10 @@ const EVENTS = {
   close:   "Uzavření koše",
   risk:    "Ztráta koše od nastavené hranice",
   halt:    "Ochrana účtu / zastavení",
+  settings: "Změny nastavení",
   offline: "Výpadek EA nebo VPS",
 };
-const DEFAULT_PREFS = { open: true, add: true, close: true, risk: true, halt: true, offline: true };
+const DEFAULT_PREFS = { open: true, add: true, close: true, risk: true, halt: true, settings: true, offline: true };
 
 const subs = new Map(); // endpoint -> { sub, prefs, added }
 let version = 0;          // roste při každé změně registrací (EA si podle toho dělá zálohu)
@@ -171,6 +172,12 @@ function onStatus(prev, cur) {
     }
   }
 
+  // změna nastavení čekající na zavření koše byla použita
+  const pm = prev.settingsMeta || {}, cm = cur.settingsMeta || {};
+  if (pm.state === "pending" && cm.state && cm.state !== "pending") {
+    broadcast("settings", `${sym}: nastavení ${cm.state === "applied" ? "použito" : "odmítnuto"}`, cm.summary || "", `set-${sym}`);
+  }
+
   // EA nemá povolené obchodování (např. odškrtnuté „Umožnit obchodování“ po synchronizaci)
   if (cur.tradeAllowed === false && (prev.tradeAllowed !== false)) {
     broadcast("halt", `${sym}: obchodování ZAKÁZÁNO`, (cur.tradeText || "EA nesmí obchodovat") + ". Zkontrolujte nastavení EA a synchronizujte VPS.", `trade-${sym}`);
@@ -194,8 +201,8 @@ function onOnline(sym) {
 }
 
 // provedený příkaz z aplikace (posílá se se skupinou "zastavení")
-function onCommand(sym, label, result) {
-  broadcast("halt", `${sym}: ${label}`, result || "provedeno", `cmd-${sym}`);
+function onCommand(sym, label, result, event = "halt") {
+  broadcast(event, `${sym}: ${label}`, result || "provedeno", `cmd-${sym}`);
 }
 
 module.exports = {
