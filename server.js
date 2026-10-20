@@ -20,7 +20,8 @@ if (!PUSH_TOKEN || !DASH_PASSWORD) {
   process.exit(1);
 }
 
-const { computeStats } = require("./stats");
+const { computeStats, baskets } = require("./stats");
+const REPORT_KEY = process.env.REPORT_KEY || "";
 const notify = require("./notify");
 notify.init({
   publicKey: process.env.VAPID_PUBLIC_KEY,
@@ -215,6 +216,61 @@ function equitySeries(id, live) {
   return out.length ? out.concat(live) : live;
 }
 
+// ---- textový report za posledních N hodin (pro denní hodnocení)
+const tPrague = (sec) => new Date(sec * 1000).toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+const f2 = (x) => (typeof x === "number" && isFinite(x) ? x.toFixed(2) : "–");
+function buildReport(hrs) {
+  const now = Math.floor(Date.now() / 1000), from = now - hrs * 3600;
+  const L = [];
+  L.push(`StochGrid AOS – report za posledních ${hrs} h (do ${tPrague(now)} Praha)`);
+  const snap = snapshot();
+  for (const it of snap.instances) {
+    const s = it.status || {}, a = s.account || {}, b = s.basket || {}, cur = a.currency || "";
+    L.push("", `=== ${s.symbol || it.id} ${s.tf || ""} · EA v${s.version || "?"} · ${it.online ? "online" : "OFFLINE (" + it.ageSec + " s)"}`);
+    L.push(`Stav: ${s.state || "?"} · obchodování ${s.tradeAllowed === false ? "ZAKÁZÁNO" : "povoleno"} · hodiny ${s.hours || "?"} · zprávy: ${s.news || "?"}${s.newsBlocked ? " (BLOKACE)" : ""}`);
+    L.push(`Účet: balance ${f2(a.balance)} ${cur}, equity ${f2(a.equity)}, DD ${f2(a.ddPct)} % (limit ${a.ddLimit ?? "?"} %), den ${f2(a.dayPct)} %, spread ${a.spread ?? "?"}`);
+    L.push(`Signál: ${s.signal || "?"} · odstup ${s.grid || "?"} · ADR ${(s.riskInputs || {}).adr ?? "?"} p`);
+    if (b.count) L.push(`OTEVŘENÝ KOŠ: ${b.dir || ""} ${b.count}/${b.max} pozic, ${f2(b.lots)} lot, průměr ${b.avg}, P/L ${f2(b.pl)} ${cur}`);
+    else L.push(`Koš: žádný otevřený (max ${b.max ?? "?"} pozic)`);
+    const r = s.risk || {};
+    if (r.newBasketLoss != null) L.push(`Riziko plného koše na hard stopu: ${f2(r.newBasketLoss)} ${cur} (${f2(r.newBasketPct)} % balance)`);
+    if (s.settings) L.push(`Nastavení: ${Object.entries(s.settings).map(([k, v]) => k + "=" + v).join(", ")}`);
+    const h = hist.get(it.id);
+    if (!h) { L.push("Historie: zatím žádná"); continue; }
+    const bs = baskets([...h.trades.values()]).filter((x) => x.c >= from).sort((x, y) => x.c - y.c);
+    const hours = [...h.hours.entries()].sort((x, y) => x[0] - y[0]);
+    L.push(`Uzavřené koše (${bs.length}):`);
+    let sum = 0;
+    for (const k of bs) {
+      sum += k.p;
+      // nejhorší plovoucí ztráta koše ≈ min P/L EA během koše − P/L EA před otevřením (z hodinových dat)
+      const before = hours.filter(([t]) => t + 3600 <= k.o).pop();
+      const during = hours.filter(([t]) => t + 3600 > k.o && t <= k.c);
+      let worst = "";
+      if (before && during.length) worst = ` · nejhůř ≈ ${f2(Math.min(...during.map(([, v]) => v[3])) - before[1][3])}`;
+      const trades = [...h.trades.values()].filter((t) => t.c >= k.o - 1 && t.c <= k.c + 1);
+      const lots = trades.reduce((x, t) => x + (t.l || 0), 0);
+      L.push(`  ${tPrague(k.o)} → ${tPrague(k.c)} · ${k.ty === 0 ? "BUY" : k.ty === 1 ? "SELL" : "?"} · ${k.n} poz. · ${f2(lots)} lot · ${Math.round((k.c - k.o) / 60)} min · ${f2(k.p)} ${cur}${worst}`);
+    }
+    L.push(`Součet za období: ${f2(sum)} ${cur}`);
+    const hh = hours.filter(([t]) => t >= from);
+    if (hh.length) L.push(`Equity za období: max ${f2(Math.max(...hh.map(([, v]) => v[0])))} · min ${f2(Math.min(...hh.map(([, v]) => v[1])))} (${hh.length} hodin dat)`);
+    try {
+      const st = computeStats(hist, it.id);
+      const c = st.current || {};
+      for (const [lbl, k] of [["Den", "day"], ["Týden", "week"], ["Měsíc", "month"], ["Celkem", "total"]]) {
+        const x = c[k]; if (!x) continue;
+        L.push(`${lbl}: ${x.trades} košů, úspěšnost ${x.winPct == null ? "–" : x.winPct.toFixed(0) + " %"}, ${f2(x.net)} ${cur} (${f2(x.pct)} %), max DD ${f2(x.ddPct)} %`);
+      }
+    } catch (e) { L.push("Statistiky: chyba " + e.message); }
+    const done = (cmdDone.get(it.id) || []).filter((d) => (d.done || 0) / 1000 >= from);
+    if (done.length) L.push(`Příkazy z aplikace: ${done.map((d) => d.action + " → " + (d.result || "")).join("; ")}`);
+  }
+  const notes = notify.recent().filter((n) => n.t / 1000 >= from);
+  if (notes.length) { L.push("", "Upozornění za období:"); for (const n of notes) L.push(`  ${tPrague(n.t / 1000)} ${n.title} – ${n.body}`); }
+  return L.join("\n") + "\n";
+}
+
 function snapshot() {
   const now = Date.now();
   return {
@@ -404,6 +460,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   // --- přihlášení
+  // textový report pro denní hodnocení (čtení s klíčem, bez přihlášení)
+  if (url.pathname === "/api/report" && req.method === "GET") {
+    if (!REPORT_KEY || !safeEqual(String(url.searchParams.get("key") || ""), REPORT_KEY)) return send(res, 401, "bad key", "text/plain");
+    const hrs = Math.min(24 * 14, Math.max(1, Number(url.searchParams.get("hours")) || 24));
+    return send(res, 200, buildReport(hrs), "text/plain; charset=utf-8");
+  }
+
   if (url.pathname === "/login" && req.method === "POST") {
     const form = new URLSearchParams(await readBody(req, 4096));
     await new Promise((r) => setTimeout(r, 400)); // zpomalení zkoušení hesel
