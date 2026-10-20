@@ -2,9 +2,10 @@
 // Ekonomický kalendář: zprávy s vysokým dopadem (stahuje server, EA si je čte přes /api/news).
 const https = require("https");
 
+// [hlavní adresa, záložní CDN]; příští týden zdroj zveřejňuje až během týdne (404 je normální)
 const FEEDS = [
-  "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-  "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+  ["https://nfs.faireconomy.media/ff_calendar_thisweek.json", "https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json"],
+  ["https://nfs.faireconomy.media/ff_calendar_nextweek.json", "https://cdn-nfs.faireconomy.media/ff_calendar_nextweek.json"],
 ];
 const REFRESH_MS = 2 * 3600 * 1000;   // zdroj žádá šetrné stahování
 const RETRY_MS = 15 * 60 * 1000;
@@ -27,29 +28,34 @@ function get(url) {
 
 async function refresh() {
   lastTry = Date.now();
-  let got = 0;
+  let got = 0, anyOk = false;
   const errs = [];
-  for (const url of FEEDS) {
-    try {
-      const arr = JSON.parse(await get(url));
-      for (const e of Array.isArray(arr) ? arr : []) {
-        if (e.impact !== "High") continue;
-        const ms = Date.parse(e.date);
-        if (!isFinite(ms)) continue;
-        const t = Math.round(ms / 1000);
-        const cur = String(e.country || "").toUpperCase().slice(0, 4);
-        const title = String(e.title || "").replace(/[|\r\n]/g, " ").slice(0, 60);
-        events.set(`${t}|${cur}|${title}`, { t, cur, title });
-        got++;
+  for (const urls of FEEDS) {
+    let ok = false;
+    for (const url of urls) {
+      try {
+        const arr = JSON.parse(await get(url));
+        for (const e of Array.isArray(arr) ? arr : []) {
+          if (e.impact !== "High") continue;
+          const ms = Date.parse(e.date);
+          if (!isFinite(ms)) continue;
+          const t = Math.round(ms / 1000);
+          const cur = String(e.country || "").toUpperCase().slice(0, 4);
+          const title = String(e.title || "").replace(/[|\r\n]/g, " ").slice(0, 60);
+          events.set(`${t}|${cur}|${title}`, { t, cur, title });
+          got++;
+        }
+        ok = true; anyOk = true;
+        break;
+      } catch (err) {
+        if (!/404/.test(err.message)) errs.push(url.split("/")[2] + "/" + url.split("/").pop() + ": " + err.message);
       }
-    } catch (err) {
-      errs.push(url.split("/").pop() + ": " + err.message);
     }
   }
   // staré zprávy (víc než 2 dny zpět) zahodit
   const old = Date.now() / 1000 - 2 * 86400;
   for (const [k, v] of events) if (v.t < old) events.delete(k);
-  if (got) lastOk = Date.now();
+  if (anyOk) lastOk = Date.now();
   lastErr = errs.join("; ");
   if (errs.length) console.warn("Kalendář:", lastErr);
   return got;
