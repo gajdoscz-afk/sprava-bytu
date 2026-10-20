@@ -49,6 +49,7 @@ const PARAMS = {
   UseTrailing: ["bool"], TrailStartPips: ["num", 0, 1000], TrailDistancePips: ["num", 1, 1000],
   TradeStartCET: ["time"], TradeEndCET: ["time"],
   MaxAccountDDPercent: ["num", 0, 99],
+  BasketTPMode: ["int", 0, 1], BasketTPPerPos: ["num", 0.1, 10],
 };
 function normParams(obj) {
   const out = [];

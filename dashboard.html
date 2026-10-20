@@ -611,7 +611,9 @@ const FIELDS = [
   ["Výstupy", [
     ["TPFromADR", "TP z ADR", "bool", "jinak pevný TP v pipech"],
     ["TakeProfitPips", "TP pevný (p)", "num", "0 = vypnuto"], ["TP_ADRPercent", "TP % ADR", "num"],
-    ["BasketTPPips", "TP koše (p)", "num", "nad průměrnou cenou"], ["BasketTP_ADRPercent", "TP koše % ADR", "num", "0 = použít pipy"],
+    ["BasketTPMode", "TP koše", "sel", "", [["0", "Pipy nad průměrem"], ["1", "Pozic × zisk 1. pozice"]]],
+    ["BasketTPPerPos", "Násobek na pozici", "num", "režim pozic: 1 = každá pozice +1× zisk TP1"],
+    ["BasketTPPips", "TP koše (p)", "num", "režim pipy: nad průměrnou cenou"], ["BasketTP_ADRPercent", "TP koše % ADR", "num", "0 = použít pipy"],
     ["UseTrailing", "Trailing stop", "bool"], ["TrailStartPips", "Trailing od (p)", "num"], ["TrailDistancePips", "Trailing odstup (p)", "num"],
   ]],
   ["Ochrana a čas", [
@@ -703,6 +705,12 @@ function renderSettings(resetDraft) {
       preview.append(row("Odstup sítě", b.base.toFixed(1) + " p"));
       preview.append(row("Přikoupení od 1. pozice", (b.levels.map((x) => x.toFixed(0)).join(" · ") || "–") + " p"));
       preview.append(row("TP první pozice", b.tp > 0 ? b.tp.toFixed(1) + " p" : "vypnuto"));
+      if (Number(setDraft.BasketTPMode) === 1 && b.tp > 0 && s.riskInputs) {
+        const one = b.tp * normLots(setDraft.StartLots, s.riskInputs) * s.riskInputs.pipValue;
+        const n = Number(setDraft.MaxOrders) || 1, k = Number(setDraft.BasketTPPerPos) || 1;
+        const parts = []; for (let i = 1; i <= Math.min(n, 6); i++) parts.push(`${i} poz. ${(i === 1 ? one : i * k * one).toFixed(2)}`);
+        preview.append(row("Cíl koše (" + cur + ")", parts.join(" · ")));
+      }
     }
     const ch = changedKeys();
     saveBtn.disabled = !ch.length;
