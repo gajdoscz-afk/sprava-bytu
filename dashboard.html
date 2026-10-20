@@ -355,7 +355,10 @@ function renderInstance(it) {
   const rsec = el("div", "sec");
   rsec.append(el("h2", "", "Riziko"));
   const pctCls = (v) => v >= 10 ? "bad" : v >= 5 ? "warn" : "";
-  if (bk.count > 0) {
+  if (!s.risk) {
+    rsec.append(el("div", "big dim", "–"));
+    rsec.append(el("div", "note", "Údaje o riziku (ztráta na hard stopu, další přikoupení, marže) pošle EA od verze 1.90."));
+  } else if (bk.count > 0) {
     if (typeof rk.lossFullPct === "number") {
       rsec.append(el("div", "big " + (pctCls(rk.lossFullPct) || "dim"), "−" + num(rk.lossFullPct, 1) + " %"));
       rsec.append(row("Ztráta na hard stopu", "−" + num(rk.lossFull) + " " + cur + (rk.plannedAdds ? `  (vč. ${rk.plannedAdds} dalších přikoupení)` : ""), pctCls(rk.lossFullPct)));
@@ -372,7 +375,6 @@ function renderInstance(it) {
   }
   if (typeof rk.ddLeft === "number" && rk.ddLeft >= 0) rsec.append(row("Do limitu ochrany účtu", num(rk.ddLeft, 2) + " %", rk.ddLeft < 3 ? "bad" : rk.ddLeft < 5 ? "warn" : "good"));
   if (typeof rk.freeMargin === "number") rsec.append(row("Volná marže", num(rk.freeMargin) + " " + cur + (rk.margin > 0 ? "  · úroveň " + num(rk.marginLevel, 0) + " %" : ""), rk.margin > 0 && rk.marginLevel < 300 ? "warn" : ""));
-  if (!s.risk) rsec.append(el("div", "note", "Údaje o riziku pošle EA od verze 1.90."));
   grid.append(rsec);
 
   // stav a filtry
