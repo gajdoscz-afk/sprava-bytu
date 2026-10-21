@@ -242,6 +242,7 @@ function buildReport(hrs) {
     else L.push(`Koš: žádný otevřený (max ${b.max ?? "?"} pozic)`);
     const r = s.risk || {};
     if (r.newBasketLoss != null) L.push(`Riziko plného koše na hard stopu: ${f2(r.newBasketLoss)} ${cur} (${f2(r.newBasketPct)} % balance)`);
+    L.push(`Poslední svíčka: ${s.lastBar || "?"} · vyhodnocení: ${s.evalText || "?"}`);
     L.push(`Ochrany: ${s.guard || "v klidu"}${s.trend ? " · trend H1: " + s.trend : ""} · další zpráva: ${s.nextNews || "?"}`);
     if (s.settings) L.push(`Nastavení: ${Object.entries(s.settings).map(([k, v]) => k + "=" + v).join(", ")}`);
     const h = hist.get(it.id);
