@@ -159,6 +159,11 @@
   .ctl-info { font-size: 12px; color: var(--dim); margin-left: 4px; }
   .global-ctl { display: flex; justify-content: flex-end; margin: -6px 0 12px; }
   .global-ctl .btn { font-size: 12.5px; padding: 6px 12px; }
+  .depth-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+  .depth-k { width: 52px; color: var(--dim); font-family: var(--mono); }
+  .depth-track { flex: 1; height: 10px; background: var(--card2); border-radius: 5px; overflow: hidden; }
+  .depth-bar { display: block; height: 100%; background: #8b5cf6; border-radius: 5px; }
+  .depth-n { width: 80px; text-align: right; font-family: var(--mono); font-size: 12px; }
   .recent-row { display: flex; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
   .recent-row:first-child { border-top: 0; }
   .recent-row time { font-family: var(--mono); font-size: 12px; color: var(--dim); flex-shrink: 0; }
@@ -651,6 +656,7 @@ const FIELDS = [
     ["StartLots", "Start lot", "num"], ["LotMultiplier", "Násobek lotu", "num"], ["MaxOrders", "Max. pozic v koši", "int"],
     ["GridMode", "Odstup sítě", "sel", "", [["0", "Pevný (pipy)"], ["1", "% ADR"], ["2", "ATR"]]],
     ["GridStepPips", "Pevný odstup (p)", "num"], ["ADRPercent", "Odstup % ADR", "num"],
+    ["MinMinutesBetweenAdds", "Min. minut mezi přikoupeními", "int", "nechá prudký pohyb doběhnout; 0 = vypnuto"],
   ]],
   ["Výstupy", [
     ["TPFromADR", "TP z ADR", "bool", "jinak pevný TP v pipech"],
@@ -669,8 +675,10 @@ const FIELDS = [
   ["Prudké pohyby", [
     ["UseVolatilityGuard", "Pojistka volatility", "bool", "pauza po prudkém pohybu"],
     ["VolATRMult", "Spouštěč × ATR(H1)", "num", "rozsah za 15 min větší než X × ATR"], ["VolPauseMinutes", "Pauza (min)", "int"],
+    ["VolGuardBlocksNew", "Pojistka blokuje i nové koše", "bool", "vypnuto = přikupování stop, vstup proti impulsu povolen"],
     ["UseTrendFilter", "Trendový filtr", "bool", "nepřikupovat proti silnému trendu"],
     ["TrendDistanceATR", "Silný trend × ATR", "num", "cena od EMA200 dál než X × ATR"],
+    ["TrendBlockNew", "Trend blokuje i nové koše", "bool", "neotevírat koš proti silnému trendu"],
     ["UseFridayGuard", "Páteční ochrana", "bool", "od 18:00 bez nových košů, koš na nule zavřít"],
     ["MaxBasketHours", "Max. stáří koše (h)", "num", "pak zavřít na nule/v zisku; 0 = vypnuto"],
   ]],
@@ -1015,6 +1023,31 @@ async function shareBasket(b) {
   openShareModal(canvas, `stochgrid-obchod-${b.close}.png`, `StochGrid AOS – ${b.sym}: ${pctTxt(b.pct)}`);
 }
 
+function depthSection(d) {
+  const box = el("section", "inst");
+  const head = el("div", "inst-head"); head.append(el("div", "sym", "Hloubka košů")); box.append(head);
+  const wrap = el("div", "sec"); box.append(wrap);
+  const dp = d.depth;
+  if (!dp) { wrap.append(el("div", "dim", "Záznam hloubky košů začne s EA v1.98 – první údaje po uzavření prvního koše.")); return box; }
+  wrap.append(row("Zaznamenaných košů", String(dp.count)));
+  wrap.append(row("Nejhlubší propad", "−" + num(dp.maxPct, 2) + " % účtu", dp.maxPct >= 5 ? "bad" : dp.maxPct >= 2 ? "warn" : ""));
+  wrap.append(row("Průměrný nejhorší propad", "−" + num(dp.avgPct, 2) + " %"));
+  wrap.append(row("Nejdál proti koši", num(dp.maxPips, 1) + " p" + (dp.hs ? " (hard stop " + num(dp.hs, 0) + " p)" : "")));
+  wrap.append(row("Blízko hard stopu (≥ 75 %)", String(dp.nearHS), dp.nearHS ? "warn" : "good"));
+  const maxN = Math.max(...Object.values(dp.byPos));
+  const dist = el("div", "sec");
+  dist.append(el("h2", "", "Kolik pozic koše potřebovaly"));
+  Object.keys(dp.byPos).sort((a, b) => a - b).forEach((k) => {
+    const n = dp.byPos[k], line = el("div", "depth-row");
+    const bar = el("span", "depth-bar"); bar.style.width = Math.max(4, Math.round(n / maxN * 100)) + "%";
+    line.append(el("span", "depth-k", k + " poz."), el("span", "depth-track"), el("span", "depth-n", n + " (" + num(n / dp.count * 100, 0) + " %)"));
+    line.children[1].append(bar);
+    dist.append(line);
+  });
+  box.append(dist);
+  return box;
+}
+
 function recentSection(d) {
   const box = el("section", "inst");
   const head = el("div", "inst-head"); head.append(el("div", "sym", "Poslední obchody")); box.append(head);
@@ -1022,7 +1055,7 @@ function recentSection(d) {
   const list = d.recent || [];
   if (!list.length) { wrap.append(el("div", "dim", "Zatím žádné uzavřené obchody.")); box.append(wrap); return box; }
   const t = el("table"); const hr = el("tr");
-  [["Uzavřeno", ""], ["Trh", ""], ["Směr", "hm"], ["Poz.", "hm"], ["Doba", "hm"], ["Výsledek", ""], ["", ""]].forEach(([h, c]) => hr.append(el("th", c, h)));
+  [["Uzavřeno", ""], ["Trh", ""], ["Směr", "hm"], ["Poz.", "hm"], ["Doba", "hm"], ["Nejhůř", "hm"], ["Výsledek", ""], ["", ""]].forEach(([h, c]) => hr.append(el("th", c, h)));
   t.append(hr);
   list.slice(0, 15).forEach((b) => {
     const tr = el("tr"); const dt = new Date(b.close * 1000);
@@ -1031,6 +1064,7 @@ function recentSection(d) {
     tr.append(el("td", "", dt.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })),
       el("td", "", b.sym), el("td", "hm " + (b.dir === "BUY" ? "buy" : "bad"), b.dir || "–"), el("td", "hm", b.n),
       el("td", "hm", durTxt(b.close - b.open)),
+      el("td", "hm " + (b.depth && b.depth.pct >= 3 ? "bad" : "dim"), b.depth ? "−" + num(b.depth.pct, 1) + " % · " + num(b.depth.pips, 0) + " p" : "–"),
       el("td", (b.pct || 0) >= 0 ? "good" : "bad", pctTxt(b.pct) + "  (" + signed(b.net) + ")"), tdb);
     t.append(tr);
   });
@@ -1170,7 +1204,7 @@ function renderStats(d) {
     (d.filter === "ALL" ? " – pro všechna aktiva z equity celého účtu (v %)" : " – pro vybrané aktivum z P/L tohoto EA (v % z balance na začátku období)") +
     "." + (since ? " Drawdown se sleduje od " + since + "." : " Drawdown se začne sledovat po spuštění EA v1.60.")));
 
-  statsBody.append(recentSection(d), publicBox(d));
+  statsBody.append(depthSection(d), recentSection(d), publicBox(d));
 }
 
 async function refreshStats() {

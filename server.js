@@ -57,6 +57,7 @@ const PARAMS = {
   UseVolatilityGuard: ["bool"], VolATRMult: ["num", 0.3, 10], VolPauseMinutes: ["int", 5, 1440],
   UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
   UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
+  MinMinutesBetweenAdds: ["int", 0, 1440], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
 };
 function normParams(obj) {
   const out = [];
@@ -236,7 +237,8 @@ function buildReport(hrs) {
     L.push(`Stav: ${s.state || "?"} · obchodování ${s.tradeAllowed === false ? "ZAKÁZÁNO" : "povoleno"} · hodiny ${s.hours || "?"} · zprávy: ${s.news || "?"}${s.newsBlocked ? " (BLOKACE)" : ""}`);
     L.push(`Účet: balance ${f2(a.balance)} ${cur}, equity ${f2(a.equity)}, DD ${f2(a.ddPct)} % (limit ${a.ddLimit ?? "?"} %), den ${f2(a.dayPct)} %, spread ${a.spread ?? "?"}`);
     L.push(`Signál: ${s.signal || "?"} · odstup ${s.grid || "?"} · ADR ${(s.riskInputs || {}).adr ?? "?"} p`);
-    if (b.count) L.push(`OTEVŘENÝ KOŠ: ${b.dir || ""} ${b.count}/${b.max} pozic, ${f2(b.lots)} lot, průměr ${b.avg}, P/L ${f2(b.pl)} ${cur}`);
+    if (b.count) L.push(`OTEVŘENÝ KOŠ: ${b.dir || ""} ${b.count}/${b.max} pozic, ${f2(b.lots)} lot, průměr ${b.avg}, P/L ${f2(b.pl)} ${cur}` +
+      (s.depthNow ? ` · zatím nejhůř ${f2(s.depthNow.worst)} (${f2(s.depthNow.pct)} %), ${f2(s.depthNow.pips)} p proti` : ""));
     else L.push(`Koš: žádný otevřený (max ${b.max ?? "?"} pozic)`);
     const r = s.risk || {};
     if (r.newBasketLoss != null) L.push(`Riziko plného koše na hard stopu: ${f2(r.newBasketLoss)} ${cur} (${f2(r.newBasketPct)} % balance)`);
@@ -254,7 +256,9 @@ function buildReport(hrs) {
       const before = hours.filter(([t]) => t + 3600 <= k.o).pop();
       const during = hours.filter(([t]) => t + 3600 > k.o && t <= k.c);
       let worst = "";
-      if (before && during.length) worst = ` · nejhůř ≈ ${f2(Math.min(...during.map(([, v]) => v[3])) - before[1][3])}`;
+      const dv = h.depth ? [...h.depth.values()].find((v) => Math.abs(v.o - k.o) <= 120) : null;
+      if (dv) worst = ` · nejhůř ${f2(dv.worst)} (${f2(dv.pct)} %), ${f2(dv.pips)} p proti, max ${dv.maxPos} poz.`;
+      else if (before && during.length) worst = ` · nejhůř ≈ ${f2(Math.min(...during.map(([, v]) => v[3])) - before[1][3])}`;
       const trades = [...h.trades.values()].filter((t) => t.c >= k.o - 1 && t.c <= k.c + 1);
       const lots = trades.reduce((x, t) => x + (t.l || 0), 0);
       L.push(`  ${tPrague(k.o)} → ${tPrague(k.c)} · ${k.ty === 0 ? "BUY" : k.ty === 1 ? "SELL" : "?"} · ${k.n} poz. · ${f2(lots)} lot · ${Math.round((k.c - k.o) / 60)} min · ${f2(k.p)} ${cur}${worst}`);
@@ -426,7 +430,7 @@ const server = http.createServer(async (req, res) => {
     if (!id) return send(res, 400, '{"error":"missing id"}');
     let h = hist.get(id);
     if (!h) {
-      h = { trades: new Map(), flow: new Map(), hours: new Map() };
+      h = { trades: new Map(), flow: new Map(), hours: new Map(), depth: new Map() };
       hist.set(id, h);
     }
     // obchody, pohyby i hodinová data se jen slučují – VPS může vidět jen část historie,
@@ -441,6 +445,15 @@ const server = http.createServer(async (req, res) => {
       h.trades.set(t[0], { c: t[1], o: t[2], ty: t[3], l: t[4], p: t[5] });
     }
     for (const f of d.flow || []) h.flow.set(f[0], { t: f[1], a: f[2], dep: f[3] === 1 }); // [ticket, timeUTC, amount, 1 = vklad/výběr]
+    if (!h.depth) h.depth = new Map();
+    for (const r of d.depth || []) {
+      // [closeUTC, openUTC, dir, maxPos, worst, worstPct, worstPips, hardStop] – sloučit (nejhorší hodnoty)
+      if (!Array.isArray(r) || !(r[1] > 0)) continue;
+      const e = h.depth.get(r[1]);
+      const v = { c: r[0], o: r[1], dir: r[2], maxPos: r[3], worst: r[4], pct: r[5], pips: r[6], hs: r[7] };
+      h.depth.set(r[1], e ? { ...v, c: Math.max(e.c, v.c), maxPos: Math.max(e.maxPos, v.maxPos), worst: Math.min(e.worst, v.worst),
+                               pct: Math.max(e.pct, v.pct), pips: Math.max(e.pips, v.pips) } : v);
+    }
     for (const r of d.hours || []) {
       // [hourUTC, eqHigh, eqLow, eaHigh, eaLow] – sloučit s tím, co už máme
       const e = h.hours.get(r[0]);

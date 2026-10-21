@@ -194,6 +194,26 @@ function computeStats(hist, filter) {
     hasDD: series.length > 0,
   };
 
+  // hloubka košů (záznamy z EA od v1.98)
+  const depthAll = [];
+  for (const h of sel) if (h.depth) for (const v of h.depth.values()) depthAll.push(v);
+  const findDepth = (o) => {
+    let best = null;
+    for (const v of depthAll) if (Math.abs(v.o - o) <= 120 && (!best || Math.abs(v.o - o) < Math.abs(best.o - o))) best = v;
+    return best;
+  };
+  const byPos = {};
+  for (const v of depthAll) byPos[v.maxPos] = (byPos[v.maxPos] || 0) + 1;
+  const depth = depthAll.length ? {
+    count: depthAll.length, byPos,
+    maxPct: Math.max(...depthAll.map((v) => v.pct || 0)),
+    avgPct: depthAll.reduce((s, v) => s + (v.pct || 0), 0) / depthAll.length,
+    maxPips: Math.max(...depthAll.map((v) => v.pips || 0)),
+    nearHS: depthAll.filter((v) => v.hs > 0 && v.pips >= 0.75 * v.hs).length,
+    hs: depthAll.slice().sort((a, b) => b.c - a.c)[0].hs,
+    worstList: depthAll.slice().sort((a, b) => (b.pct || 0) - (a.pct || 0)).slice(0, 5),
+  } : null;
+
   // poslední uzavřené koše s výsledkem v % z balance těsně před uzavřením
   const flowsSorted = [...flows].sort((x, y) => y.t - x.t); // od nejnovějších
   const recent = [...bs].sort((x, y) => y.c - x.c).slice(0, 30).map((bk) => {
@@ -203,6 +223,7 @@ function computeStats(hist, filter) {
     return {
       sym: bk.sym, dir: bk.ty === 0 ? "BUY" : bk.ty === 1 ? "SELL" : "", n: bk.n,
       open: bk.o, close: bk.c, net: bk.p, pct: before > 0 ? (bk.p / before) * 100 : null,
+      depth: (() => { const v = findDepth(bk.o); return v ? { pct: v.pct, pips: v.pips, worst: v.worst, maxPos: v.maxPos } : null; })(),
     };
   });
 
@@ -211,7 +232,7 @@ function computeStats(hist, filter) {
     .map((r) => ({ k: r.key, p: r.pct, n: r.net, t: r.trades, w: r.wins }));
 
   return {
-    recent, calendar,
+    recent, calendar, depth,
     options, filter: isAll ? "ALL" : filter, currency, balanceNow,
     ddFrom: series.length ? series[0][0] : null,
     current,
