@@ -14,9 +14,10 @@ const RETRY_MS = 60 * 60 * 1000;
 let events = new Map();   // klíč "utc|měna|název" -> { t (s), cur, title }
 let lastOk = 0, lastErr = "", lastTry = 0;
 
-function get(url) {
+function get(url, extraHeaders) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { "User-Agent": "StochGrid-AOS/1.0" }, timeout: 20000 }, (res) => {
+    const headers = { "User-Agent": "Mozilla/5.0 (StochGrid-AOS)", ...(extraHeaders || {}) };
+    const req = https.get(url, { headers, timeout: 20000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return reject(new Error("HTTP " + res.statusCode)); }
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
@@ -51,6 +52,31 @@ async function refresh() {
       } catch (err) {
         if (!/404/.test(err.message)) errs.push(url.split("/")[2] + "/" + url.split("/").pop() + ": " + err.message);
       }
+    }
+  }
+  // záložní zdroj: ekonomický kalendář TradingView (když ForexFactory odmítne)
+  if (!anyOk) {
+    try {
+      const from = new Date(Date.now() - 86400000).toISOString(), to = new Date(Date.now() + 10 * 86400000).toISOString();
+      const url = "https://economic-calendar.tradingview.com/events?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to) +
+        "&countries=US,EU,DE,FR,IT,ES,GB,JP,CH,CA,AU,NZ";
+      const j = JSON.parse(await get(url, { Origin: "https://www.tradingview.com", Referer: "https://www.tradingview.com/" }));
+      const CUR = { US: "USD", EU: "EUR", DE: "EUR", FR: "EUR", IT: "EUR", ES: "EUR", GB: "GBP", JP: "JPY", CH: "CHF", CA: "CAD", AU: "AUD", NZ: "NZD" };
+      const arr = Array.isArray(j) ? j : (j && j.result) || [];
+      for (const e of arr) {
+        if (e.importance !== 1) continue;
+        const ms = Date.parse(e.date);
+        const cur = CUR[e.country] || e.currency;
+        if (!isFinite(ms) || !cur) continue;
+        const t = Math.round(ms / 1000);
+        const title = String(e.title || e.indicator || "").replace(/[|\r\n]/g, " ").slice(0, 60);
+        events.set(`${t}|${cur}|${title}`, { t, cur, title });
+        got++;
+      }
+      anyOk = true;
+      console.log("Kalendář: záložní zdroj TradingView, zpráv s vysokým dopadem:", got);
+    } catch (err) {
+      errs.push("tradingview: " + err.message);
     }
   }
   // staré zprávy (víc než 2 dny zpět) zahodit
