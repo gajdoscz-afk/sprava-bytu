@@ -682,6 +682,8 @@ const FIELDS = [
     ["UseTrendFilter", "Trendový filtr", "bool", "nepřikupovat proti silnému trendu"],
     ["TrendDistanceATR", "Silný trend × ATR", "num", "cena od EMA200 dál než X × ATR"],
     ["TrendBlockNew", "Trend blokuje i nové koše", "bool", "neotevírat koš proti silnému trendu"],
+    ["UseSlowTrendFilter", "Filtr pomalého trendu", "bool", "EMA50 H1: neotevírat ani nepřikupovat proti ní"],
+    ["AddConfirmFromLevel", "Potvrzené přikoupení od pozice", "int", "čeká na obrat Stochasticu na M15; 0 = vypnuto"],
     ["UseFridayGuard", "Páteční ochrana", "bool", "od 18:00 bez nových košů, koš na nule zavřít"],
     ["MaxBasketHours", "Max. stáří koše (h)", "num", "pak zavřít na nule/v zisku; 0 = vypnuto"],
   ]],

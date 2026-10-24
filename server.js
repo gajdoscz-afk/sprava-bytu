@@ -57,7 +57,7 @@ const PARAMS = {
   UseVolatilityGuard: ["bool"], VolATRMult: ["num", 0.3, 10], VolPauseMinutes: ["int", 5, 1440],
   UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
   UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
-  MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
+  MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], UseSlowTrendFilter: ["bool"], AddConfirmFromLevel: ["int", 0, 20], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
 };
 function normParams(obj) {
   const out = [];
