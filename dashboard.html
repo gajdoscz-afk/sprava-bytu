@@ -428,6 +428,8 @@ function renderInstance(it) {
     else rsec.append(row("Další přikoupení", "síť je plná", "warn"));
   } else {
     rsec.append(el("div", "big dim", typeof rk.newBasketPct === "number" ? "−" + num(rk.newBasketPct, 1) + " %" : "–"));
+    if (acc.plan) rsec.append(row("Plán koše", acc.plan, /nevejde/.test(acc.plan) ? "bad" : ""));
+    if (acc.aosCapital > 0) rsec.append(row("Kapitál AOS", num(acc.riskEquity) + " " + cur + " (vklad " + num(acc.aosCapital, 0) + ")"));
     rsec.append(row("Max. riziko nového koše", typeof rk.newBasketLoss === "number" ? "−" + num(rk.newBasketLoss) + " " + cur + " (plná síť až po hard stop)" : "–", pctCls(rk.newBasketPct || 0)));
   }
   if (typeof rk.ddLeft === "number" && rk.ddLeft >= 0) rsec.append(row("Do limitu ochrany účtu", num(rk.ddLeft, 2) + " %", rk.ddLeft < 3 ? "bad" : rk.ddLeft < 5 ? "warn" : "good"));
@@ -653,7 +655,8 @@ const FIELDS = [
     ["TradeDirection", "Směr", "sel", "", [["0", "Buy i Sell"], ["1", "Jen Buy"], ["2", "Jen Sell"]]],
   ]],
   ["Velikost a síť", [
-    ["StartLots", "Start lot", "num"], ["LotMultiplier", "Násobek lotu", "num"], ["MaxOrders", "Max. pozic v koši", "int"],
+    ["RiskPerBasketPercent", "Riziko plného koše %", "num", "lot se spočítá sám; 0 = pevný start lot"],
+    ["StartLots", "Start lot", "num", "při lotu podle rizika = nejvyšší povolený"], ["LotMultiplier", "Násobek lotu", "num"], ["MaxOrders", "Max. pozic v koši", "int"],
     ["GridMode", "Odstup sítě", "sel", "", [["0", "Pevný (pipy)"], ["1", "% ADR"], ["2", "ATR"]]],
     ["GridStepPips", "Pevný odstup (p)", "num"], ["ADRPercent", "Odstup % ADR", "num"],
     ["MinMinutesBetweenAdds", "Min. minut mezi přikoupeními", "int", "nechá prudký pohyb doběhnout; 0 = vypnuto"],

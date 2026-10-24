@@ -57,7 +57,7 @@ const PARAMS = {
   UseVolatilityGuard: ["bool"], VolATRMult: ["num", 0.3, 10], VolPauseMinutes: ["int", 5, 1440],
   UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
   UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
-  MinMinutesBetweenAdds: ["int", 0, 1440], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
+  MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
 };
 function normParams(obj) {
   const out = [];
@@ -235,7 +235,9 @@ function buildReport(hrs) {
     const s = it.status || {}, a = s.account || {}, b = s.basket || {}, cur = a.currency || "";
     L.push("", `=== ${s.symbol || it.id} ${s.tf || ""} · EA v${s.version || "?"} · ${it.online ? "online" : "OFFLINE (" + it.ageSec + " s)"}`);
     L.push(`Stav: ${s.state || "?"} · obchodování ${s.tradeAllowed === false ? "ZAKÁZÁNO" : "povoleno"} · hodiny ${s.hours || "?"} · zprávy: ${s.news || "?"}${s.newsBlocked ? " (BLOKACE)" : ""}`);
-    L.push(`Účet: balance ${f2(a.balance)} ${cur}, equity ${f2(a.equity)}, DD ${f2(a.ddPct)} % (limit ${a.ddLimit ?? "?"} %), den ${f2(a.dayPct)} %, spread ${a.spread ?? "?"}`);
+    L.push(`Účet: balance ${f2(a.balance)} ${cur}, equity ${f2(a.equity)}, DD ${f2(a.ddPct)} % (limit ${a.ddLimit ?? "?"} %), den ${f2(a.dayPct)} %, spread ${a.spread ?? "?"}` +
+      (a.aosCapital > 0 ? ` · kapitál AOS ${f2(a.riskEquity)} (vklad ${f2(a.aosCapital)})` : ""));
+    if (a.plan) L.push(`Plán dalšího koše: ${a.plan}`);
     L.push(`Signál: ${s.signal || "?"} · odstup ${s.grid || "?"} · ADR ${(s.riskInputs || {}).adr ?? "?"} p`);
     if (b.count) L.push(`OTEVŘENÝ KOŠ: ${b.dir || ""} ${b.count}/${b.max} pozic, ${f2(b.lots)} lot, průměr ${b.avg}, P/L ${f2(b.pl)} ${cur}` +
       (s.depthNow ? ` · zatím nejhůř ${f2(s.depthNow.worst)} (${f2(s.depthNow.pct)} %), ${f2(s.depthNow.pips)} p proti` : ""));
