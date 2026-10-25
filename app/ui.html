@@ -659,7 +659,7 @@ async function exportBackup(){
 }
 
 // ---------- dokumenty ----------
-const DOC_TYPES={smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',vypis_katastru:'Výpis z katastru',kupni_smlouva:'Kupní smlouva',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
+const DOC_TYPES={predpis_svj:'Předpis SVJ',smlouva:'Smlouva',dodatek:'Dodatek',vyuctovani_svj:'Vyúčtování SVJ',vyuctovani_spravy:'Vyúčtování správy',vyuctovani_najemnikovi:'Vyúčtování nájemníkovi',faktura:'Faktura',pojistka:'Pojistka',vypis_katastru:'Výpis z katastru',kupni_smlouva:'Kupní smlouva',fotky_stavu:'Fotky stavu bytu',doklad_najemnika:'Doklad nájemníka',jine:'Jiné'};
 const docType=k=>DOC_TYPES[k]||'Jiné';
 function flatOpts(sel,newAddr){
  const nw=(newAddr&&!sel)?`<option value="new" selected>＋ Nový byt: ${esc(newAddr)}</option>`:'';
@@ -910,6 +910,7 @@ async function delListing(id){
 const DOC_GROUPS=[
  ['Smlouvy a dodatky',['smlouva','dodatek','kupni_smlouva'],true],
  ['Vyúčtování',['vyuctovani_svj','vyuctovani_spravy','vyuctovani_najemnikovi'],true],
+ ['Předpisy SVJ',['predpis_svj'],true],
  ['Faktury a pojistky',['faktura','pojistka'],true],
  ['Doklady a katastr',['vypis_katastru','doklad_najemnika'],true],
  ['Fotky stavu bytu',['fotky_stavu'],false],

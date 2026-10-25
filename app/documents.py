@@ -15,6 +15,7 @@ DOC_TYPES = {
     "dodatek": "Dodatek",
     "vyuctovani_svj": "Vyúčtování SVJ",
     "vyuctovani_spravy": "Vyúčtování správy",
+    "predpis_svj": "Předpis SVJ",
     "vyuctovani_najemnikovi": "Vyúčtování nájemníkovi",
     "faktura": "Faktura",
     "pojistka": "Pojistka",
@@ -30,7 +31,8 @@ AUTO_FILE_CONFIDENCE = 0.8
 
 PROMPT = """Jsi asistentka správce bytů v ČR. Z přiloženého dokumentu urči typ a vytáhni údaje.
 Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
-- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, kupni_smlouva, fotky_stavu, doklad_najemnika, jine]
+- doc_type: jeden z [smlouva, dodatek, vyuctovani_svj, predpis_svj, vyuctovani_spravy, vyuctovani_najemnikovi, faktura, pojistka, vypis_katastru, kupni_smlouva, fotky_stavu, doklad_najemnika, jine]
+  predpis_svj = měsíční předpis od SVJ pro jednotku (příspěvky na správu domu a pozemku, zálohy na služby).
   kupni_smlouva = kupní smlouva k nemovitosti (koupě bytu, prodávající a kupující).
 - price: u kupní smlouvy kupní cena bytu v Kč jako číslo, jinak null
 - doc_date: datum vystavení nebo podpisu dokumentu ve formátu YYYY-MM-DD (u smlouvy datum podpisu, u vyúčtování a pojistky datum vystavení), jinak null
@@ -54,6 +56,8 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - lease_from: u smlouvy a dodatku den začátku nájmu ve formátu YYYY-MM-DD, jinak null
 - lease_to: u smlouvy a dodatku den konce nájmu YYYY-MM-DD, u neurčitého nájmu null
 - advances: u smlouvy a dodatku zálohy na služby jako objekt {"název služby": částka v Kč}, jinak {}
+- svj_services: u předpisu SVJ měsíční záloha na služby v Kč jako číslo, jinak null
+- svj_admin: u předpisu SVJ měsíční příspěvek na správu domu a pozemku v Kč jako číslo, jinak null
 - summary: 1 až 2 věty česky o tom, co dokument je a co obsahuje
 - confidence: číslo 0 až 1, jak jsi si jistá typem i adresou
 - items: u vyúčtování seznam položek, každá {"name", "cost", "paid", "unit", "quantity", "category"}.

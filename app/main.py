@@ -997,8 +997,36 @@ def rematch_all(db: Session) -> None:
                 d.flat_id = fid
                 d.status = "zarazeno"
         enrich_flat(db, d)
+        sync_svj_costs(db, d)
         sync_acquisition(db, d)
         sync_lease(db, d)
+
+
+SVJ_COSTS = {"svj_services": "Služby SVJ (měsíční záloha)", "svj_admin": "Příspěvek SVJ na správu domu a pozemku"}
+
+
+def sync_svj_costs(db: Session, d: m.Document) -> None:
+    """Z předpisu SVJ doplní nebo přepíše položky v části „Co platím SVJ“. Změnu zapíše do historie."""
+    if d.flat_id is None or d.doc_type != "predpis_svj":
+        return
+    ex = d.extracted or {}
+    f = db.get(m.Flat, d.flat_id)
+    old, new = {}, {}
+    for key, name in SVJ_COSTS.items():
+        val = _dec(ex.get(key))
+        if val is None or val <= 0:
+            continue
+        cost = next((c for c in f.costs if c.name == name), None)
+        if cost is None:
+            db.add(m.FlatCost(flat_id=f.id, name=name, amount=val))
+            new[name] = float(val)
+        elif cost.amount != val:
+            old[name] = float(cost.amount)
+            new[name] = float(val)
+            cost.amount = val
+    if new:
+        db.add(m.Version(flat_id=f.id, name="Platby SVJ", action="přepsáno z dokumentu",
+                         old=old or None, new={**new, "doc_id": d.id}))
 
 
 def run_classification(d: m.Document, db: Session) -> None:
@@ -1032,6 +1060,7 @@ def run_classification(d: m.Document, db: Session) -> None:
     sync_acquisition(db, d)
     sync_lease(db, d)
     enrich_flat(db, d)
+    sync_svj_costs(db, d)
 
 
 def sync_acquisition(db: Session, d: m.Document) -> None:
@@ -1134,6 +1163,7 @@ def update_document(doc_id: int, body: s.DocumentUpdate, db: Session = Depends(g
     sync_acquisition(db, d)
     sync_lease(db, d)
     enrich_flat(db, d)
+    sync_svj_costs(db, d)
     db.commit()
     return doc_out(d)
 
