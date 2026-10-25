@@ -57,7 +57,8 @@ const PARAMS = {
   UseVolatilityGuard: ["bool"], VolATRMult: ["num", 0.3, 10], VolPauseMinutes: ["int", 5, 1440],
   UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
   UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
-  MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], UseSlowTrendFilter: ["bool"], AddConfirmFromLevel: ["int", 0, 20], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
+  MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], UseSlowTrendFilter: ["bool"], AddConfirmFromLevel: ["int", 0, 20],
+  UseImpulseLock: ["bool"], UseTrendTrailing: ["bool"], OppositeSignalMode: ["int", 0, 2], AddOnlyOnSignal: ["bool"], UseHTFConfirm: ["bool"], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
 };
 function normParams(obj) {
   const out = [];
@@ -245,6 +246,7 @@ function buildReport(hrs) {
     const r = s.risk || {};
     if (r.newBasketLoss != null) L.push(`Riziko plného koše na hard stopu: ${f2(r.newBasketLoss)} ${cur} (${f2(r.newBasketPct)} % balance)`);
     L.push(`Poslední svíčka: ${s.lastBar || "?"} · vyhodnocení: ${s.evalText || "?"}`);
+    if (s.exit) L.push(`Výstup: ${s.exit}`);
     L.push(`Ochrany: ${s.guard || "v klidu"}${s.trend ? " · trend H1: " + s.trend : ""} · další zpráva: ${s.nextNews || "?"}`);
     if (s.settings) L.push(`Nastavení: ${Object.entries(s.settings).map(([k, v]) => k + "=" + v).join(", ")}`);
     const h = hist.get(it.id);

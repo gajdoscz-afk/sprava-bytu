@@ -444,6 +444,7 @@ function renderInstance(it) {
   f.append(row("Obchodní hodiny", s.hours || "–", s.inHours === false ? "warn" : ""));
   f.append(row("Zprávy", s.news || "–", s.newsBlocked ? "warn" : ""));
   if (s.nextNews) f.append(row("Další zpráva", s.nextNews));
+  if (s.exit) f.append(row("Výstup", s.exit, /^standardní/.test(s.exit) ? "" : "good"));
   if (s.guard !== undefined) f.append(row("Ochrany", s.guard || ("v klidu" + (s.trend ? " (" + s.trend + ")" : "")), s.guard ? "warn" : ""));
   f.append(row("Signál", s.signal || "–"));
   f.append(row("Poslední svíčka", s.lastBar || "–"));
@@ -668,6 +669,13 @@ const FIELDS = [
     ["BasketTPPerPos", "Násobek na pozici", "num", "režim pozic: 1 = každá pozice +1× zisk TP1"],
     ["BasketTPPips", "TP koše (p)", "num", "režim pipy: nad průměrnou cenou"], ["BasketTP_ADRPercent", "TP koše % ADR", "num", "0 = použít pipy"],
     ["UseTrailing", "Trailing stop", "bool"], ["TrailStartPips", "Trailing od (p)", "num"], ["TrailDistancePips", "Trailing odstup (p)", "num"],
+  ]],
+  ["Řízení výstupu (v2.00)", [
+    ["UseImpulseLock", "Zámek na nule při impulzu", "bool", "koš vytažený impulzem na nulu se zamkne a trailuje"],
+    ["UseTrendTrailing", "Trailing po trendu", "bool", "na cíli nezavírat, když EMA50 H1 jde s košem"],
+    ["OppositeSignalMode", "Opačný signál", "sel", "", [["0", "Ignorovat"], ["1", "Zavřít v plusu"], ["2", "Zamknout a trailovat"]]],
+    ["AddOnlyOnSignal", "Přikupovat jen na signál", "bool", "nový signál ve směru koše"],
+    ["UseHTFConfirm", "Potvrzení vyšším TF", "bool", "Stochastic M15 musí souhlasit se vstupem"],
   ]],
   ["Ochrana a čas", [
     ["StopLossPips", "SL první pozice (p)", "num", "0 = hard stop"], ["HardStopPips", "Hard stop koše (p)", "num", "0 = vypnuto"],
