@@ -671,7 +671,7 @@ function docRow(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
  <div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''}</div>
  ${d.summary?`<div class="small" style="margin-top:4px">${esc(d.summary)}</div>`:''}</div>
- <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div></div>`;
+ <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Přečíst znovu</button></div></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
