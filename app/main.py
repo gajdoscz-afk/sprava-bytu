@@ -1006,16 +1006,30 @@ SVJ_COSTS = {"svj_services": "Služby SVJ (měsíční záloha)", "svj_admin": "
 
 
 def sync_svj_costs(db: Session, d: m.Document) -> None:
-    """Z předpisu SVJ doplní nebo přepíše položky v části „Co platím SVJ“. Změnu zapíše do historie."""
+    """Z předpisu SVJ doplní nebo přepíše všechny položky v části „Co platím SVJ“. Změnu zapíše do historie."""
     if d.flat_id is None or d.doc_type != "predpis_svj":
         return
     ex = d.extracted or {}
     f = db.get(m.Flat, d.flat_id)
-    old, new = {}, {}
-    for key, name in SVJ_COSTS.items():
-        val = _dec(ex.get(key))
-        if val is None or val <= 0:
+    items: dict[str, Decimal] = {}
+    for it in ex.get("svj_items") or []:
+        if not isinstance(it, dict):
             continue
+        val = _dec(it.get("amount"))
+        name = str(it.get("name") or "").strip()[:200]
+        if name and val is not None and val > 0:
+            items[name] = val
+    if not items:  # starší čtení: jen dvě souhrnné částky
+        for key, name in SVJ_COSTS.items():
+            val = _dec(ex.get(key))
+            if val is not None and val > 0:
+                items[name] = val
+    old, new = {}, {}
+    for c in list(f.costs):  # dřívější souhrnné položky z dokumentu nahradí nové položky
+        if c.name in SVJ_COSTS.values() and c.name not in items:
+            old[c.name] = float(c.amount)
+            db.delete(c)
+    for name, val in items.items():
         cost = next((c for c in f.costs if c.name == name), None)
         if cost is None:
             db.add(m.FlatCost(flat_id=f.id, name=name, amount=val))
@@ -1024,7 +1038,7 @@ def sync_svj_costs(db: Session, d: m.Document) -> None:
             old[name] = float(cost.amount)
             new[name] = float(val)
             cost.amount = val
-    if new:
+    if new or old:
         db.add(m.Version(flat_id=f.id, name="Platby SVJ", action="přepsáno z dokumentu",
                          old=old or None, new={**new, "doc_id": d.id}))
 

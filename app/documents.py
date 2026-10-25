@@ -56,6 +56,7 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - lease_from: u smlouvy a dodatku den začátku nájmu ve formátu YYYY-MM-DD, jinak null
 - lease_to: u smlouvy a dodatku den konce nájmu YYYY-MM-DD, u neurčitého nájmu null
 - advances: u smlouvy a dodatku zálohy na služby jako objekt {"název služby": částka v Kč}, jinak {}
+- svj_items: u předpisu SVJ seznam VŠECH měsíčních položek předpisu, každá {"name": název položky přesně jak je v předpisu, "amount": částka v Kč jako číslo}; u ostatních dokumentů []
 - svj_services: u předpisu SVJ měsíční záloha na služby v Kč jako číslo, jinak null
 - svj_admin: u předpisu SVJ měsíční příspěvek na správu domu a pozemku v Kč jako číslo, jinak null
 - summary: 1 až 2 věty česky o tom, co dokument je a co obsahuje

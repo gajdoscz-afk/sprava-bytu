@@ -244,6 +244,15 @@ function flatDetail(){
  const ly=years(f)[0];
  const lyBal=ly?bal(f.years[ly]):null;
  const lastSt=ly?`${ly}: ${lyBal<0?'nedoplatek ':'přeplatek '}${kc(Math.abs(lyBal))}`:'zatím žádné';
+ const advRows=l?Object.entries(l.adv||{}).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><span>${kc(v)}</span></div>`).join(''):'';
+ const ecoCard=`<h2>Měsíční přehled</h2><div class="card">
+  <div class="mut small">Vybírám od nájemníka</div>
+  ${l?`<div class="line"><span>Nájem bez záloh</span><span>${kc(l.rent)}</span></div>${advRows}`:'<div class="mut small">Bez předpisu</div>'}
+  <div class="line sum"><span>Vybírám celkem</span><span>${kc(incomeM)}</span></div>
+  <div class="mut small" style="margin-top:12px">Platím SVJ</div>
+  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><span>${kc(c.amount)}</span></div>`).join('')||'<div class="mut small">Zatím nic</div>'}
+  <div class="line sum"><span>Platím celkem</span><span>${kc(svjTotal)}</span></div>
+  <div class="line sum" style="margin-top:12px"><span>Zbývá mi měsíčně</span><span class="${net<0?'bad':'ok'}">${kc(net)}</span></div></div>`;
  const svjCard=`<h2>Co platím SVJ (měsíčně)</h2><div class="card">
   ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><span>${kc(c.amount)} <button class="link small" onclick="delCost(${f.id},${c.id})">smazat</button></span></div>`).join('')||'<div class="mut small">Zatím nic. Přidejte zálohy, které platíte SVJ, a spočítá se čistý příjem.</div>'}
   <div class="line sum"><span>Celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
@@ -270,7 +279,8 @@ function flatDetail(){
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>
 ${detailsCard(f)}
-${svjCard}
+${ecoCard}
+ ${svjCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
