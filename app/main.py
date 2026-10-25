@@ -718,6 +718,29 @@ def delete_cost(flat_id: int, cost_id: int, db: Session = Depends(get_db)):
     return flat_out(get_flat(db, flat_id))
 
 
+@app.post("/flats/{flat_id}/generated-documents", status_code=201)
+def save_generated_document(flat_id: int, body: s.GeneratedDocIn, db: Session = Depends(get_db)):
+    """Uloží vygenerovanou smlouvu nebo dodatek jako dokument bytu (HTML, jde vytisknout nebo sdílet)."""
+    from html import escape as html_escape
+    f = get_flat(db, flat_id)
+    page = (
+        '<!doctype html><html lang="cs"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f'<title>{html_escape(body.title)}</title>'
+        '<style>body{font:16px/1.6 Georgia,serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}'
+        'pre{white-space:pre-wrap;font:inherit}@media print{body{margin:0}}</style></head><body>'
+        f'<pre>{html_escape(body.text)}</pre></body></html>'
+    )
+    data = page.encode("utf-8")
+    safe = re.sub(r"[^\w .-]+", "_", body.title).strip()[:120] or "dokument"
+    d = m.Document(flat_id=f.id, status="zarazeno", doc_type=body.doc_type, filename=f"{safe}.html",
+                   mime="text/html; charset=utf-8", size=len(data), data=data, summary=body.title[:500],
+                   year=date.today().year, note="")
+    db.add(d)
+    db.commit()
+    return doc_out(d)
+
+
 # ---------- předpisy ----------
 
 @app.post("/flats/{flat_id}/leases", status_code=201)

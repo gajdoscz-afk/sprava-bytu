@@ -88,3 +88,9 @@ class DocumentUpdate(BaseModel):
 
 class ValuationIn(BaseModel):
     radius_km: float = Field(ge=0.1, le=20)
+
+
+class GeneratedDocIn(BaseModel):
+    doc_type: str = Field(pattern=r"^(smlouva|dodatek|jine)$")
+    title: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=100000)

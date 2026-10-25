@@ -598,34 +598,91 @@ async function applyDecisions(){
 }
 
 // ---------- smlouva / dodatek ----------
+const CT_TYPES={najem:'Nájemní smlouva',dodatek:'Dodatek ke smlouvě',vypoved:'Výpověď nájmu'};
 function openContract(fid){
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <label>Typ dokumentu</label><select id="ct"><option>Dodatek: změna nájemného</option><option>Nájemní smlouva</option><option>Výpověď nájmu</option></select>
- <label>Váš zisk nad náklady (Kč měsíčně)</label><input type="number" id="cz" placeholder="Doplňte, např. 1500">
- <div class="btns"><button class="btn" onclick="genContract(${fid})">Vygenerovat</button></div><div id="doc"></div>`);
+ <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML=''">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+ <div id="ctBody"></div>
+ <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><div id="doc"></div>`);
+ $('#ctBody').innerHTML=ctBody(fid);
 }
-function genContract(fid){
- const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,kauce:0,adv:{}},z=+$('#cz').value||0,t=$('#ct').value;
- const rent=(+l.rent||0)+z;
- const adv=Object.entries(l.adv).map(([k,v])=>k+': '+kc(v)).join('\n');
- const txt=`${t.toUpperCase()}
+const CT_TOPICS=[['rent','Výše nájmu'],['adv','Zálohy na služby (předpis)'],['term','Doba nájmu'],['deposit','Kauce'],['other','Jiná ujednání']];
+function ctBody(fid){
+ const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
+ const dod=$('#ct').value==='dodatek';
+ const advTxt=Object.entries(l.adv||{}).map(([k,v])=>`${k}: ${v}`).join('\n');
+ const sec=(id,html)=>`<div id="sec_${id}" style="${dod?'display:none':''}">${html}</div>`;
+ const topic=(id,label)=>dod?`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="on_${id}" onchange="$('#sec_${id}').style.display=this.checked?'block':'none'"> ${label}</label>`:'';
+ const rentSec=sec('rent',`<label>Nájemné bez záloh (Kč měsíčně)</label><input type="number" id="ct_rent" value="${l.rent||0}">`);
+ const advSec=sec('adv',`<label>Zálohy na služby, každá na řádek jako „Název: částka“</label><textarea id="ct_adv" rows="4">${esc(advTxt)}</textarea>`);
+ const termSec=sec('term',`<label>Nájem od</label><input type="date" id="ct_from" value="${l.from||''}"><label>Nájem do (prázdné = neurčitě)</label><input type="date" id="ct_to" value="${l.to||''}">`);
+ const depSec=sec('deposit',`<label>Kauce (Kč)</label><input type="number" id="ct_deposit" value="${l.deposit||l.kauce||0}">`);
+ const otherSec=sec('other',`<label>Jiná ujednání</label><textarea id="ct_other" rows="3"></textarea>`);
+ return `<label>${dod?'Účinnost dodatku od':'Účinnost od'}</label><input type="date" id="ct_eff">
+ ${dod?'<p class="small mut" style="margin-top:12px">Zaškrtněte, co se mění. Ostatní ustanovení smlouvy zůstávají beze změny.</p>':''}
+ ${topic('rent','Výše nájmu')}${rentSec}${topic('adv','Zálohy na služby (předpis)')}${advSec}${topic('term','Doba nájmu')}${termSec}${topic('deposit','Kauce')}${depSec}${topic('other','Jiná ujednání')}${otherSec}`;
+}
+function ctText(fid){
+ const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
+ const t=$('#ct').value, dod=t==='dodatek';
+ const on=id=>!dod||$('#on_'+id).checked;
+ const eff=$('#ct_eff').value;
+ if(dod&&!eff){toast('Vyplňte, od kdy dodatek platí');return null}
+ const dt=d=>d?fd(d):'[doplňte]';
+ const parseAdv=txt=>{const o={};(txt||'').split('\n').forEach(line=>{const i=line.lastIndexOf(':');if(i<0)return;const k=line.slice(0,i).trim(),v=parseFloat(line.slice(i+1).replace(/\s/g,'').replace(',','.'));if(k&&!isNaN(v))o[k]=v});return o};
+ const advNew=on('adv')?parseAdv($('#ct_adv')?.value):(l.adv||{});
+ const advList=Object.entries(advNew).map(([k,v])=>`${k}: ${kc(v)}`).join('; ')||'[doplňte]';
+ const advSum=Object.values(advNew).reduce((a,b)=>a+(+b||0),0);
+ const rent=on('rent')?(+$('#ct_rent')?.value||0):(+l.rent||0);
+ const deposit=on('deposit')?(+$('#ct_deposit')?.value||0):(+l.deposit||l.kauce||0);
+ const from=on('term')?$('#ct_from')?.value:(l.from||'');
+ const to=on('term')?$('#ct_to')?.value:(l.to||'');
+ const other=on('other')?($('#ct_other')?.value||'').trim():'';
+ const clauses=[];
+ let n=0;
+ const clause=(title,body)=>{n++;clauses.push(`Čl. ${n} ${title}\n${body}`)};
+ if(dod){
+  if(on('rent')&&rent!==(+l.rent||0))clause('Výše nájmu',`Nájemné bez záloh se od ${dt(eff)} mění z ${kc(l.rent)} na ${kc(rent)} měsíčně.`);
+  if(on('adv'))clause('Zálohy na služby',`Měsíční zálohy na služby se od ${dt(eff)} mění takto: ${advList}. Celkem ${kc(advSum)} měsíčně.`);
+  if(on('term'))clause('Doba nájmu',`Nájem se od ${dt(eff)} mění tak, že trvá od ${dt(from)} do ${to?dt(to):'neurčité doby'}.`);
+  if(on('deposit')&&deposit!==(+l.deposit||+l.kauce||0))clause('Kauce',`Výše kauce se mění z ${kc(l.deposit||l.kauce)} na ${kc(deposit)}.`);
+  if(on('other')&&other)clause('Jiná ujednání',other);
+  if(!clauses.length){toast('Vyberte aspoň jednu změnu');return null}
+  clauses.push(`Čl. ${n+1} Závěrečná ustanovení\nOstatní ustanovení smlouvy zůstávají beze změny. Dodatek je vyhotoven ve dvou stejnopisech a nabývá platnosti dnem podpisu obou smluvních stran, nejdříve však ${dt(eff)}.`);
+ }else{
+  clause('Předmět nájmu',`Pronajímatel přenechává nájemci do nájmu byt ${f.addr}, ${f.dispo||''}, ${f.zip||''}.`);
+  clause('Doba nájmu',`Nájem trvá od ${dt(eff||from)} do ${to?dt(to):'neurčité doby'}.`);
+  clause('Nájemné',`Nájemné bez záloh činí ${kc(rent)} měsíčně, splatné nejpozději k 25. dni měsíce na účet ${f.bank?.acc||'[doplňte]'}.`);
+  clause('Zálohy na služby',`Měsíční zálohy na služby: ${advList}. Celkem ${kc(advSum)} měsíčně.`);
+  clause('Kauce',`Nájemce skládá kauci ve výši ${kc(deposit)}.`);
+  if(other)clause('Jiná ujednání',other);
+ }
+ const head=dod?`DODATEK č. [doplňte] KE SMLOUVĚ O NÁJMU BYTU ze dne [doplňte]`:(t==='vypoved'?'VÝPOVĚĎ NÁJMU BYTU':'SMLOUVA O NÁJMU BYTU');
+ return `${head}
 
 Pronajímatel: ${f.owner||'[doplňte]'}
-Nájemce: ${f.tenant.name}
-Byt: ${f.addr}, ${f.dispo}, ${f.zip}
+Nájemce: ${f.tenant.name||'[doplňte]'}
+Byt: ${f.addr}, ${f.dispo||''}, ${f.zip||''}
 
-Nájemné bez záloh: ${kc(rent)} měsíčně
-Zálohy na služby:
-${adv||'[doplňte]'}
-Splatnost: nejpozději k 25. dni měsíce
-Účet pronajímatele: ${f.bank.acc||'[doplňte]'}
-Kauce: ${kc(l.kauce)}
+${clauses.join('\n\n')}
 
-V ${f.zip.split(' ').slice(-2).join(' ')||'[místo]'} dne ${fd(TODAY)}
+V ${(f.zip||'').split(' ').slice(-2).join(' ')||'[místo]'} dne ${fd(TODAY)}
 
 ______________________          ______________________
 Pronajímatel                     Nájemce`;
- $('#doc').innerHTML=`${z?`<p class="small warnTxt" style="margin-top:12px">Zvýšení nad rámec inflační doložky (čl. 4 smlouvy) může být sporné. Smlouva dovoluje upravit nájemné o míru inflace, a to od 1. července s oznámením do 20. června. Před podpisem to nechte ověřit.</p>`:''}<pre class="doc">${esc(txt)}</pre>`;
+}
+function genContract(fid){
+ const txt=ctText(fid);if(txt===null)return;
+ const warn=$('#ct').value==='dodatek'&&$('#on_rent')?.checked&&(+$('#ct_rent').value>(+flat(fid).leases.slice(-1)[0]?.rent||0))
+  ?`<p class="small warnTxt" style="margin-top:12px">Zvýšení nad rámec inflační doložky (čl. 4 smlouvy) může být sporné. Před podpisem to nechte ověřit.</p>`:'';
+ $('#doc').innerHTML=`${warn}<pre class="doc">${esc(txt)}</pre>`;
+}
+async function saveContract(fid){
+ const txt=ctText(fid);if(txt===null)return;
+ const t=$('#ct').value;
+ const title=(t==='dodatek'?'Dodatek':CT_TYPES[t])+' '+flat(fid).addr+' '+new Date().toISOString().slice(0,10);
+ try{await api(`/flats/${fid}/generated-documents`,'POST',{doc_type:t==='dodatek'?'dodatek':(t==='najem'?'smlouva':'jine'),title,text:txt});toast('Uloženo do dokumentů bytu');closeModal();await reload();render()}
+ catch(e){toast(e.message)}
 }
 
 // ---------- upomínky ----------
