@@ -284,7 +284,7 @@ ${ecoCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
- <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button></div>
+ <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
  ${pendingBanner(pendingGroups(f.id))}
  <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0">${pageLabel(f.id,pendKey(f.id),'📷 Vyfotit dokument po stránkách','btn sm')}<button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
@@ -683,6 +683,42 @@ async function saveContract(fid){
  const title=(t==='dodatek'?'Dodatek':CT_TYPES[t])+' '+flat(fid).addr+' '+new Date().toISOString().slice(0,10);
  try{await api(`/flats/${fid}/generated-documents`,'POST',{doc_type:t==='dodatek'?'dodatek':(t==='najem'?'smlouva':'jine'),title,text:txt});toast('Uloženo do dokumentů bytu');closeModal();await reload();render()}
  catch(e){toast(e.message)}
+}
+
+// ---------- vyúčtování služeb za kalendářní rok ----------
+function openSettlement(fid){
+ const y=new Date().getFullYear()-1;
+ modal(`<div class="sheetHead"><h2>Vyúčtování služeb</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <p class="small mut">Přeúčtují se jen teplo, voda, osvětlení, společná elektřina a výtah. Správa vodoměrů, účetnictví a odměna SVJ se nepřeúčtují. Vyúčtování se dělá za kalendářní rok, např. v roce 2027 za 2026.</p>
+ <label>Rok</label><input type="number" id="sy" value="${y}" min="2000" max="2100">
+ <div class="btns"><button class="btn sec" onclick="settlementPreview(${fid})">Náhled</button><button class="btn" onclick="settlementSave(${fid})">Uložit Word ke kartě bytu</button></div>
+ <div id="sp"></div>`);
+}
+async function settlementPreview(fid){
+ const y=+$('#sy').value;if(!y){toast('Zadejte rok');return null}
+ try{
+  const r=await api(`/flats/${fid}/settlement?year=${y}`);
+  const rows=r.items.map(i=>`<div class="line"><span>${esc(i.name)}${i.billable?'':' <span class="mut small">(nepřeúčtuje se)</span>'}</span><span>${kc(i.cost)}</span></div>`).join('')||'<div class="mut small">Pro tento rok nejsou nahrané vyúčtování SVJ.</div>';
+  const adv=Object.entries(r.advances).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><span>${kc(v)}</span></div>`).join('')||'<div class="mut small">Žádné zálohy na služby.</div>';
+  const b=r.tenant_balance;
+  $('#sp').innerHTML=`<h3 style="margin-top:14px">Náklady ze SVJ za ${r.year}</h3><div class="card">${rows}</div>
+   <h3>Zálohy předepsané nájemníkovi</h3><div class="card">${adv}<div class="line sum"><span>Celkem</span><span>${kc(r.advances_total)}</span></div></div>
+   <div class="card"><div class="line sum"><span>Náklady na přeúčtovatelné služby</span><span>${kc(r.billable_cost)}</span></div>
+   <div class="line sum"><span>${b>0?'Nedoplatek nájemníka':'Přeplatek nájemníka'}</span><span class="${b>0?'bad':'ok'}">${kc(Math.abs(b))}</span></div></div>
+   <div class="card"><div class="mut small">Pronajímatel: SVJ zaplatil ${kc(r.landlord_paid)} z ${kc(r.landlord_cost)} nákladů. Rozdíl ${kc(r.landlord_balance)}.</div></div>`;
+  return r;
+ }catch(e){toast(e.message);return null}
+}
+async function settlementSave(fid){
+ const y=+$('#sy').value;if(!y){toast('Zadejte rok');return}
+ if(!confirm(`Vytvořit Word vyúčtování za ${y} a uložit ke kartě bytu?`))return;
+ try{
+  progress('Vytvářím vyúčtování…');
+  const r=await api(`/flats/${fid}/settlement?year=${y}`,'POST');
+  progress('');
+  toast('Uloženo: vyúčtování pro nájemníka a přehled pro pronajímatele');
+  closeModal();await reload();render();
+ }catch(e){progress('');toast('Chyba: '+e.message)}
 }
 
 // ---------- upomínky ----------

@@ -29,6 +29,8 @@ from . import documents
 from . import models as m
 from . import news as nw
 from . import geo as gx
+from . import docgen
+from . import settlement as stl
 from . import schemas as s
 from .db import Base, engine, get_db
 
@@ -720,25 +722,44 @@ def delete_cost(flat_id: int, cost_id: int, db: Session = Depends(get_db)):
 
 @app.post("/flats/{flat_id}/generated-documents", status_code=201)
 def save_generated_document(flat_id: int, body: s.GeneratedDocIn, db: Session = Depends(get_db)):
-    """Uloží vygenerovanou smlouvu nebo dodatek jako dokument bytu (HTML, jde vytisknout nebo sdílet)."""
-    from html import escape as html_escape
+    """Uloží vygenerovanou smlouvu nebo dodatek jako Word dokument u bytu."""
     f = get_flat(db, flat_id)
-    page = (
-        '<!doctype html><html lang="cs"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f'<title>{html_escape(body.title)}</title>'
-        '<style>body{font:16px/1.6 Georgia,serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}'
-        'pre{white-space:pre-wrap;font:inherit}@media print{body{margin:0}}</style></head><body>'
-        f'<pre>{html_escape(body.text)}</pre></body></html>'
-    )
-    data = page.encode("utf-8")
+    data = docgen.text_docx(body.title, body.text)
     safe = re.sub(r"[^\w .-]+", "_", body.title).strip()[:120] or "dokument"
-    d = m.Document(flat_id=f.id, status="zarazeno", doc_type=body.doc_type, filename=f"{safe}.html",
-                   mime="text/html; charset=utf-8", size=len(data), data=data, summary=body.title[:500],
+    d = m.Document(flat_id=f.id, status="zarazeno", doc_type=body.doc_type, filename=f"{safe}.docx",
+                   mime=docgen.DOCX_MIME, size=len(data), data=data, summary=body.title[:500],
                    year=date.today().year, note="")
     db.add(d)
     db.commit()
     return doc_out(d)
+
+
+@app.get("/flats/{flat_id}/settlement")
+def settlement_preview(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
+    """Náhled vyúčtování za kalendářní rok (výchozí: loni). Nic se neukládá."""
+    f = get_flat(db, flat_id)
+    y = year or date.today().year - 1
+    return stl.to_json(stl.compute(db, f, y))
+
+
+@app.post("/flats/{flat_id}/settlement", status_code=201)
+def settlement_save(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
+    """Vygeneruje Word vyúčtování pro nájemníka a přehled pro pronajímatele a uloží je ke kartě bytu."""
+    f = get_flat(db, flat_id)
+    y = year or date.today().year - 1
+    res = stl.compute(db, f, y)
+    out = []
+    for doc_type, label, data in (
+        ("vyuctovani_najemnikovi", "Vyúčtování nájemník", docgen.settlement_tenant_docx(f, res)),
+        ("jine", "Přehled pro pronajímatele", docgen.settlement_landlord_docx(f, res)),
+    ):
+        d = m.Document(flat_id=f.id, status="zarazeno", doc_type=doc_type,
+                       filename=f"{label} {y} {f.addr}.docx"[:300], mime=docgen.DOCX_MIME, size=len(data),
+                       data=data, summary=f"{label} za rok {y}", year=y, note="")
+        db.add(d)
+        out.append(d)
+    db.commit()
+    return {"preview": stl.to_json(res), "documents": [doc_out(d) for d in out]}
 
 
 # ---------- předpisy ----------
