@@ -158,6 +158,8 @@ class FlatCost(Base):
     flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)  # od kdy platí (None = odjakživa)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)  # do kdy platí (None = dosud)
 
 
 class BankTx(Base):

@@ -101,6 +101,8 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
+        conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
+        conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -356,6 +358,26 @@ def money(x) -> Decimal:
     return Decimal(str(x)).quantize(Decimal("0.01"))
 
 
+def _cost_active(c, d: date) -> bool:
+    return (c.valid_from is None or c.valid_from <= d) and (c.valid_to is None or c.valid_to >= d)
+
+
+def _set_cost_from(db: Session, f: m.Flat, name: str, val, eff: date, old: dict, new: dict) -> None:
+    """Nastaví částku platby od data eff. Starou hodnotu nechá v historii, pokud se mění až po jejím začátku."""
+    cur = next((c for c in f.costs if c.name == name and _cost_active(c, eff)), None)
+    if cur is None:
+        db.add(m.FlatCost(flat_id=f.id, name=name, amount=val, valid_from=eff))
+        new[name] = float(val)
+    elif cur.amount != val:
+        old[name] = float(cur.amount)
+        new[name] = float(val)
+        if cur.valid_from is None or eff > cur.valid_from:
+            cur.valid_to = eff - timedelta(days=1)
+            db.add(m.FlatCost(flat_id=f.id, name=name, amount=val, valid_from=eff))
+        else:
+            cur.amount = val  # oprava hned od začátku platnosti
+
+
 def get_flat(db: Session, flat_id: int) -> m.Flat:
     f = db.get(m.Flat, flat_id)
     if f is None:
@@ -416,7 +438,7 @@ def flat_out(f: m.Flat) -> dict:
         },
         "leases": [lease_out(l) for l in f.leases],
         "statements": [statement_out(st) for st in f.statements],
-        "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount)} for c in f.costs],
+        "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None} for c in f.costs if _cost_active(c, date.today())],
         "acquisition": (
             {"acquired_on": f.acquisition.acquired_on.isoformat() if f.acquisition.acquired_on else None,
              "price": float(f.acquisition.price) if f.acquisition.price is not None else None,
@@ -722,6 +744,58 @@ def delete_cost(flat_id: int, cost_id: int, db: Session = Depends(get_db)):
     if c is None or c.flat_id != flat_id:
         raise HTTPException(404, "Položka nenalezena")
     db.delete(c)
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
+
+
+@app.post("/flats/{flat_id}/predpis-zmena")
+def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Změna předpisu od data: nájem a zálohy nájemníka i moje platby SVJ. Starý předpis zůstane v historii.
+    Když je datum změny stejné jako začátek předpisu, jde o opravu a přepíše se přímo."""
+    f = get_flat(db, flat_id)
+    try:
+        eff = date.fromisoformat(str(body.get("effective") or date.today().isoformat())[:10])
+    except ValueError:
+        raise HTTPException(400, "Datum platnosti není platné")
+    if body.get("rent") is not None or isinstance(body.get("advances"), dict):
+        cur = sorted(f.leases, key=lambda l: l.valid_from)[-1] if f.leases else None
+        if cur is None:
+            raise HTTPException(400, "Nejdřív zadejte nájem v průvodci smlouvou")
+        new_rent = money(body["rent"]) if body.get("rent") is not None else cur.rent
+        adv_src = body["advances"] if isinstance(body.get("advances"), dict) else {a.name: a.amount for a in cur.advances}
+        new_adv = [m.Advance(name=str(k).strip()[:200], amount=money(v)) for k, v in adv_src.items() if str(k).strip()]
+        old = {"rent": float(cur.rent), "advances": {a.name: float(a.amount) for a in cur.advances}}
+        new = {"rent": float(new_rent), "advances": {a.name: float(a.amount) for a in new_adv}}
+        if old != new:
+            if eff <= cur.valid_from:
+                cur.rent, cur.advances = new_rent, new_adv
+            else:
+                old_to = cur.valid_to
+                cur.valid_to = eff - timedelta(days=1)
+                db.add(m.Lease(flat=f, valid_from=eff, valid_to=old_to, rent=new_rent, deposit=cur.deposit,
+                               persons=cur.persons, advances=new_adv))
+            db.add(m.Version(flat_id=f.id, name=f"Předpis nájmu a záloh od {eff.isoformat()}",
+                             action=f"změna od {eff.isoformat()}", old=old, new=new))
+    if isinstance(body.get("costs"), list):
+        old, new = {}, {}
+        wanted = {}
+        for w in body["costs"]:
+            name = str(w.get("name") or "").strip()[:200]
+            if name:
+                wanted[name] = money(w.get("amount") or 0)
+        active = [c for c in f.costs if _cost_active(c, eff)]
+        for c in active:
+            if c.name not in wanted:
+                old[c.name] = float(c.amount)
+                if c.valid_from is None or eff > c.valid_from:
+                    c.valid_to = eff - timedelta(days=1)
+                else:
+                    db.delete(c)
+        for name, val in wanted.items():
+            _set_cost_from(db, f, name, val, eff, old, new)
+        if old or new:
+            db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
+                             old=old or None, new=new or None))
     db.commit()
     return flat_out(get_flat(db, flat_id))
 
@@ -1298,19 +1372,15 @@ def sync_svj_costs(db: Session, d: m.Document) -> None:
             if val is not None and val > 0:
                 items[name] = val
     old, new = {}, {}
+    today = date.today()
     for c in list(f.costs):  # dřívější souhrnné položky z dokumentu nahradí nové položky
-        if c.name in SVJ_COSTS.values() and c.name not in items:
+        if c.name in SVJ_COSTS.values() and c.name not in items and _cost_active(c, today):
             old[c.name] = float(c.amount)
-            db.delete(c)
+            c.valid_to = today - timedelta(days=1) if (c.valid_from and c.valid_from < today) else None
+            if c.valid_to is None:
+                db.delete(c)
     for name, val in items.items():
-        cost = next((c for c in f.costs if c.name == name), None)
-        if cost is None:
-            db.add(m.FlatCost(flat_id=f.id, name=name, amount=val))
-            new[name] = float(val)
-        elif cost.amount != val:
-            old[name] = float(cost.amount)
-            new[name] = float(val)
-            cost.amount = val
+        _set_cost_from(db, f, name, val, today, old, new)
     if new or old:
         db.add(m.Version(flat_id=f.id, name="Platby SVJ", action="přepsáno z dokumentu",
                          old=old or None, new={**new, "doc_id": d.id}))
@@ -1630,8 +1700,9 @@ def overview(year: int | None = None, db: Session = Depends(get_db)):
         r = float(res["received"])
         stmt_cost = float(res["landlord_cost"])
         # Výdaje: vyúčtování SVJ za rok, když existuje; jinak měsíční platby SVJ z karty bytu krát počet měsíců
-        monthly = sum(float(c.amount) for c in f.costs)
-        c = stmt_cost if stmt_cost else round(monthly * months_in_year, 2)
+        monthly = sum(float(c.amount) for c in f.costs if _cost_active(c, date(y, today.month if y == today.year else 12, 15)))
+        by_month = sum(float(c.amount) for mo in range(1, months_in_year + 1) for c in f.costs if _cost_active(c, date(y, mo, 15)))
+        c = stmt_cost if stmt_cost else round(by_month, 2)
         n_pay = db.scalar(select(func.count(m.BankTx.id)).where(
             m.BankTx.flat_id == f.id, m.BankTx.period.like(f"{y}-%"))) or 0
         inc += r
