@@ -20,7 +20,7 @@ KINDS = {
 }
 
 SEARCH_PROMPT = """Najdi aktuální nabídky k {offer} bytů v lokalitě {locality}, dispozice {dispo}.
-Hledej na veřejných realitních portálech (například sreality.cz, bezrealitky.cz, realitymix.cz, reality.idnes.cz).
+Hledej na veřejných realitních portálech a inzertních serverech: sreality.cz, bezrealitky.cz, bazos.cz (sekce reality), reality.idnes.cz, realitymix.cz, ulovdomov.cz, remax-czech.cz, century21.cz, realcity.cz, realco.cz, eurobydleni.cz, reality.cz. Ber jen nabídky, které mají přímý odkaz na inzerát.
 Odpověz POUZE JSON polem objektů, každý s klíči:
 - title: název nebo popis nabídky
 - url: přímý odkaz na inzerát (povinné, jinak nabídku vynech)

@@ -126,7 +126,8 @@ def _fix_owners_from_documents() -> None:
         db.commit()
 
 
-BENCH_WEEKDAY = 0  # pondělí
+BENCH_WEEKDAY = 0  # pondělí: tržní přehled (zprávy)
+BENCH_DAY = 1      # 1. den v měsíci: hledání nabídek, odhad hodnoty a snímek portfolia
 BENCH_HOUR = 7     # od 7:00 pražského času
 
 
@@ -326,16 +327,19 @@ def _benchmark_scheduler() -> None:
             run_news_scan()
     except Exception as e:
         print(f"[news] start selhal: {e}", flush=True)
-    last_run_day = datetime.now(tz).date() if tz else None
+    last_bench_day = last_news_day = None
     while True:
         time.sleep(1800)
         now = datetime.now(tz) if tz else datetime.now()
-        if now.weekday() == BENCH_WEEKDAY and now.hour >= BENCH_HOUR and last_run_day != now.date():
-            last_run_day = now.date()
+        if now.day == BENCH_DAY and now.hour >= BENCH_HOUR and last_bench_day != now.date():
+            last_bench_day = now.date()
             try:
-                run_benchmark_refresh()
+                run_benchmark_refresh()  # měsíční hledání nabídek u všech dispozic, odhad hodnoty
+                snapshot_portfolio_now()  # měsíční snímek hodnoty všech bytů (kumulativně)
             except Exception as e:
-                print(f"[benchmark] pondělní hledání selhalo: {e}", flush=True)
+                print(f"[benchmark] měsíční hledání selhalo: {e}", flush=True)
+        if now.weekday() == BENCH_WEEKDAY and now.hour >= BENCH_HOUR and last_news_day != now.date():
+            last_news_day = now.date()
             try:
                 run_news_scan()
             except Exception as e:
