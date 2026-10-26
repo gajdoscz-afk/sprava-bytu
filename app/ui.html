@@ -760,9 +760,17 @@ async function saveContract(fid){
  if(!landlord.name||!tenant.name){toast('Vyplňte jméno pronajímatele a nájemce');return}
  try{
   progress('Vytvářím Word dokument…');
-  await api(`/flats/${fid}/contracts`,'POST',body);
+  const doc=await api(`/flats/${fid}/contracts`,'POST',body);
   progress('');
-  toast('Uloženo do dokumentů bytu (Word)');closeModal();await reload();render();
+  await reload();
+  modal(`<div class="sheetHead"><h2>Uloženo</h2><button class="btn sec sm" onclick="closeModal();render()">Zavřít</button></div>
+   <p class="small mut">${esc(doc.summary||doc.filename)}</p>
+   <div class="btns" style="flex-direction:column;align-items:stretch">
+    <button class="btn" onclick="docView(${doc.id},true)">Zobrazit a uložit PDF</button>
+    <a class="btn sec" href="/documents/${doc.id}/file" download="${esc(doc.filename)}">Uložit Word</a>
+    <button class="btn sec" onclick="shareDoc(${doc.id})">Sdílet Word</button>
+    <button class="btn sec" onclick="closeModal();render()">Hotovo</button>
+   </div>`);
  }catch(e){progress('');toast(e.message)}
 }
 
@@ -827,6 +835,16 @@ function ctRefresh(fid){
   ?`<div class="card" style="margin-top:12px"><b>Návrh změn oproti předchozí smlouvě</b><ul style="margin:8px 0 0;padding-left:18px">${rows.map(r=>`<li>${esc(r)}</li>`).join('')}</ul><div class="small mut" style="margin-top:6px">${dod?'Změněné body jsou zaškrtnuté. Zkontrolujte je před uložením.':'Nová smlouva nahrazuje předchozí. Zkontrolujte, že údaje sedí.'}</div></div>`
   :`<div class="small mut" style="margin-top:12px">Oproti předchozí smlouvě se nic nemění.</div>`;
 }
+// ---------- prohlížení dokumentu uvnitř aplikace (s tlačítkem Zavřít) ----------
+function docView(id,pdf){
+ const d=S.docs.find(x=>x.id===id)||{filename:'dokument'};
+ const isWord=/\.docx$/i.test(d.filename);
+ const src=(pdf||isWord)?`/documents/${id}/pdf`:`/documents/${id}/file`;
+ modal(`<div class="sheetHead"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
+  <iframe src="${src}" style="width:100%;height:68vh;border:0;border-radius:10px;background:#fff;margin-top:8px"></iframe>
+  <div class="btns">${isWord?`<a class="btn sec sm" href="/documents/${id}/file" download="${esc(d.filename)}">Stáhnout Word</a>`:`<a class="btn sec sm" href="/documents/${id}/file" download="${esc(d.filename)}">Stáhnout</a>`}<button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button></div>`);
+}
+
 // ---------- nový nájemník z dokladu ----------
 let TN_DOCS=[];
 function tenantNew(){
@@ -872,26 +890,42 @@ async function tenantSaveOnly(){
   toast('Doklad uložen k bytu');closeModal();await reload();render();
  }catch(e){toast(e.message)}
 }
-// Podpisová plocha: podepíše se prstem nebo perem na displeji
+// Podpis: ťuknutím na políčko se otevře velká plocha přes celou obrazovku
+const SIG={};
 function sigPad(id){
- return `<canvas id="${id}" width="600" height="220" style="width:100%;height:110px;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none"></canvas><button class="link small" onclick="sigClear('${id}')">Smazat podpis</button>`;
+ return `<div id="box_${id}" onclick="sigOpen('${id}')" style="height:110px;border:1px dashed var(--line);border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#888;overflow:hidden">Ťuknutím podepište</div>`;
 }
-function sigInit(id){
- const c=document.getElementById(id);if(!c)return;
- const ctx=c.getContext('2d');ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#111';
+function sigOpen(id){
+ const ov=document.createElement('div');ov.id='sigOv';
+ ov.style.cssText='position:fixed;inset:0;background:var(--paper);z-index:300;display:flex;flex-direction:column;padding:14px;gap:10px';
+ ov.innerHTML=`<div class="row"><b>Podpis</b><span class="mut small">Podepište se prstem nebo perem</span></div>
+  <canvas id="sigCv" style="flex:1;width:100%;background:#fff;border:1px solid var(--line);border-radius:12px;touch-action:none"></canvas>
+  <div class="btns" style="margin:0;justify-content:space-between"><button class="btn sec" onclick="sigCancel()">Zrušit</button><button class="btn sec" onclick="sigWipe()">Smazat</button><button class="btn" onclick="sigSave('${id}')">Uložit podpis</button></div>`;
+ document.body.appendChild(ov);
+ const c=document.getElementById('sigCv');
+ c.width=c.clientWidth*2;c.height=c.clientHeight*2;
+ const ctx=c.getContext('2d');ctx.lineWidth=5;ctx.lineCap='round';ctx.strokeStyle='#111';
  let down=false,last=null;
  const pos=e=>{const r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height}};
  c.addEventListener('pointerdown',e=>{down=true;last=pos(e);c.setPointerCapture(e.pointerId)});
  c.addEventListener('pointermove',e=>{if(!down)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p});
  const end=()=>{down=false};c.addEventListener('pointerup',end);c.addEventListener('pointercancel',end);
 }
-function sigClear(id){const c=document.getElementById(id);if(c)c.getContext('2d').clearRect(0,0,c.width,c.height)}
-function sigData(id){
- const c=document.getElementById(id);if(!c)return null;
+function sigWipe(){const c=document.getElementById('sigCv');if(c)c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function sigCancel(){const ov=document.getElementById('sigOv');if(ov)ov.remove()}
+function sigSave(id){
+ const c=document.getElementById('sigCv');
  const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
- for(let i=3;i<d.length;i+=4)if(d[i]>0)return c.toDataURL('image/png');
- return null;
+ let has=false;for(let i=3;i<d.length;i+=4)if(d[i]>0){has=true;break}
+ if(!has){toast('Nejdřív se podepište');return}
+ SIG[id]=c.toDataURL('image/png');
+ const box=document.getElementById('box_'+id);
+ if(box)box.innerHTML=`<img src="${SIG[id]}" style="max-height:100%;max-width:100%">`;
+ sigCancel();
 }
+function sigInit(id){}
+function sigClear(id){delete SIG[id];const box=document.getElementById('box_'+id);if(box)box.innerHTML='Ťuknutím podepište'}
+function sigData(id){return SIG[id]||null}
 
 // ---------- upomínky ----------
 function mailTab(){
@@ -944,7 +978,7 @@ function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
  const first=(d.summary||'').split(/(?<=\.)\s/)[0].slice(0,140);
- return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a>${/\.docx$/i.test(d.filename)?`<a class="link small" href="/documents/${d.id}/pdf" target="_blank">PDF</a>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button></div></div>`;
+ return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
