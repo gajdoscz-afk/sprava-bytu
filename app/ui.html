@@ -982,13 +982,17 @@ function wzCostRead(){
  W.costs=W.costs.map((c,i)=>({name:iv('wz_cn'+i)||c.name,amount:+($('#wz_ca'+i)?.value)||0}));
 }
 function wzCostSum(){return (W.costs||[]).reduce((a,b)=>a+(+b.amount||0),0)}
+const WZ_STD_COSTS=[['Fond oprav',/fond/i],['Správa SVJ (příspěvek na správu domu)',/správ/i],['Účetnictví SVJ',/účetn/i],['Správa vodoměrů',/vodoměr|odečt/i]];
 function wzV_rent(){
- if(!W.costs)W.costs=(W.d.landlord_costs||[]).map(c=>({name:c.name,amount:c.amount}));
- const rows=W.costs.map((c,i)=>`<div class="grid2" style="margin-top:6px"><input id="wz_cn${i}" value="${esc(c.name)}"><div style="display:flex;gap:6px"><input id="wz_ca${i}" type="number" value="${c.amount}" style="flex:1"><button class="btn sec sm" onclick="wzCostDel(${i})">×</button></div></div>`).join('');
- const src=W.d.landlord_costs_source?`Načteno z: ${esc(W.d.landlord_costs_source)}.`:'V předpisu SVJ nic nenalezeno, doplňte ručně.';
- return wzHead('Nájemné')+`<p class="small mut">Nájemné ve smlouvě = čistý nájem, který chcete mít, plus náklady, které nese pronajímatel (fond oprav, účetnictví, správa SVJ apod.). ${src}</p>
+ if(!W.costs){
+  W.costs=(W.d.landlord_costs||[]).map(c=>({name:c.name,amount:c.amount}));
+  WZ_STD_COSTS.forEach(([name,re])=>{if(!W.costs.some(c=>re.test(c.name)))W.costs.push({name,amount:0})});
+ }
+ const rows=W.costs.map((c,i)=>`<div class="grid2" style="margin-top:6px"><input id="wz_cn${i}" value="${esc(c.name)}"><div style="display:flex;gap:6px"><input id="wz_ca${i}" type="number" value="${c.amount}" style="flex:1" placeholder="Kč/měs."><button class="btn sec sm" onclick="wzCostDel(${i})">×</button></div></div>`).join('');
+ const src=W.d.landlord_costs_source?`Předvyplněno z předpisu SVJ (${esc(W.d.landlord_costs_source)}). Co nesete, doplňte; 0 = nic.`:'V dokumentech k bytu nic nenalezeno. Doplňte částky za měsíc; 0 = nic.';
+ return wzHead('Nájemné')+`<p class="small mut">Nájemné ve smlouvě = čistý nájem + náklady, které nese pronajímatel. ${src}</p>
  <label>Čistý nájem, který chcete mít (Kč/měs.)</label><input type="number" id="wz_net" value="${W.net??''}">
- ${rows}
+ <label style="margin-top:10px">Náklady, které nesete vy (Kč/měs.)</label>${rows}
  <div class="btns" style="margin-top:8px"><button class="btn sec sm" onclick="wzCostAdd()">+ Přidat položku</button></div>
  <div class="card small" style="margin-top:10px">Nájemné ve smlouvě: čistý nájem ${kc(+iv('wz_net')||W.net||0)} + náklady ${kc(wzCostSum())}.</div>
  <div class="btns" style="margin-top:12px"><button class="btn" onclick="wzRentSave()">Pokračovat</button></div>`;
@@ -1408,7 +1412,7 @@ function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
  ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
  ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
- <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div>
+ <div class="row" style="gap:12px;justify-content:flex-end"><button class="link small" onclick="docView(${d.id})">Otevřít</button><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div>
  <div class="grid2"><div><label>Byt</label><select id="df${d.id}">${flatOpts(d.suggested_flat_id)}</select></div>
  <div><label>Typ</label><select id="dt${d.id}">${docTypeOpts(d.doc_type)}</select></div></div>
  <div class="btns"><button class="btn sm" onclick="confirmDoc(${d.id})">Potvrdit</button>
