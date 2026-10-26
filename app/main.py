@@ -31,6 +31,7 @@ from . import news as nw
 from . import geo as gx
 from . import contracts
 from . import landlord as landlord_profile
+from . import protocols
 from . import pdfgen
 from . import docgen
 from . import settlement as stl
@@ -765,6 +766,51 @@ def _upsert_lease_from_contract(db: Session, f: m.Flat, body: dict) -> None:
                    deposit=money(body.get("deposit") or 0), persons=body.get("npers") or None, advances=adv))
 
 
+@app.post("/flats/{flat_id}/meter-photo")
+async def meter_photo(flat_id: int, file: UploadFile = File(...), meter: str = Form(...), room: str = Form(""),
+                      date_str: str = Form(""), db: Session = Depends(get_db)):
+    """Fotka měřidla: uloží se ke kartě bytu jako archiv (datum, měřidlo, místnost) a přečte se z ní stav."""
+    f = get_flat(db, flat_id)
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Fotka je větší než 15 MB")
+    mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "image/jpeg"
+    if mime not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+        raise HTTPException(400, "Fotka musí být JPG nebo PNG")
+    day = date_str or date.today().isoformat()
+    safe = re.sub(r"[^\w-]+", "_", f"{day}_{meter}_{room or 'byt'}").strip("_")[:120]
+    doc = m.Document(flat_id=f.id, status="zarazeno", doc_type="foto_meridla", filename=f"{safe}.jpg", mime=mime,
+                     size=len(data), data=data, summary=f"Měřidlo: {meter}, místnost: {room or 'byt'}, {day}",
+                     year=date.today().year, note="")
+    db.add(doc)
+    db.commit()
+    try:
+        res = await run_in_threadpool(documents.read_meter, data, mime)
+        err = None
+    except documents.ClassifyError as e:
+        res, err = {"value": None, "unit": None, "type_guess": None}, str(e)
+    return {"doc_id": doc.id, "filename": doc.filename, "value": res["value"], "unit": res["unit"],
+            "type_guess": res["type_guess"], "error": err}
+
+
+@app.post("/flats/{flat_id}/protocols", status_code=201)
+def create_protocol(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Předávací protokol ve Word formátu, uložený ke kartě bytu."""
+    f = get_flat(db, flat_id)
+    try:
+        data = protocols.handover_docx(f, body)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, f"Zkontrolujte údaje: {e}")
+    title = f"Předávací protokol {f.addr} {body.get('date') or ''}"
+    safe = re.sub(r"[^\w .-]+", "_", title).strip()[:120] or "protokol"
+    d = m.Document(flat_id=f.id, status="zarazeno", doc_type="protokol", filename=f"{safe}.docx",
+                   mime=docgen.DOCX_MIME, size=len(data), data=data, summary=title[:500],
+                   year=date.today().year, note="")
+    db.add(d)
+    db.commit()
+    return doc_out(d)
+
+
 @app.get("/flats/{flat_id}/contract-defaults")
 def contract_defaults(flat_id: int, db: Session = Depends(get_db)):
     """Všechno, co se dá natáhnout k bytu pro novou smlouvu: fond oprav a zálohy z dokumentů, poslední předpis."""
@@ -779,6 +825,10 @@ def contract_defaults(flat_id: int, db: Session = Depends(get_db)):
             break
     fund_items = [i for i in items if re.search(r"fond", str(i.get("name", "")), re.I)]
     fund = round(sum(float(i.get("amount") or 0) for i in fund_items), 2) if fund_items else None
+    # Co pronajímatel nese sám (fond oprav, účetnictví, správa SVJ…) se ve smlouvě tváří jako nájemné
+    landlord_costs = [{"name": str(i.get("name", "")), "amount": round(float(i.get("amount") or 0), 2)}
+                      for i in items if not stl.is_billable(str(i.get("name", "")))
+                      and float(i.get("amount") or 0) > 0]
     last = sorted(f.leases, key=lambda l: l.valid_from)[-1] if f.leases else None
     if last and last.advances:
         advances = {a.name: float(a.amount) for a in last.advances}
@@ -793,6 +843,7 @@ def contract_defaults(flat_id: int, db: Session = Depends(get_db)):
         "area": float(f.area_m2) if f.area_m2 is not None else None,
         "bank_acc": f.bank_acc, "vs": getattr(f, "vs", None),
         "fund": fund, "fund_source": "předpis SVJ" if fund_items else None,
+        "landlord_costs": landlord_costs, "landlord_costs_source": "předpis SVJ" if landlord_costs else None,
         "advances": advances, "advances_source": adv_source,
         "base_persons": last.persons if last else None,
         "rent": float(last.rent) if last else None,

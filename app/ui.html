@@ -313,7 +313,7 @@ ${ecoCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
- <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
+ <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec" onclick="protStart(${f.id})">Předávací protokol</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
  ${pendingBanner(pendingGroups(f.id))}
  <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0">${pageLabel(f.id,pendKey(f.id),'📷 Vyfotit dokument po stránkách','btn sm')}<button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
@@ -977,17 +977,30 @@ function wzAdvAdd(){wzAdvRead();W.advances.push({name:'',amount:0});wzRender()}
 function wzAdvDel(i){wzAdvRead();W.advances.splice(i,1);wzRender()}
 function wzAdvSave(){wzAdvRead();W.advances=W.advances.filter(a=>a.name);wzGo('rent')}
 function wzAdvTotal(){return (W.advances||[]).reduce((a,b)=>a+(+b.amount||0),0)}
+function wzCostRead(){
+ if(!W.costs)return;
+ W.costs=W.costs.map((c,i)=>({name:iv('wz_cn'+i)||c.name,amount:+($('#wz_ca'+i)?.value)||0}));
+}
+function wzCostSum(){return (W.costs||[]).reduce((a,b)=>a+(+b.amount||0),0)}
 function wzV_rent(){
- const fundNote=W.d.fund_source?`načteno z: ${esc(W.d.fund_source)}`:'v dokumentech nenalezen, doplňte';
- return wzHead('Nájemné')+`<label>Čistý nájem, který chcete mít (Kč/měs.)</label><input type="number" id="wz_net" value="${W.net??''}">
- <label>Fond oprav (Kč/měs.) – ${fundNote}</label><input type="number" id="wz_fund" value="${W.fund??''}">
- <div class="card small" style="margin-top:8px">Nájemné bez záloh = čistý nájem + fond oprav. Zálohy se přičtou zvlášť.</div>
+ if(!W.costs)W.costs=(W.d.landlord_costs||[]).map(c=>({name:c.name,amount:c.amount}));
+ const rows=W.costs.map((c,i)=>`<div class="grid2" style="margin-top:6px"><input id="wz_cn${i}" value="${esc(c.name)}"><div style="display:flex;gap:6px"><input id="wz_ca${i}" type="number" value="${c.amount}" style="flex:1"><button class="btn sec sm" onclick="wzCostDel(${i})">×</button></div></div>`).join('');
+ const src=W.d.landlord_costs_source?`Načteno z: ${esc(W.d.landlord_costs_source)}.`:'V předpisu SVJ nic nenalezeno, doplňte ručně.';
+ return wzHead('Nájemné')+`<p class="small mut">Nájemné ve smlouvě = čistý nájem, který chcete mít, plus náklady, které nese pronajímatel (fond oprav, účetnictví, správa SVJ apod.). ${src}</p>
+ <label>Čistý nájem, který chcete mít (Kč/měs.)</label><input type="number" id="wz_net" value="${W.net??''}">
+ ${rows}
+ <div class="btns" style="margin-top:8px"><button class="btn sec sm" onclick="wzCostAdd()">+ Přidat položku</button></div>
+ <div class="card small" style="margin-top:10px">Nájemné ve smlouvě: čistý nájem ${kc(+iv('wz_net')||W.net||0)} + náklady ${kc(wzCostSum())}.</div>
  <div class="btns" style="margin-top:12px"><button class="btn" onclick="wzRentSave()">Pokračovat</button></div>`;
 }
+function wzCostAdd(){wzCostRead();W.costs.push({name:'',amount:0});wzRender()}
+function wzCostDel(i){wzCostRead();W.costs.splice(i,1);wzRender()}
 function wzRentSave(){
- W.net=+iv('wz_net')||0;W.fund=+iv('wz_fund')||0;
+ wzCostRead();
+ W.net=+iv('wz_net')||0;
+ W.costs=W.costs.filter(c=>c.name);
  if(!W.net){toast('Zadejte čistý nájem');return}
- W.rent=W.net+W.fund;
+ W.rent=W.net+wzCostSum();
  wzGo('terms');
 }
 function wzV_terms(){
@@ -1013,7 +1026,7 @@ function wzV_preview(){
  const adv=W.advances.map(a=>`<div class="line"><span>${esc(a.name)}</span><span>${kc(a.amount)}</span></div>`).join('')||'<div class="mut small">Žádné zálohy.</div>';
  return wzHead('Náhled a uložení')+`
  <div class="card small"><b>Pronajímatel:</b> ${esc(L.name)}, ${esc(L.address)}, ${esc(L.phone)}, ${esc(L.email)}<br><b>Nájemci:</b><br>${tn}<br><b>Kontakt:</b> ${contacts}<br><b>Byt:</b> ${esc(W.d.addr)}, ${esc(W.d.zip||'')} · osob ${W.npers}</div>
- <div class="card" style="margin-top:10px">${adv}<div class="line sum"><span>Nájemné bez záloh</span><span>${kc(W.rent)}</span></div><div class="line sum"><span>Celkem měsíčně vč. záloh</span><span>${kc(W.rent+wzAdvTotal())}</span></div></div>
+ <div class="card" style="margin-top:10px">${adv}<div class="line sum"><span>Nájemné bez záloh (ve smlouvě)</span><span>${kc(W.rent)}</span></div><div class="line sum"><span>Celkem měsíčně vč. záloh</span><span>${kc(W.rent+wzAdvTotal())}</span></div></div>
  <div class="card small" style="margin-top:10px">Účet: ${W.bank?esc(W.bank):'<span class="mut">nechci uvádět (v smlouvě zůstane prázdné pole)</span>'}<br>Od ${esc(W.from)}, ${W.indefinite?'na dobu neurčitou':'do '+esc(W.to)} · kauce ${kc(W.deposit)} · VS ${esc(W.vs||'—')}</div>
  <h3 style="margin-top:14px">Podpisy na displeji (nepovinné)</h3>
  <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('sig_l')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('sig_t')}</div></div>
@@ -1026,7 +1039,7 @@ async function wzSave(){
  const body={kind:'najem',landlord:W.d.landlord,tenant:main,tenants,unit:'',floor:W.d.floor||'',area:W.d.area??'',dispo:W.d.dispo||'',
   contract_date:W.cdate,valid_from:W.from,valid_to:W.indefinite?'':W.to,indefinite:W.indefinite,
   rent:W.rent,deposit:W.deposit,advances:adv,vs:W.vs,bank_acc:W.bank||'______________________',payment_due:W.pay,deposit_note:W.depNote,
-  other:W.contacts.note?`Kontakt: ${W.contacts.note}`:'',persons:[],npers:W.npers,net:W.net,fund:W.fund,
+  other:W.contacts.note?`Kontakt: ${W.contacts.note}`:'',persons:[],npers:W.npers,net:W.net,landlord_costs:W.costs,
   amendment_no:'',eff_date:'',changes:{},sign_landlord:sigData('sig_l'),sign_tenant:sigData('sig_t')};
  try{
   progress('Vytvářím smlouvu…');
@@ -1045,6 +1058,119 @@ function ctSavedModal(doc){
    <button class="btn sec" onclick="shareDoc(${doc.id})">Sdílet Word</button>
    <button class="btn sec" onclick="closeModal();render()">Hotovo</button>
   </div>`);
+}
+
+// ---------- předávací protokol (interaktivně) ----------
+// Postupně se fotí každé měřidlo, stav se přečte z fotky a jde potvrdit. Fotky se archivují ke kartě bytu.
+const PR_METERS=[['Voda studená','kuchyně'],['Voda teplá','kuchyně'],['Teplo – kuchyně','kuchyně'],['Teplo – pokoj','pokoj'],['Teplo – obývák','obývák'],['Elektroměr','byt'],['Plynoměr','byt']];
+let P=null;
+async function protStart(fid){
+ await landlordDef();
+ const f=flat(fid);
+ P={fid,types:PR_METERS.map(([type,room])=>({type,room})),queue:[],meters:[],cur:null,view:'types',
+    people:[f.tenant?.name].filter(Boolean),date:TODAY_ISO(),notes:''};
+ modal(`<div id="pr"></div>`);
+ prRender();
+}
+function prHead(title){
+ return `<div class="sheetHead"><h2>${title}</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>`;
+}
+function prRender(){
+ const box=$('#pr');if(!box)return;
+ const views={types:prV_types,meter:prV_meter,people:prV_people,sign:prV_sign};
+ box.innerHTML=(views[P.view]||prV_types)();
+ if(P.view==='sign'){sigInit('pr_sl');sigInit('pr_st')}
+}
+function prV_types(){
+ return prHead('Měřidla při předání')+`<p class="small mut">Vyberte měřidla, která se fotí. Stav se přečte z fotky a vy ho potvrdíte.</p>
+ ${P.types.map((t,i)=>`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="prt${i}" checked> ${esc(t.type)}${t.room?' ('+esc(t.room)+')':''}</label>`).join('')}
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="prTypesSave()">Pokračovat</button></div>`;
+}
+function prTypesSave(){
+ P.queue=P.types.filter((t,i)=>$('#prt'+i).checked).map(t=>({type:t.type,room:t.room,value:'',photo:'',doc_id:null,err:null}));
+ P.meters=[];
+ prNext();
+}
+function prNext(){
+ if(!P.queue.length){P.view='people';P.cur=null}
+ else{P.cur=P.queue.shift();P.view='meter'}
+ prRender();
+}
+function prV_meter(){
+ const c=P.cur;
+ return prHead(`Měřidlo: ${esc(c.type)}`)+`
+ <label>Místnost</label><input id="pr_room" value="${esc(c.room||'')}">
+ ${c.doc_id?`<p class="small" style="margin-top:8px">Fotka uložena ke kartě bytu: ${esc(c.photo)}</p>`
+  :`<label class="btn" style="display:inline-block;cursor:pointer;margin-top:8px">📷 Vyfotit stav měřidla<input type="file" accept="image/*" capture="environment" style="display:none" onchange="prPhoto(this)"></label>`}
+ ${c.err?`<p class="small warnTxt" style="margin-top:8px">Stav se nepřečetl, zapište ho ručně. (${esc(c.err)})</p>`:''}
+ <label style="margin-top:10px">Stav měřidla</label><input id="pr_val" value="${esc(c.value||'')}" placeholder="např. 1234.56">
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="prConfirm(false)">Potvrdit a další</button><button class="btn sec" onclick="prConfirm(true)">Bez stavu, přeskočit</button></div>`;
+}
+async function prPhoto(input){
+ const file=input.files[0];input.value='';
+ if(!file)return;
+ const c=P.cur;c.room=iv('pr_room');
+ const fd=new FormData();
+ fd.append('file',file);fd.append('meter',c.type);fd.append('room',c.room);fd.append('date_str',P.date);
+ progress('Čtu stav měřidla…');
+ try{
+  const r=await fetch(`/flats/${P.fid}/meter-photo`,{method:'POST',body:fd});
+  let j=null;try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
+  progress('');
+  Object.assign(c,{doc_id:j.doc_id,photo:j.filename,value:j.value||'',err:j.error||(j.value?null:'stav nebyl čitelný')});
+  prRender();
+ }catch(e){progress('');toast(e.message)}
+}
+function prConfirm(skip){
+ const c=P.cur;c.room=iv('pr_room');
+ P.meters.push({type:c.type,room:c.room,value:skip?'':iv('pr_val'),photo:c.photo||'',doc_id:c.doc_id||null});
+ prNext();
+}
+function prSaveText(){
+ P.date=iv('pr_date')||P.date;
+ P.people=($('#pr_people')?.value||'').split('\n').map(x=>x.trim()).filter(Boolean);
+ P.notes=($('#pr_notes')?.value||'').trim();
+}
+function prV_people(){
+ return prHead('Předání bytu')+`
+ <h3>Zapsané stavy</h3>${P.meters.map(m=>`<div class="line"><span>${esc(m.type)}${m.room?' – '+esc(m.room):''}</span><span>${esc(m.value||'bez stavu')}${m.photo?' · fotka':''}</span></div>`).join('')||'<div class="mut small">Zatím žádný stav.</div>'}
+ <label style="margin-top:12px">Datum předání</label><input type="date" id="pr_date" value="${P.date}">
+ <label>Nájemce (jeden na řádek)</label><textarea id="pr_people" rows="2">${esc(P.people.join('\n'))}</textarea>
+ <label>Poznámky ke stavu bytu, klíče, závady</label><textarea id="pr_notes" rows="3">${esc(P.notes)}</textarea>
+ <label style="margin-top:10px">Další měřidlo (název)</label><input id="pr_extra" placeholder="např. Měřič tepla – ložnice">
+ <div class="btns" style="margin-top:8px"><button class="btn sec sm" onclick="prAddMeter()">+ Přidat měřidlo</button></div>
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="prToSign()">Pokračovat na podpis</button></div>`;
+}
+function prAddMeter(){
+ prSaveText();
+ const n=iv('pr_extra');
+ if(!n){toast('Zadejte název měřidla');return}
+ P.cur={type:n,room:'',value:'',photo:'',doc_id:null,err:null};
+ P.view='meter';
+ prRender();
+}
+function prToSign(){
+ prSaveText();
+ P.view='sign';
+ prRender();
+}
+function prV_sign(){
+ return prHead('Podpis a uložení')+`<div class="card small">Předání ${esc(P.date)}<br>Nájemce: ${esc(P.people.join(', ')||'—')}<br>Zapsaných měřidel: ${P.meters.length}</div>
+ <h3 style="margin-top:12px">Podpisy na displeji (nepovinné)</h3>
+ <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('pr_sl')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('pr_st')}</div></div>
+ <div class="btns" style="margin-top:12px"><button class="btn sec" onclick="P.view='people';prRender()">Upravit</button><button class="btn" onclick="prSave()">Uložit protokol do karty bytu</button></div>`;
+}
+async function prSave(){
+ const body={kind:'prevzeti',date:P.date,landlord_name:(LANDLORD_DEF&&LANDLORD_DEF.name)||'',people:P.people,
+  meters:P.meters.map(m=>({...m,photo:m.photo})),notes:P.notes,sign_landlord:sigData('pr_sl'),sign_tenant:sigData('pr_st')};
+ try{
+  progress('Vytvářím protokol…');
+  const doc=await api(`/flats/${P.fid}/protocols`,'POST',body);
+  progress('');
+  await reload();
+  ctSavedModal(doc);
+ }catch(e){progress('');toast(e.message)}
 }
 
 // ---------- vyúčtování služeb za kalendářní rok ----------

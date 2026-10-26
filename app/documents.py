@@ -12,6 +12,8 @@ import httpx
 
 DOC_TYPES = {
     "smlouva": "Smlouva",
+    "protokol": "Předávací protokol",
+    "foto_meridla": "Fotka měřidla",
     "dodatek": "Dodatek",
     "vyuctovani_svj": "Vyúčtování SVJ",
     "vyuctovani_spravy": "Vyúčtování správy",
@@ -205,3 +207,25 @@ def read_id(images: list[tuple[bytes, str]]) -> dict:
         raise ClassifyError("Doklad se nepodařilo přečíst. Zkuste ostřejší fotku.")
     return {k: (str(res.get(k)).strip() or None) if res.get(k) else None
             for k in ("name", "birth_date", "address", "id_number", "doc_kind")}
+
+
+METER_PROMPT = """Na fotce je měřidlo (vodoměr, měřič tepla, elektroměr nebo plynoměr). Odečti aktuální stav.
+Odpověz POUZE jedním JSON objektem s klíči:
+- value: stav měřidla jako text s číslicemi a desetinnou tečkou, např. "1234.56", nebo null když nejde přečíst
+- unit: "m3", "GJ", "kWh" nebo null
+- type_guess: "voda", "teplo", "elektřina", "plyn" nebo null
+Nic nevymýšlej. Co není čitelné, dej null."""
+
+
+def read_meter(data: bytes, mime: str) -> dict:
+    """Přečte stav měřidla z fotky. Vrací value (text nebo None), unit a type_guess."""
+    blocks = [{"type": "image", "source": {"type": "base64", "media_type": mime,
+                                           "data": base64.standard_b64encode(data).decode("ascii")}}]
+    text = call_claude(blocks, METER_PROMPT, 300)
+    match = re.search(r"\{.*\}", text, re.S)
+    try:
+        res = json.loads(match.group(0)) if match else {}
+    except json.JSONDecodeError:
+        res = {}
+    val = str(res.get("value") or "").strip().replace(",", ".")
+    return {"value": val or None, "unit": res.get("unit"), "type_guess": res.get("type_guess")}

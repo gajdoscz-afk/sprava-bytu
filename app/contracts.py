@@ -130,7 +130,7 @@ def lease_docx(flat, b: dict) -> bytes:
     d.add_heading("3. VÝPOČET ZÁLOH NA SLUŽBY", level=2)
     srows = [[k, money(v)] for k, v in adv.items()]
     srows.append(["Celkem služby", money(_adv_total(adv))])
-    srows.append(["Čisté nájemné", money(rent)])
+    srows.append(["Nájemné (bez záloh)", money(rent)])
     docgen._table(d, ["Služba", "Měsíčně"], srows, money_cols=(1,))
 
     d.add_heading("4. OSOBY NAHLÁŠENÉ K POBYTU V NEMOVITOSTI", level=2)
