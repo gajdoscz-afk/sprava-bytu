@@ -401,7 +401,7 @@ function flatTiles(fid){
   ['Vyúčtování SVJ',['vyuctovani_svj','vyuctovani_spravy'],cnt(['vyuctovani_svj','vyuctovani_spravy']),'Od SVJ a správy'],
   ['Vyúčtování nájemníkovi',['vyuctovani_najemnikovi'],cnt(['vyuctovani_najemnikovi']),'Pro nájemce'],
   ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
- return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports({flat:${fid},types:${JSON.stringify(types)},label:${JSON.stringify(n)}})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
+ return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports(${JSON.stringify({flat:fid,types,label:n}).replace(/"/g,'&quot;')})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
 }
 let CH_N=0;
 function flatChart(income,cost,profit,title='Měsíční přehled v grafu',note='Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.'){
@@ -1909,13 +1909,14 @@ function docsTab(){
  </div>
  ${pend}
  ${inbox.length?`<h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')}`:''}
- <h2>Přehled a třídění</h2>
+ <h2 id="reportsAnchor">Přehled a třídění</h2>
  ${reportsHtml()}`;
 }
 function openReports(o){
  V.tab='docs';V.flat=null;
  V.rf={year:'all',flat:o.flat??'all',tenant:'all',types:o.types??null,label:o.label||'',group:'flat'};
- render();window.scrollTo(0,0);
+ render();
+ document.getElementById('reportsAnchor')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function rfSet(k,v){
  V.rf=V.rf||{year:'all',flat:'all',tenant:'all',types:null,label:'',group:'flat'};
