@@ -94,7 +94,7 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 .flatBarMeta{font-size:14px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @media (max-width:560px){.flatBar{padding:10px 12px 10px 110px;flex-wrap:wrap}.flatBarName{font-size:20px}.flatBarMeta{display:none}}
 .pend{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
-/* Hodnota portfolia: fialový panel s podsvícením */
+/* Portfolio: fialový panel s podsvícením */
 .pwidget{position:relative;margin:4px auto 18px;max-width:440px;text-align:center;padding:18px 18px 16px;border-radius:20px;background:radial-gradient(120% 140% at 50% 0%,#2A1656 0%,#0C0818 62%);border:1px solid #7C3AED;box-shadow:0 0 0 1px rgba(168,85,247,.25),0 0 30px rgba(139,92,246,.45),0 0 70px rgba(139,92,246,.18);color:#E9D5FF;cursor:pointer}
 .pwidget .pl{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#C4B5FD}
 .pwidget .pv{font-size:34px;font-weight:800;color:#F3E8FF;text-shadow:0 0 12px rgba(192,132,252,.9),0 0 26px rgba(139,92,246,.7);font-variant-numeric:tabular-nums;margin:6px 0 4px}
@@ -187,7 +187,7 @@ nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-col
 
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
-<button data-t="value" onclick="go('value')">Hodnota</button>
+<button data-t="value" onclick="go('value')">Portfolio</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
 <button data-t="docs" onclick="go('docs')">Dokumenty</button>
 <button data-t="bench" onclick="go('bench')">Benchmark</button>
@@ -1711,10 +1711,10 @@ function portWidget(){
  if(!showValue()) return '';
  if(!PORT){
   if(!PORT_LOADING) loadPortfolio().then(render);
-  return `<div class="pwidget fixed"><div class="pl">Hodnota portfolia</div><div class="pc">Načítám…</div></div>`;
+  return `<div class="pwidget fixed"><div class="pl">Portfolio</div><div class="pc">Načítám…</div></div>`;
  }
  const ch=PORT.change_1m_pct;
- return `<div class="pwidget" onclick="go('value')" role="button" title="Otevřít přehled hodnoty"><div class="pl">Hodnota portfolia</div><div class="pv">${kc(PORT.total)}</div>${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${pctS(ch)} za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže za měsíc od prvního snímku</div>'}</div>`;
+ return `<div class="pwidget" onclick="go('value')" role="button" title="Otevřít přehled hodnoty"><div class="pl">Portfolio</div><div class="pv">${kc(PORT.total)}</div>${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${pctS(ch)} za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže za měsíc od prvního snímku</div>'}</div>`;
 }
 function valDetails(P){
  const rows=P.flats.map(f=>{
@@ -1734,7 +1734,7 @@ async function setRadius(id,v){
 function valueTab(){
  if(!PORT){
   if(!PORT_LOADING) loadPortfolio().then(render);
-  return '<h1>Hodnota portfolia</h1><p class="mut">Načítám…</p>';
+  return '<h1>Portfolio</h1><p class="mut">Načítám…</p>';
  }
  const P=PORT;
  const max=Math.max(...P.flats.map(f=>f.value??0),1);
@@ -1748,7 +1748,8 @@ function valueTab(){
  }).join('');
  const ch=P.change_1m, pct=P.change_1m_pct;
  const hist=P.history.slice(-12).reverse().map(h=>`<div class="line"><span class="mut small">${dmy(h.date)}</span><span>${kc(h.total)}</span></div>`).join('');
- return `<h1>Hodnota portfolia</h1>
+ return `<div class="row"><h1>Portfolio</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="refreshAllBench()" ${REF.running?'disabled':''}>↻ Aktualizovat hodnoty</button></div></div>
+ <div id="benchStatus" class="bstat">${refreshLine()}</div>
  <p class="mut small">Součet odhadů z podobných nabídek prodeje v okruhu kolem adresy bytu. Pořizovací cena se nepoužívá.</p>
  <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
  <div class="pwidget fixed">
@@ -1834,10 +1835,11 @@ async function pollRefresh(){
   REF=s; updateRefreshUI();
   if(s.running){ setTimeout(pollRefresh,4000); return }
  }catch(e){ REF={running:false,error:e.message}; updateRefreshUI(); return }
- // Hotovo: načíst nové nabídky a odhady, pokud je zrovna otevřená záložka Benchmark
+ // Hotovo: načíst nové nabídky a odhady, přepočítat portfolio
  BENCH=null;
  try{ await loadBench() }catch(e){}
- if(V.tab==='bench') render();
+ PORT=null; await loadPortfolio();
+ if(V.tab==='bench'||V.tab==='value'||V.tab==='home') render();
  else updateRefreshUI();
  toast(refreshText(REF));
 }
