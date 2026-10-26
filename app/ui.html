@@ -107,6 +107,19 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 .vbar{width:100%;max-width:64px;border-radius:10px 10px 4px 4px;background:linear-gradient(180deg,var(--acc),color-mix(in srgb,var(--acc) 45%,transparent))}
 .vbar.none{background:none;border:2px dashed var(--line);min-height:8px}
 .vname{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.25;max-width:96px;word-break:break-word}
+.homeHead{display:flex;justify-content:space-between;align-items:flex-end;margin:4px 0 12px}
+.statGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.stat span{display:block;color:var(--mut);font-size:13px}
+.stat b{font-size:22px;font-variant-numeric:tabular-nums}
+.listCard{padding:4px 16px}
+.flatRow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.flatRow:last-child{border-bottom:0}
+.docList{padding:4px 16px}
+.docItem{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.docItem:last-child{border-bottom:0}
+.docItem .t{font-weight:600;line-height:1.35}
+.docItem .acts{display:flex;gap:12px;flex-shrink:0;padding-top:2px}
 </style>
 </head>
 <body>
@@ -203,26 +216,41 @@ function notesFor(){
  });
  return out;
 }
+function homeStats(){
+ let inc=0,svj=0;
+ S.flats.forEach(f=>{
+  const l=f.leases[f.leases.length-1];
+  if(l)inc+=(+l.rent||0)+Object.values(l.adv||{}).reduce((a,b)=>a+(+b||0),0);
+  svj+=f.svj.reduce((a,c)=>a+(+c.amount||0),0);
+ });
+ return {inc,svj,net:inc-svj};
+}
 function home(){
  const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
- return `<h1>Přehled</h1><p class="mut small">Stav k ${fd(TODAY)}</p>
- ${portWidget()}
- <div class="kpis">
-  <div class="card"><div class="mut small">Bytů</div><div class="big">${S.flats.length}</div></div>
-  <div class="card"><div class="mut small">S nedoplatkem</div><div class="big bad">${debts.length}</div></div>
+ const st=homeStats();
+ const flatRows=S.flats.map(f=>{
+  const l=f.leases[f.leases.length-1];
+  const exp=l&&l.to&&new Date(l.to)<TODAY;
+  const tag=!l?'<span class="tag warn">Bez předpisu</span>':exp?'<span class="tag warn">Smlouva skončila</span>':'<span class="tag ok">Obsazený</span>';
+  return `<div class="flatRow" onclick="openFlat(${f.id})"><div><b>${esc(f.addr)}</b><div class="mut small">${esc(f.tenant.name)||'Bez nájemníka'}</div></div>${tag}</div>`;
+ }).join('');
+ return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div></div>
+ <div class="statGrid">
+  <div class="stat"><span>Bytů</span><b>${S.flats.length}</b></div>
+  <div class="stat"><span>Vybírám měsíčně</span><b>${kc(st.inc)}</b></div>
+  <div class="stat"><span>Platím SVJ</span><b>${kc(st.svj)}</b></div>
+  <div class="stat"><span>Čistý příjem</span><b class="${st.net<0?'bad':'ok'}">${kc(st.net)}</b></div>
  </div>
+ ${portWidget()}
  <h2>K řešení</h2>
- ${debts.map(d=>`<div class="card item" onclick="openFlat(${d.f.id})"><div class="row"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div></div>`).join('')||'<div class="card mut">Nic nečeká na řešení.</div>'}
+ ${debts.map(d=>`<div class="card item row" onclick="openFlat(${d.f.id})"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div>`).join('')||'<div class="card mut">Nic nečeká.</div>'}
  <h2>Oznámení</h2>
  ${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')||'<div class="card mut">Žádná oznámení.</div>'}
  ${newsBlock()}
- <h2>Záloha dat</h2>
- <div class="card">
-  <p class="small mut" style="margin:0 0 10px">Data jsou uložena na serveru. Kopii můžete stáhnout do souboru.</p>
-  <div class="btns" style="margin:0"><button class="btn sec sm" onclick="exportBackup()">Stáhnout zálohu</button></div>
- </div>
- <div class="btns"><button class="btn" onclick="flatForm()">+ Přidat byt</button></div>`;
+ <h2>Byty</h2>
+ <div class="card listCard">${flatRows||'<div class="mut">Zatím žádné byty.</div>'}</div>
+ <div class="btns"><button class="btn" onclick="flatForm()">+ Přidat byt</button><button class="btn sec" onclick="exportBackup()">Stáhnout zálohu</button></div>`;
 }
 
 // ---------- byty ----------
@@ -601,10 +629,12 @@ async function applyDecisions(){
 const CT_TYPES={najem:'Nájemní smlouva',dodatek:'Dodatek ke smlouvě',vypoved:'Výpověď nájmu'};
 function openContract(fid){
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML=''">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
- <div id="ctBody"></div>
+ <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML='';ctRefresh(${fid})">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+ <div id="ctBody" oninput="ctRefresh(${fid})"></div>
+ <div id="ctDiff"></div>
  <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><div id="doc"></div>`);
  $('#ctBody').innerHTML=ctBody(fid);
+ ctRefresh(fid);
 }
 const CT_TOPICS=[['rent','Výše nájmu'],['adv','Zálohy na služby (předpis)'],['term','Doba nájmu'],['deposit','Kauce'],['other','Jiná ujednání']];
 function ctBody(fid){
@@ -612,7 +642,7 @@ function ctBody(fid){
  const dod=$('#ct').value==='dodatek';
  const advTxt=Object.entries(l.adv||{}).map(([k,v])=>`${k}: ${v}`).join('\n');
  const sec=(id,html)=>`<div id="sec_${id}" style="${dod?'display:none':''}">${html}</div>`;
- const topic=(id,label)=>dod?`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="on_${id}" onchange="$('#sec_${id}').style.display=this.checked?'block':'none'"> ${label}</label>`:'';
+ const topic=(id,label)=>dod?`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="on_${id}" onchange="$('#sec_${id}').style.display=this.checked?'block':'none';ctRefresh(${fid})"> ${label}</label>`:'';
  const rentSec=sec('rent',`<label>Nájemné bez záloh (Kč měsíčně)</label><input type="number" id="ct_rent" value="${l.rent||0}">`);
  const advSec=sec('adv',`<label>Zálohy na služby, každá na řádek jako „Název: částka“</label><textarea id="ct_adv" rows="4">${esc(advTxt)}</textarea>`);
  const termSec=sec('term',`<label>Nájem od</label><input type="date" id="ct_from" value="${l.from||''}"><label>Nájem do (prázdné = neurčitě)</label><input type="date" id="ct_to" value="${l.to||''}">`);
@@ -721,6 +751,31 @@ async function settlementSave(fid){
  }catch(e){progress('');toast('Chyba: '+e.message)}
 }
 
+function parseAdvText(txt){const o={};(txt||'').split('\n').forEach(line=>{const i=line.lastIndexOf(':');if(i<0)return;const k=line.slice(0,i).trim(),v=parseFloat(line.slice(i+1).replace(/\s/g,'').replace(',','.'));if(k&&!isNaN(v))o[k]=v});return o}
+// Hlídač: porovná údaje ve formuláři s předchozí smlouvou a navrhne změny
+function ctRefresh(fid){
+ const box=$('#ctDiff');if(!box)return;
+ const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
+ const dod=$('#ct').value==='dodatek';
+ const rows=[];
+ const newRent=+$('#ct_rent')?.value||0, oldRent=+l.rent||0;
+ const newDep=+$('#ct_deposit')?.value||0, oldDep=+(l.deposit||l.kauce)||0;
+ const newAdv=parseAdvText($('#ct_adv')?.value), oldAdv=l.adv||{};
+ const newFrom=$('#ct_from')?.value||'', newTo=$('#ct_to')?.value||'';
+ const diffKeys=new Set();
+ if(newRent&&newRent!==oldRent){diffKeys.add('rent');const pct=oldRent?` (${(((newRent-oldRent)/oldRent)*100).toFixed(1)} %)`:'';rows.push(`Nájem: ${kc(oldRent)} → ${kc(newRent)}${pct}`)}
+ const advLines=[];
+ Object.keys(newAdv).forEach(k=>{if(!(k in oldAdv))advLines.push(`přibyla záloha „${k}“ ${kc(newAdv[k])}`);else if(+oldAdv[k]!==newAdv[k])advLines.push(`„${k}“: ${kc(oldAdv[k])} → ${kc(newAdv[k])}`)});
+ Object.keys(oldAdv).forEach(k=>{if(!(k in newAdv))advLines.push(`zrušena záloha „${k}“ (bylo ${kc(oldAdv[k])})`)});
+ if(advLines.length){diffKeys.add('adv');advLines.forEach(x=>rows.push('Zálohy: '+x))}
+ if(newDep&&newDep!==oldDep){diffKeys.add('deposit');rows.push(`Kauce: ${kc(oldDep)} → ${kc(newDep)}`)}
+ if(newFrom&&newFrom!==(l.from||'')){diffKeys.add('term');rows.push(`Začátek nájmu: ${fd(l.from)} → ${fd(newFrom)}`)}
+ if(newTo!==(l.to||'')){diffKeys.add('term');rows.push(`Konec nájmu: ${l.to?fd(l.to):'neurčitě'} → ${newTo?fd(newTo):'neurčitě'}`)}
+ if(dod)diffKeys.forEach(k=>{const cb=$('#on_'+k);if(cb&&!cb.checked){cb.checked=true;$('#sec_'+k).style.display='block'}});
+ box.innerHTML=rows.length
+  ?`<div class="card" style="margin-top:12px"><b>Návrh změn oproti předchozí smlouvě</b><ul style="margin:8px 0 0;padding-left:18px">${rows.map(r=>`<li>${esc(r)}</li>`).join('')}</ul><div class="small mut" style="margin-top:6px">${dod?'Změněné body jsou zaškrtnuté. Zkontrolujte je před uložením.':'Nová smlouva nahrazuje předchozí. Zkontrolujte, že údaje sedí.'}</div></div>`
+  :`<div class="small mut" style="margin-top:12px">Oproti předchozí smlouvě se nic nemění.</div>`;
+}
 // ---------- upomínky ----------
 function mailTab(){
  const rows=S.flats.map(f=>{const y=years(f)[0];if(!y)return '';const b=bal(f.years[y]);if(b>=0)return '';
@@ -771,10 +826,8 @@ function flatOpts(sel,newAddr){
 function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option value="${k}" ${k===sel?'selected':''}>${v}</option>`).join('')}
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
- return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
- <div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''}</div>
- ${d.summary?`<div class="small" style="margin-top:4px">${esc(d.summary)}</div>`:''}</div>
- <div class="row" style="gap:12px;justify-content:flex-end"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Přečíst znovu</button></div></div></div>`;
+ const first=(d.summary||'').split(/(?<=\.)\s/)[0].slice(0,140);
+ return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><a class="link small" href="/documents/${d.id}/file" target="_blank">Otevřít</a><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
@@ -1026,7 +1079,7 @@ function docGroups(list,emptyText){
  for(const [title,types,open] of DOC_GROUPS){
   const items=list.filter(d=>types.includes(d.doc_type)||(title==='Ostatní'&&!known.has(d.doc_type)));
   if(!items.length)continue;
-  h+=`<details class="docGroup"${open?' open':''}><summary><b>${title}</b> <span class="mut small">(${items.length})</span></summary>${items.map(docRow).join('')}</details>`;
+  h+=`<details class="docGroup"${open?' open':''}><summary><b>${title}</b> <span class="mut small">(${items.length})</span></summary><div class="card docList">${items.map(docRow).join('')}</div></details>`;
  }
  return h;
 }
