@@ -176,14 +176,18 @@ def suggest_flat(result: dict, flats, aliases, filename: str = "") -> int | None
     return winners[0] if len(winners) == 1 and best >= 3 else None
 
 
-ID_PROMPT = """Jsi asistentka správce bytů v ČR. Na fotkách je občanský průkaz nebo jiný doklad totožnosti nájemce.
+ID_PROMPT = """Jsi asistentka správce bytů v ČR. Na fotce je občanský průkaz nebo jiný doklad totožnosti nájemce.
+Fotka může být přední strana (jméno a příjmení, datum narození, číslo dokladu, pohlaví, státní občanství),
+nebo zadní strana (adresa trvalého pobytu, dole strojově čitelné řádky MRZ se znaky <).
+Přečti VŠE, co na fotce je čitelné. Pokud v textu chybí jméno, datum narození nebo číslo dokladu,
+ale jsou v MRZ řádcích, doplň je z MRZ (datum narození je v MRZ ve tvaru RRMMDD, převeď ho na D. M. RRRR).
 Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
-- name: jméno a příjmení přesně jak jsou v dokladu, nebo null
+- name: jméno a příjmení přesně jak jsou napsané, nebo null
 - birth_date: datum narození ve formátu D. M. RRRR (např. 7. 9. 1976), nebo null
-- address: trvalé bydliště přesně jak je v dokladu (ulice a číslo, PSČ, obec), nebo null
+- address: trvalé bydliště přesně jak je napsané (ulice a číslo, PSČ, obec), nebo null
 - id_number: číslo dokladu, nebo null
 - doc_kind: "občanský průkaz", "pas", "řidičský průkaz" nebo "jiné"
-Nic nevymýšlej. Co není čitelné nebo v dokladu není, dej null."""
+Nic nevymýšlej. Co na fotce není čitelné nebo není, dej null."""
 
 
 def read_id(images: list[tuple[bytes, str]]) -> dict:

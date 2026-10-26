@@ -846,16 +846,24 @@ function docView(id,pdf){
 }
 
 // ---------- nový nájemník z dokladu ----------
-let TN_DOCS=[];
+// Údaje se sčítají z více fotek: přední strana dá jméno a datum narození, zadní adresu.
+let TN_DOCS=[],TN_FIELDS={},TN_COUNT=0;
+const TN_KEYS=['name','birth_date','address','id_number'];
 function tenantNew(){
+ TN_DOCS=[];TN_FIELDS={};TN_COUNT=0;
  modal(`<div class="sheetHead"><h2>Nový nájemník</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <p class="small mut">Vyfoťte občanský průkaz z přední i zadní strany (nebo jiný doklad). Aplikace z něj přečte údaje.</p>
+ <p class="small mut">Vyfoťte nejdřív přední stranu dokladu, pak zadní. Údaje z obou stran se doplní do formuláře.</p>
  <label class="btn sec" style="display:inline-block;cursor:pointer">📷 Vyfotit nebo vybrat doklad<input type="file" accept="image/*" multiple capture="environment" style="display:none" onchange="tenantRead(this)"></label>
  <div id="tnBox"></div>`);
+}
+function tnCollect(){
+ if(!$('#tn_name'))return;
+ TN_KEYS.forEach(k=>{const el=$('#tn_'+({name:'name',birth_date:'birth',address:'addr',id_number:'op'})[k]);if(el&&el.value.trim())TN_FIELDS[k]=el.value.trim()});
 }
 async function tenantRead(input){
  const files=[...input.files];input.value='';
  if(!files.length)return;
+ tnCollect();
  const fd=new FormData();files.forEach(f=>fd.append('files',f));
  progress('Čtu doklad…');
  try{
@@ -863,19 +871,23 @@ async function tenantRead(input){
   let j=null;try{j=await r.json()}catch(e){}
   if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
   progress('');
-  TN_DOCS=j.documents||[];
-  tenantForm(j.fields||{});
+  TN_DOCS=[...TN_DOCS,...(j.documents||[])];
+  TN_COUNT+=files.length;
+  TN_KEYS.forEach(k=>{if(j.fields&&j.fields[k])TN_FIELDS[k]=j.fields[k]});
+  tenantForm(TN_FIELDS);
  }catch(e){progress('');toast(e.message)}
 }
 function tenantForm(f){
  const opts=S.flats.map(x=>`<option value="${x.id}">${esc(x.addr)}</option>`).join('');
+ const miss=v=>v?'':' placeholder="chybí na fotkách, doplňte"';
  $('#tnBox').innerHTML=`<div class="card" style="margin-top:12px"><h3>Údaje z dokladu</h3>
-  <label>Jméno a příjmení</label><input id="tn_name" value="${esc(f.name||'')}">
-  <label>Datum narození</label><input id="tn_birth" value="${esc(f.birth_date||'')}">
-  <label>Trvalé bydliště</label><input id="tn_addr" value="${esc(f.address||'')}">
-  <label>Číslo dokladu</label><input id="tn_op" value="${esc(f.id_number||'')}">
-  <p class="small mut">Fotky dokladu se uloží k nájemníkovi. Údaje si můžete upravit.</p>
-  <label>Byt</label><select id="tn_flat">${opts}</select>
+  <p class="small mut" style="margin:0 0 8px">Přečteno z fotek: ${TN_COUNT}. Chybí-li údaj, vyfoťte druhou stranu.</p>
+  <label>Jméno a příjmení</label><input id="tn_name" value="${esc(f.name||'')}"${miss(f.name)}>
+  <label>Datum narození</label><input id="tn_birth" value="${esc(f.birth_date||'')}"${miss(f.birth_date)}>
+  <label>Trvalé bydliště</label><input id="tn_addr" value="${esc(f.address||'')}"${miss(f.address)}>
+  <label>Číslo dokladu</label><input id="tn_op" value="${esc(f.id_number||'')}"${miss(f.id_number)}>
+  <label class="btn sec sm" style="display:inline-block;cursor:pointer;margin-top:8px">+ Vyfotit další stranu<input type="file" accept="image/*" multiple capture="environment" style="display:none" onchange="tenantRead(this)"></label>
+  <label style="margin-top:12px">Byt</label><select id="tn_flat">${opts}</select>
   <div class="btns" style="margin-top:12px"><button class="btn" onclick="tenantContract()">Vytvořit smlouvu</button><button class="btn sec" onclick="tenantSaveOnly()">Jen uložit k bytu</button></div></div>`;
 }
 function tenantContract(){
