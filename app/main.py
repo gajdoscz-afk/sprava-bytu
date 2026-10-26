@@ -103,6 +103,8 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
+        conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_from DATE"))
+        conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_to DATE"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -914,9 +916,11 @@ def create_protocol(flat_id: int, body: dict = Body(...), db: Session = Depends(
         raise HTTPException(400, f"Zkontrolujte údaje: {e}")
     title = f"Předávací protokol {f.addr} {body.get('date') or ''}"
     safe = re.sub(r"[^\w .-]+", "_", title).strip()[:120] or "protokol"
+    dv = body.get("date") or None
     d = m.Document(flat_id=f.id, status="zarazeno", doc_type="protokol", filename=f"{safe}.docx",
                    mime=docgen.DOCX_MIME, size=len(data), data=data, summary=title[:500],
-                   year=date.today().year, note="")
+                   year=date.today().year, note="",
+                   valid_from=date.fromisoformat(dv[:10]) if dv else None, valid_to=None)
     db.add(d)
     db.commit()
     return doc_out(d)
@@ -984,9 +988,13 @@ def create_contract(flat_id: int, body: dict = Body(...), db: Session = Depends(
     except (TypeError, ValueError) as e:
         raise HTTPException(400, f"Zkontrolujte údaje: {e}")
     safe = re.sub(r"[^\w .-]+", "_", title).strip()[:120] or "dokument"
+    vf = body.get("valid_from") or body.get("eff_date") or None
+    vt = None if (kind == "dodatek" or body.get("indefinite")) else (body.get("valid_to") or None)
     d = m.Document(flat_id=f.id, status="zarazeno", doc_type=dtype, filename=f"{safe}.docx",
                    mime=docgen.DOCX_MIME, size=len(data), data=data, summary=title[:500],
-                   year=date.today().year, note="")
+                   year=date.today().year, note="",
+                   valid_from=date.fromisoformat(vf[:10]) if vf else None,
+                   valid_to=date.fromisoformat(vt[:10]) if vt else None)
     db.add(d)
     db.commit()
     return doc_out(d)
@@ -1058,7 +1066,8 @@ def settlement_save(flat_id: int, year: int | None = None, db: Session = Depends
     ):
         d = m.Document(flat_id=f.id, status="zarazeno", doc_type=doc_type,
                        filename=f"{label} {y} {f.addr}.docx"[:300], mime=docgen.DOCX_MIME, size=len(data),
-                       data=data, summary=f"{label} za rok {y}", year=y, note="")
+                       data=data, summary=f"{label} za rok {y}", year=y, note="",
+                       valid_from=date(y, 1, 1), valid_to=date(y, 12, 31))
         db.add(d)
         out.append(d)
     db.commit()
@@ -1189,6 +1198,8 @@ def doc_out(d: m.Document) -> dict:
         "id": d.id, "flat_id": d.flat_id, "status": d.status, "doc_type": d.doc_type, "group_key": d.group_key,
         "filename": d.filename, "mime": d.mime, "size": d.size, "year": d.year,
         "summary": d.summary, "note": d.note, "suggested_flat_id": d.suggested_flat_id,
+        "valid_from": d.valid_from.isoformat() if d.valid_from else None,
+        "valid_to": d.valid_to.isoformat() if d.valid_to else None,
         "extracted": d.extracted, "created_at": d.created_at.isoformat(),
     }
 

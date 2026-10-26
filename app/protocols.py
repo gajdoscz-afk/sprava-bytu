@@ -11,6 +11,7 @@ def handover_docx(flat, b: dict) -> bytes:
     d = docgen._new("Předávací protokol")
     d.add_paragraph(f"Předávací protokol k bytu {flat.addr}, {flat.zip or ''}")
     d.add_paragraph(f"Datum předání: {cz_date(b.get('date'))}")
+    d.add_paragraph(f"Platnost stavů měřidel: ke dni {cz_date(b.get('date'))}")
     d.add_paragraph(f"Pronajímatel: {b.get('landlord_name') or ''}")
     d.add_paragraph("Nájemce: " + (", ".join(p for p in (b.get("people") or []) if p) or "—"))
     d.add_heading("Stavy měřidel", level=2)

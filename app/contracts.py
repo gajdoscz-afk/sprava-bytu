@@ -78,6 +78,9 @@ def lease_docx(flat, b: dict) -> bytes:
     d = docgen._new("Nájemní smlouva")
     d.styles["Normal"].font.size = Pt(10.5)
     d.add_paragraph("dle § 2235 a násl. zákona č. 89/2012 Sb., občanského zákoníku, ve znění pozdějších předpisů (dále jen občanský zákoník)")
+    _doba = "neurčitou" if (b.get("indefinite") or not b.get("valid_to")) else "určitou"
+    d.add_paragraph(f"Platnost nájmu: od {cz_date(b.get('valid_from'))} do "
+                    f"{'neurčité doby' if _doba == 'neurčitou' else cz_date(b.get('valid_to'))}")
     body = TEXT["uvod_a_clanky"]
     first_art = body.index("Článek I.")
     d.add_heading("Úvod", level=2)
@@ -159,7 +162,9 @@ def amendment_docx(flat, b: dict, old: dict) -> bytes:
     """Dodatek. old = předchozí předpis (rent, deposit, advances, valid_from, valid_to)."""
     eff = cz_date(b.get("eff_date"))
     ch = b.get("changes") or {}
+    
     d = docgen._new(f"Dodatek č. {b.get('amendment_no') or '[doplňte]'} ke smlouvě o nájmu bytu")
+    d.add_paragraph(f"Platnost dodatku: od {eff} (účinnost dnem {eff}).")
     d.add_paragraph(
         f"uzavřený dle § 2235 a násl. zákona č. 89/2012 Sb., občanského zákoníku, mezi smluvními stranami:")
     L, T = b.get("landlord") or {}, b.get("tenant") or {}

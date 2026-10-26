@@ -130,6 +130,8 @@ class Document(Base):
     mime: Mapped[str] = mapped_column(String(100))
     size: Mapped[int] = mapped_column(Integer, default=0)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)  # platnost dokumentu od
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)  # platnost dokumentu do (None = neurčitě)
     summary: Mapped[str] = mapped_column(Text, default="")
     note: Mapped[str] = mapped_column(Text, default="")
     suggested_flat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

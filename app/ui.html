@@ -1581,7 +1581,7 @@ function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
  const first=(d.summary||'').split(/(?<=\.)\s/)[0].slice(0,140);
- return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button><button class="link small warnTxt" onclick="docDelete(${d.id})">Smazat</button></div></div>`;
+ return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.valid_from?` · platnost ${fd(d.valid_from)} – ${d.valid_to?fd(d.valid_to):'neurčitě'}`:(d.year?' · '+d.year:'')}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button><button class="link small warnTxt" onclick="docDelete(${d.id})">Smazat</button></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>

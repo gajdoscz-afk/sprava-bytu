@@ -67,6 +67,7 @@ def text_docx(title: str, text: str) -> bytes:
 def settlement_tenant_docx(flat, res: dict) -> bytes:
     y = res["year"]
     d = _new(f"Vyúčtování služeb za rok {y}")
+    d.add_paragraph(f"Platnost vyúčtování: období od 1. 1. {y} do 31. 12. {y}")
     d.add_paragraph(f"Pronajímatel: {flat.owner or '[doplňte]'}")
     d.add_paragraph(f"Nájemce: {flat.tenant_name or '[doplňte]'}")
     d.add_paragraph(f"Byt: {flat.addr}, {flat.dispo or ''}, {flat.zip or ''}")
@@ -101,6 +102,7 @@ def settlement_tenant_docx(flat, res: dict) -> bytes:
 def settlement_landlord_docx(flat, res: dict) -> bytes:
     y = res["year"]
     d = _new(f"Přehled vyúčtování za rok {y} pro pronajímatele")
+    d.add_paragraph(f"Platnost přehledu: období od 1. 1. {y} do 31. 12. {y}")
     d.add_paragraph(f"Byt: {flat.addr}. Pouze pro vnitřní použití, nenahrávat nájemníkovi.")
     d.add_heading("Položky vyúčtování SVJ a správy", level=2)
     rows = []
