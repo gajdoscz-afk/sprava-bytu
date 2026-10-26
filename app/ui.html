@@ -313,7 +313,7 @@ ${ecoCard}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
- <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="openContract(${f.id})">Smlouva nebo dodatek</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
+ <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
  ${pendingBanner(pendingGroups(f.id))}
  <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0">${pageLabel(f.id,pendKey(f.id),'📷 Vyfotit dokument po stránkách','btn sm')}<button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
@@ -633,11 +633,11 @@ async function landlordDef(){
  if(!LANDLORD_DEF){try{LANDLORD_DEF=await api('/landlord')}catch(e){LANDLORD_DEF={}}}
  return LANDLORD_DEF;
 }
-async function openContract(fid,prefill){
+async function openContract(fid,prefill,type){
  CT_PREFILL=prefill||null;
  await landlordDef();
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
- <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML='';ctRefresh(${fid})">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+ <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML='';ctRefresh(${fid})">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}"${k===(type||'najem')?' selected':''}>${v}</option>`).join('')}</select>
  <div id="ctBody" oninput="ctCalc(event,${fid})"></div>
  <div id="ctDiff"></div>
  <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><h3 style="margin-top:14px">Podpisy na displeji (nepovinné)</h3>
@@ -814,6 +814,239 @@ async function saveContract(fid){
  }catch(e){progress('');toast(e.message)}
 }
 
+// ---------- průvodce novou nájemní smlouvou ----------
+// Krok po kroku se ptá na osoby, kontakty, zálohy a nájem. Údaje z dokladů a předpisu se předvyplní.
+let W=null;
+const WZ_CONTACTS=[['phone','Mobil nájemce'],['email','E-mail nájemce'],['note','Jiná poznámka k nájemci']];
+const iv=id=>($('#'+id)?.value||'').trim();
+const TODAY_ISO=()=>new Date().toISOString().slice(0,10);
+function wzHead(title){
+ return `<div class="sheetHead"><div>${W.hist.length?'<button class="btn sec sm" onclick="wzBack()">← Zpět</button> ':''}<h2 style="display:inline;margin-left:6px">${title}</h2></div><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>`;
+}
+function wzGo(v){W.hist.push(W.view);W.view=v;wzRender()}
+function wzBack(){W.view=W.hist.pop()||'main_ask';wzRender()}
+function wzRender(){
+ const box=$('#wz');if(!box)return;
+ const views={main_ask:wzV_mainAsk,doc:wzV_doc,confirm_person:wzV_confirm,ask_more:wzV_askMore,cohab_name:wzV_cohabName,cohab_source:wzV_cohabSource,contact:wzV_contact,npers:wzV_npers,bank:wzV_bank,advances:wzV_adv,rent:wzV_rent,terms:wzV_terms,preview:wzV_preview};
+ box.innerHTML=(views[W.view]||wzV_mainAsk)();
+ if(W.view==='preview'){sigInit('sig_l');sigInit('sig_t')}
+}
+async function wzStart(fid,prefill){
+ await landlordDef();
+ const d=await api(`/flats/${fid}/contract-defaults`);
+ W={fid,d,hist:[],main:null,others:[],contacts:{},npers:null,advances:null,advSrc:d.advances_source,
+    docTarget:'main',docFields:{},docRead:0,pendingPerson:null,pendingRole:'main',pendingName:'',
+    bank:d.bank_acc||'',net:null,fund:d.fund,rent:0,cdate:TODAY_ISO(),from:TODAY_ISO(),to:'',indefinite:true,
+    deposit:d.deposit??null,vs:d.vs||'',pay:'',depNote:''};
+ if(prefill&&prefill.name){
+  W.pendingPerson={name:prefill.name,birth:prefill.birth||'',address:prefill.address||'',op:prefill.op||''};
+  W.view='confirm_person';
+ }else W.view='main_ask';
+ modal(`<div id="wz"></div>`);
+ wzRender();
+}
+function wzV_mainAsk(){
+ return wzHead('Hlavní nájemce')+`<p>Chcete nahrát doklad hlavního nájemce, nebo údaje vyplnit ručně?</p>
+ <div class="btns" style="flex-direction:column;align-items:stretch"><button class="btn" onclick="wzDoc('main',true)">Nahrát doklad (přední i zadní strana)</button><button class="btn sec" onclick="wzManual('main')">Vyplnit ručně</button></div>
+ <p class="small mut" style="margin-top:14px">Chcete místo nové smlouvy dodatek? <a href="#" onclick="openContract(${W.fid},null,'dodatek');return false">Otevřít dodatek</a></p>`;
+}
+function wzDoc(target,fresh){
+ W.docTarget=target;
+ if(fresh){W.docFields={};W.docRead=0}
+ wzGo('doc');
+}
+function wzV_doc(){
+ return wzHead(W.docTarget==='cohab'?'Doklad spolubydlící':'Doklad hlavního nájemce')+`<p>Vyfoťte nebo vyberte přední a zadní stranu dokladu. Můžete je vybrat najednou, nebo nahrát postupně.</p>
+ <label class="btn" style="display:inline-block;cursor:pointer">📷 Vybrat fotky dokladu<input type="file" accept="image/*" multiple capture="environment" style="display:none" onchange="wzReadDoc(this)"></label>
+ <p class="small mut" style="margin-top:10px">Zatím přečteno z fotek: ${W.docRead}</p>`;
+}
+async function wzReadDoc(input){
+ const files=[...input.files];input.value='';
+ if(!files.length)return;
+ const fd=new FormData();files.forEach(f=>fd.append('files',f));fd.append('flat_id',W.fid);
+ progress('Čtu doklad…');
+ try{
+  const r=await fetch('/tenants/read-id',{method:'POST',body:fd});
+  let j=null;try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
+  progress('');
+  W.docRead+=files.length;
+  const f=j.fields||{};
+  ['name','birth_date','address','id_number'].forEach(k=>{if(f[k])W.docFields[k]=f[k]});
+  W.pendingPerson={name:W.docFields.name||'',birth:W.docFields.birth_date||'',address:W.docFields.address||'',op:W.docFields.id_number||''};
+  W.pendingRole=W.docTarget==='cohab'?'cohab':'main';
+  wzGo('confirm_person');
+ }catch(e){progress('');toast(e.message)}
+}
+function wzManual(target){
+ W.docTarget=target;W.docFields={};W.docRead=0;
+ W.pendingRole=target==='cohab'?'cohab':'main';
+ W.pendingPerson={name:target==='cohab'?W.pendingName:'',birth:'',address:'',op:''};
+ wzGo('confirm_person');
+}
+function wzV_confirm(){
+ const p=W.pendingPerson||{}, cohab=W.pendingRole==='cohab', askMain=!cohab&&!W.main;
+ const field=(id,label,val,ph)=>`<label>${label}</label><input id="${id}" value="${esc(val||'')}" placeholder="${ph||''}">`;
+ return wzHead(cohab?'Spolubydlící':(askMain?'Hlavní nájemce':'Nový nájemce'))+`
+ <p class="small mut">Zkontrolujte údaje. Co na dokladu chybí, doplňte ručně.</p>
+ ${field('wz_name','Jméno a příjmení',p.name)}${field('wz_birth','Datum narození',p.birth,'např. 1. 1. 1990')}${field('wz_addr','Trvale bytem',p.address)}${field('wz_op','Číslo dokladu',p.op)}
+ ${W.docRead?`<button class="btn sec sm" style="margin-top:8px" onclick="wzDoc('${W.docTarget}',false)">+ Vyfotit další stranu dokladu</button>`:''}
+ ${askMain?`<h3 style="margin-top:14px">Je to hlavní osoba ve smlouvě?</h3><div class="btns"><button class="btn" onclick="wzSavePerson('main')">Ano</button><button class="btn sec" onclick="wzSavePerson('other')">Ne</button></div>`
+  :`<div class="btns" style="margin-top:14px"><button class="btn" onclick="wzSavePerson('${cohab?'other':'main'}')">Uložit osobu</button></div>`}`;
+}
+function wzSavePerson(role){
+ const p={name:iv('wz_name'),birth:iv('wz_birth'),address:iv('wz_addr'),op:iv('wz_op')};
+ if(!p.name){toast('Vyplňte jméno a příjmení');return}
+ if(role==='main')W.main=p;else W.others.push(p);
+ W.docRead=0;W.docFields={};W.pendingPerson=null;W.pendingName='';
+ W.hist=[];W.view=W.main?'ask_more':'main_ask';
+ wzRender();
+}
+function wzV_askMore(){
+ return wzHead('Další osoby')+`<p>Je ještě nějaká další osoba, která bude v bytě bydlet?</p>
+ <div class="btns"><button class="btn" onclick="wzGo('cohab_name')">Ano</button><button class="btn sec" onclick="W.cq=0;wzGo('contact')">Ne</button></div>
+ <div class="card small" style="margin-top:12px">Hlavní nájemce: ${esc(W.main?.name||'—')}${W.others.map(o=>'<br>Spolubydlící: '+esc(o.name)).join('')}</div>`;
+}
+function wzV_cohabName(){
+ return wzHead('Spolubydlící')+`<label>Jméno a příjmení spolubydlící osoby</label><input id="wz_cname" value="${esc(W.pendingName||'')}">
+ <div class="btns"><button class="btn" onclick="wzCohabName()">Pokračovat</button></div>`;
+}
+function wzCohabName(){
+ const n=iv('wz_cname');
+ if(!n){toast('Vyplňte jméno');return}
+ W.pendingName=n;
+ wzGo('cohab_source');
+}
+function wzV_cohabSource(){
+ return wzHead('Spolubydlící')+`<p>Chcete nahrát doklad spolubydlící osoby, nebo údaje vyplnit ručně?</p>
+ <div class="btns" style="flex-direction:column;align-items:stretch"><button class="btn" onclick="wzDoc('cohab',true)">Nahrát doklad (přední i zadní strana)</button><button class="btn sec" onclick="wzManual('cohab')">Vyplnit ručně</button></div>`;
+}
+function wzV_contact(){
+ const [key,label]=WZ_CONTACTS[W.cq];
+ return wzHead('Kontakt na nájemce')+`<label>${label}</label><input id="wz_cv" value="">
+ <div class="btns"><button class="btn" onclick="wzContact('${key}',false)">Uložit</button><button class="btn sec" onclick="wzContact('${key}',true)">Nechci uvádět</button></div>`;
+}
+function wzContact(key,skip){
+ W.contacts[key]=skip?'':iv('wz_cv');
+ W.cq++;
+ if(W.cq>=WZ_CONTACTS.length){W.hist=[];W.view='npers'}else W.view='contact';
+ wzRender();
+}
+function wzV_npers(){
+ const cnt=(W.main?1:0)+W.others.length;
+ return wzHead('Počet osob')+`<p>Pro kolik osob se smlouva píše?</p>
+ <label>Počet osob v bytě</label><input type="number" id="wz_np" min="1" value="${W.npers||cnt||1}">
+ <p class="small mut">Zadaných osob: ${cnt}. Podle počtu se přepočítá voda v zálohách.</p>
+ <div class="btns"><button class="btn" onclick="wzNpers()">Pokračovat</button></div>`;
+}
+function wzNpers(){
+ W.npers=Math.max(1,+iv('wz_np')||1);
+ W.advances=null;
+ wzGo('bank');
+}
+function wzV_bank(){
+ return wzHead('Účet pro platbu')+`<label>Číslo účtu, na který nájemce platí</label><input id="wz_bank" value="${esc(W.bank)}">
+ <div class="btns"><button class="btn" onclick="wzBank(false)">Pokračovat</button><button class="btn sec" onclick="wzBank(true)">Nechci uvádět</button></div>`;
+}
+function wzBank(skip){
+ W.bank=skip?'':iv('wz_bank');
+ wzGo('advances');
+}
+const WZ_WATER=/vod|stočn/i, WZ_NOT_WATER=/správ|účetn|odměn/i;
+function wzScaled(name,amt){
+ const base=W.d.base_persons, n=W.npers;
+ if(WZ_WATER.test(name)&&!WZ_NOT_WATER.test(name)&&base&&n)return Math.round(amt*n/base);
+ return amt;
+}
+function wzAdvRead(){
+ if(!W.advances)return;
+ W.advances=W.advances.map((a,i)=>({name:iv('wz_an'+i)||a.name,amount:+($('#wz_aa'+i)?.value)||0}));
+}
+function wzV_adv(){
+ if(!W.advances){
+  W.advances=Object.entries(W.d.advances||{}).map(([name,amt])=>({name,amount:wzScaled(name,amt)}));
+ }
+ const rows=W.advances.map((a,i)=>`<div class="grid2" style="margin-top:6px"><input id="wz_an${i}" value="${esc(a.name)}"><div style="display:flex;gap:6px"><input id="wz_aa${i}" type="number" value="${a.amount}" style="flex:1"><button class="btn sec sm" onclick="wzAdvDel(${i})">×</button></div></div>`).join('');
+ const scaled=W.d.base_persons&&W.d.base_persons!==W.npers?` Voda přepočtena na ${W.npers} os. (předpis je pro ${W.d.base_persons}).`:'';
+ const note=W.advances.length?`Návrh z: ${esc(W.advSrc||'posledního předpisu')}.${scaled} Hodnotu můžete přepsat nebo návrh potvrdit tlačítkem OK.`:'K bytu není žádný předpis záloh. Přidejte zálohy ručně.';
+ return wzHead('Zálohy na služby')+`<p class="small mut">${note}</p>${rows}
+ <div class="btns" style="margin-top:8px"><button class="btn sec sm" onclick="wzAdvAdd()">+ Přidat zálohu</button></div>
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="wzAdvSave()">OK, pokračovat</button></div>`;
+}
+function wzAdvAdd(){wzAdvRead();W.advances.push({name:'',amount:0});wzRender()}
+function wzAdvDel(i){wzAdvRead();W.advances.splice(i,1);wzRender()}
+function wzAdvSave(){wzAdvRead();W.advances=W.advances.filter(a=>a.name);wzGo('rent')}
+function wzAdvTotal(){return (W.advances||[]).reduce((a,b)=>a+(+b.amount||0),0)}
+function wzV_rent(){
+ const fundNote=W.d.fund_source?`načteno z: ${esc(W.d.fund_source)}`:'v dokumentech nenalezen, doplňte';
+ return wzHead('Nájemné')+`<label>Čistý nájem, který chcete mít (Kč/měs.)</label><input type="number" id="wz_net" value="${W.net??''}">
+ <label>Fond oprav (Kč/měs.) – ${fundNote}</label><input type="number" id="wz_fund" value="${W.fund??''}">
+ <div class="card small" style="margin-top:8px">Nájemné bez záloh = čistý nájem + fond oprav. Zálohy se přičtou zvlášť.</div>
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="wzRentSave()">Pokračovat</button></div>`;
+}
+function wzRentSave(){
+ W.net=+iv('wz_net')||0;W.fund=+iv('wz_fund')||0;
+ if(!W.net){toast('Zadejte čistý nájem');return}
+ W.rent=W.net+W.fund;
+ wzGo('terms');
+}
+function wzV_terms(){
+ return wzHead('Podmínky smlouvy')+`<div class="card small">Nájemné bez záloh ${kc(W.rent)} + zálohy ${kc(wzAdvTotal())} = <b>${kc(W.rent+wzAdvTotal())}</b> měsíčně.</div>
+ <div class="grid2" style="margin-top:8px"><div><label>Datum uzavření</label><input type="date" id="wz_cdate" value="${W.cdate}"></div><div><label>Nájem od</label><input type="date" id="wz_from" value="${W.from}"></div></div>
+ <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="wz_ind" ${W.indefinite?'checked':''} onchange="$('#wz_to').disabled=this.checked"> Na dobu neurčitou</label>
+ <label>Nájem do</label><input type="date" id="wz_to" value="${W.to||''}" ${W.indefinite?'disabled':''}>
+ <div class="grid2"><div><label>Kauce (Kč)</label><input type="number" id="wz_dep" value="${W.deposit??W.rent}"></div><div><label>Variabilní symbol</label><input id="wz_vs" value="${esc(W.vs)}"></div></div>
+ <label>Splatnost nájmu (volitelně)</label><input id="wz_pay" value="${esc(W.pay)}" placeholder="výchozí: 28. den v měsíci na měsíc následující">
+ <label>Způsob úhrady kauce (volitelně)</label><input id="wz_depnote" value="${esc(W.depNote)}" placeholder="výchozí: okamžitým převodem při podpisu">
+ <div class="btns" style="margin-top:12px"><button class="btn" onclick="wzTermsSave()">Pokračovat na náhled</button></div>`;
+}
+function wzTermsSave(){
+ W.cdate=iv('wz_cdate');W.from=iv('wz_from');W.indefinite=$('#wz_ind').checked;W.to=iv('wz_to');
+ W.deposit=+iv('wz_dep')||0;W.vs=iv('wz_vs');W.pay=iv('wz_pay');W.depNote=iv('wz_depnote');
+ if(!W.from){toast('Vyplňte datum začátku nájmu');return}
+ wzGo('preview');
+}
+function wzV_preview(){
+ const L=W.d.landlord||{};
+ const tn=[W.main,...W.others].filter(Boolean).map((t,i)=>`${i?'Spolubydlící':'Hlavní nájemce'}: ${esc(t.name)}${t.birth?', nar. '+esc(t.birth):''}${t.op?', doklad '+esc(t.op):''}`).join('<br>');
+ const contacts=[['Mobil',W.contacts.phone],['E-mail',W.contacts.email],['Poznámka',W.contacts.note]].filter(x=>x[1]).map(x=>`${x[0]}: ${esc(x[1])}`).join('<br>')||'nechci uvádět';
+ const adv=W.advances.map(a=>`<div class="line"><span>${esc(a.name)}</span><span>${kc(a.amount)}</span></div>`).join('')||'<div class="mut small">Žádné zálohy.</div>';
+ return wzHead('Náhled a uložení')+`
+ <div class="card small"><b>Pronajímatel:</b> ${esc(L.name)}, ${esc(L.address)}, ${esc(L.phone)}, ${esc(L.email)}<br><b>Nájemci:</b><br>${tn}<br><b>Kontakt:</b> ${contacts}<br><b>Byt:</b> ${esc(W.d.addr)}, ${esc(W.d.zip||'')} · osob ${W.npers}</div>
+ <div class="card" style="margin-top:10px">${adv}<div class="line sum"><span>Nájemné bez záloh</span><span>${kc(W.rent)}</span></div><div class="line sum"><span>Celkem měsíčně vč. záloh</span><span>${kc(W.rent+wzAdvTotal())}</span></div></div>
+ <div class="card small" style="margin-top:10px">Účet: ${W.bank?esc(W.bank):'<span class="mut">nechci uvádět (v smlouvě zůstane prázdné pole)</span>'}<br>Od ${esc(W.from)}, ${W.indefinite?'na dobu neurčitou':'do '+esc(W.to)} · kauce ${kc(W.deposit)} · VS ${esc(W.vs||'—')}</div>
+ <h3 style="margin-top:14px">Podpisy na displeji (nepovinné)</h3>
+ <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('sig_l')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('sig_t')}</div></div>
+ <div class="btns" style="margin-top:12px"><button class="btn sec" onclick="wzBack()">Upravit</button><button class="btn" onclick="wzSave()">Uložit smlouvu do karty bytu</button></div>`;
+}
+async function wzSave(){
+ const main={...W.main,phone:W.contacts.phone||'',email:W.contacts.email||''};
+ const tenants=[main,...W.others];
+ const adv=Object.fromEntries(W.advances.map(a=>[a.name,a.amount]));
+ const body={kind:'najem',landlord:W.d.landlord,tenant:main,tenants,unit:'',floor:W.d.floor||'',area:W.d.area??'',dispo:W.d.dispo||'',
+  contract_date:W.cdate,valid_from:W.from,valid_to:W.indefinite?'':W.to,indefinite:W.indefinite,
+  rent:W.rent,deposit:W.deposit,advances:adv,vs:W.vs,bank_acc:W.bank||'______________________',payment_due:W.pay,deposit_note:W.depNote,
+  other:W.contacts.note?`Kontakt: ${W.contacts.note}`:'',persons:[],npers:W.npers,net:W.net,fund:W.fund,
+  amendment_no:'',eff_date:'',changes:{},sign_landlord:sigData('sig_l'),sign_tenant:sigData('sig_t')};
+ try{
+  progress('Vytvářím smlouvu…');
+  const doc=await api(`/flats/${W.fid}/contracts`,'POST',body);
+  progress('');
+  await reload();
+  ctSavedModal(doc);
+ }catch(e){progress('');toast(e.message)}
+}
+function ctSavedModal(doc){
+ modal(`<div class="sheetHead"><h2>Uloženo</h2><button class="btn sec sm" onclick="closeModal();render()">Zavřít</button></div>
+  <p class="small mut">${esc(doc.summary||doc.filename)}</p>
+  <div class="btns" style="flex-direction:column;align-items:stretch">
+   <button class="btn" onclick="docView(${doc.id},true)">Zobrazit a uložit PDF</button>
+   <button class="btn sec" onclick="saveDocFile(${doc.id})">Uložit Word</button>
+   <button class="btn sec" onclick="shareDoc(${doc.id})">Sdílet Word</button>
+   <button class="btn sec" onclick="closeModal();render()">Hotovo</button>
+  </div>`);
+}
+
 // ---------- vyúčtování služeb za kalendářní rok ----------
 function openSettlement(fid){
  const y=new Date().getFullYear()-1;
@@ -945,7 +1178,7 @@ function tenantForm(f){
 function tenantContract(){
  const fid=+$('#tn_flat').value;
  const pf={name:$('#tn_name').value.trim(),birth:$('#tn_birth').value.trim(),address:$('#tn_addr').value.trim(),op:$('#tn_op').value.trim()};
- closeModal();openContract(fid,pf);
+ closeModal();wzStart(fid,pf);
 }
 async function tenantSaveOnly(){
  const fid=+$('#tn_flat').value;

@@ -765,6 +765,42 @@ def _upsert_lease_from_contract(db: Session, f: m.Flat, body: dict) -> None:
                    deposit=money(body.get("deposit") or 0), persons=body.get("npers") or None, advances=adv))
 
 
+@app.get("/flats/{flat_id}/contract-defaults")
+def contract_defaults(flat_id: int, db: Session = Depends(get_db)):
+    """Všechno, co se dá natáhnout k bytu pro novou smlouvu: fond oprav a zálohy z dokumentů, poslední předpis."""
+    f = get_flat(db, flat_id)
+    preds = db.scalars(select(m.Document).where(m.Document.flat_id == f.id, m.Document.doc_type == "predpis_svj")
+                       .order_by(m.Document.created_at.desc())).all()
+    items = []
+    for d in preds:
+        its = (d.extracted or {}).get("svj_items") or []
+        if its:
+            items = its
+            break
+    fund_items = [i for i in items if re.search(r"fond", str(i.get("name", "")), re.I)]
+    fund = round(sum(float(i.get("amount") or 0) for i in fund_items), 2) if fund_items else None
+    last = sorted(f.leases, key=lambda l: l.valid_from)[-1] if f.leases else None
+    if last and last.advances:
+        advances = {a.name: float(a.amount) for a in last.advances}
+        adv_source = "smlouva"
+    else:
+        advances = {str(i["name"]): round(float(i.get("amount") or 0), 2) for i in items
+                    if stl.is_billable(str(i.get("name", ""))) and float(i.get("amount") or 0)}
+        adv_source = "předpis SVJ" if advances else None
+    return {
+        "landlord": landlord_profile.LANDLORD,
+        "addr": f.addr, "zip": f.zip, "floor": f.floor, "dispo": f.dispo,
+        "area": float(f.area_m2) if f.area_m2 is not None else None,
+        "bank_acc": f.bank_acc, "vs": getattr(f, "vs", None),
+        "fund": fund, "fund_source": "předpis SVJ" if fund_items else None,
+        "advances": advances, "advances_source": adv_source,
+        "base_persons": last.persons if last else None,
+        "rent": float(last.rent) if last else None,
+        "deposit": float(last.deposit) if last else None,
+        "tenant": {"name": f.tenant_name, "email": f.tenant_email, "phone": f.tenant_phone},
+    }
+
+
 @app.post("/flats/{flat_id}/contracts", status_code=201)
 def create_contract(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
     """Nájemní smlouva nebo dodatek ve Word formátu, uložený ke kartě bytu."""

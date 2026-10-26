@@ -85,6 +85,9 @@ def lease_docx(flat, b: dict) -> bytes:
         d.add_paragraph(line)
 
     L, T = b.get("landlord") or {}, b.get("tenant") or {}
+    # Nájemci: první je hlavní osoba, další jsou spolubydlící (jsou ve smlouvě uvedeni se všemi údaji z dokladu)
+    tenants = [t for t in (b.get("tenants") or []) if str(t.get("name") or "").strip()] or [T]
+    T, others = tenants[0], tenants[1:]
     d.add_heading("1. SMLUVNÍ STRANY", level=2)
     t = d.add_table(rows=1, cols=2)
     t.style = "Table Grid"
@@ -96,6 +99,11 @@ def lease_docx(flat, b: dict) -> bytes:
         T.get("address") and f"Trvale bytem: {T.get('address')}",
         T.get("op") and f"Číslo OP: {T.get('op')}",
         (T.get("phone") or T.get("email")) and f"Telefon: {T.get('phone','')}, e-mail: {T.get('email','')}"] if x)
+    for o in others:
+        t.rows[0].cells[1].text += "\nSpolubydlící: " + "\n".join(x for x in [
+            o.get("name"), o.get("birth") and f"Narozen(a): {o.get('birth')}",
+            o.get("address") and f"Trvale bytem: {o.get('address')}",
+            o.get("op") and f"Číslo OP: {o.get('op')}"] if x)
     d.add_paragraph()
 
     d.add_heading("2. PARAMETRY SMLOUVY", level=2)
@@ -129,7 +137,9 @@ def lease_docx(flat, b: dict) -> bytes:
     persons = [p for p in (b.get("persons") or []) if str(p).strip()]
     npers = int(b.get("npers") or 0) or len(persons) or 1
     d.add_paragraph(f"Celkový počet osob: {npers}")
-    for p in persons or [T.get("name") or ""]:
+    for t_ in tenants:
+        d.add_paragraph(str(t_.get("name") or "") + (" (hlavní nájemce)" if t_ is T else " (spolubydlící)"))
+    for p in persons:
         d.add_paragraph(str(p))
     d.add_paragraph()
 
