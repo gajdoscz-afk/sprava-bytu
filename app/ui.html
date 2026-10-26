@@ -134,6 +134,11 @@ h2{font-size:17px;font-weight:600;letter-spacing:-.005em;margin:28px 0 12px;text
 main{max-width:1180px}
 .card,.stat,.flatTile,.kpi,.tile{background:var(--card);border:1px solid var(--line);box-shadow:var(--glow);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .card{border-radius:18px}
+.recent{font-size:12px;color:var(--ink);margin:-4px 0 16px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.recentH{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin-bottom:4px}
+.recentRow{display:flex;gap:10px;line-height:1.6;min-width:0}
+.recentT{color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+.recentX{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card.txOk{border-color:rgba(34,197,94,.55);box-shadow:0 0 0 1px rgba(34,197,94,.25),0 0 26px -6px rgba(34,197,94,.55)}
 .card.txMiss{border-color:rgba(239,68,68,.6);box-shadow:0 0 0 1px rgba(239,68,68,.3),0 0 26px -6px rgba(239,68,68,.6)}
 .btn{border-radius:12px;box-shadow:0 8px 24px -10px var(--acc)}
@@ -189,7 +194,7 @@ nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-col
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
 <button data-t="value" onclick="go('value')">Portfolio</button>
 <button data-t="flats" onclick="go('flats')">Byty</button>
-<button data-t="docs" onclick="go('docs')">Dokumenty</button>
+<button data-t="docs" onclick="go('docs')">Upload</button>
 <button data-t="bench" onclick="go('bench')">Benchmark</button>
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
@@ -246,7 +251,7 @@ async function reload(){
  S.docs=docs;
  S.versions=versions.map(v=>({id:v.id,flat:v.flat_id,name:v.name,action:v.action,old:v.old,new:v.new,
   when:new Date(v.created_at).toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}),
-  flatName:(flat(v.flat_id)||{}).addr||''}));
+  ts:new Date(v.created_at).getTime(),flatName:(flat(v.flat_id)||{}).addr||''}));
 }
 
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000)}
@@ -283,6 +288,15 @@ function homeStats(){
  });
  return {inc,svj,net:inc-svj};
 }
+// Posledních 5 vlastních akcí: nahrané dokumenty a změny údajů
+function recentActivity(){
+ const items=[
+  ...S.docs.map(d=>({ts:new Date(d.created_at).getTime(),text:`Nahrán dokument ${d.filename}`,where:(flat(d.flat_id)||{}).addr||'bez přiřazení'})),
+  ...S.versions.map(v=>({ts:v.ts||0,text:`${v.name} · ${v.action}`,where:v.flatName||''}))
+ ].filter(i=>i.ts).sort((a,b)=>b.ts-a.ts).slice(0,5);
+ if(!items.length)return '';
+ return `<div class="recent"><div class="recentH">Naposledy</div>${items.map(i=>`<div class="recentRow"><span class="recentT">${esc(new Date(i.ts).toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}))}</span><span class="recentX">${esc(i.text)}${i.where?` <span class="mut">· ${esc(i.where)}</span>`:''}</span></div>`).join('')}</div>`;
+}
 function home(){
  const y=V.homeYear||TODAY.getFullYear();
  if(!S.ov||S.ov.year!==y){loadOverview(y);return `<div class="mut">Načítám přehled…</div>`}
@@ -292,6 +306,7 @@ function home(){
  const chips=ov.years.map(v=>`<button class="chip ${v===y?'on':''}" onclick="setHomeYear(${v})">${v}</button>`).join('');
  const tiles=S.flats.map(f=>{const r=ovFlat[f.id]||{};return `<button class="tile" onclick="openFlat(${f.id})"><span>${esc(f.addr)}</span><small>${esc(f.tenant.name)||'Bez nájemníka'}</small><b class="${(r.profit||0)<0?'bad':'ok'}">${kc(r.profit||0)}</b><small>${r.payments||0} plateb · výdaje ${kc(r.landlord_cost||0)}</small></button>`}).join('');
  return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div><div class="chips" style="margin:0">${chips}</div></div>
+ ${recentActivity()}
  ${valueTrendChart()}
  <div class="kpiRow">
   <div class="kpi"><span>Příjmy ${y}</span><b>${kc(ov.income)}</b><small>přijaté platby přiřazené bytům</small></div>
@@ -388,7 +403,14 @@ function predpisHistory(fid){
 }
 function flatBar(fid){
  const f=flat(fid)||{addr:'',dispo:'',tenant:{}};
- return `<div class="flatBar"><div style="min-width:0"><div class="flatBarKicker">Karta bytu</div><div class="flatBarName">${esc(f.addr)}</div></div><div class="flatBarMeta">${esc(f.dispo||'')}${f.tenant&&f.tenant.name?' · '+esc(f.tenant.name):''}</div><button class="btn sec sm" onclick="go('flats')" style="flex-shrink:0">← Byty</button></div>`;
+ return `<div class="flatBar"><div style="min-width:0"><div class="flatBarKicker">Karta bytu</div><div class="flatBarName">${esc(f.addr)}</div></div><div class="flatBarMeta">${esc(f.dispo||'')}${f.tenant&&f.tenant.name?' · '+esc(f.tenant.name):''}</div><div style="display:flex;gap:6px;flex-shrink:0"><button class="btn sm" onclick="flatUpload(${fid})">↑ Upload dokumentu</button><button class="btn sec sm" onclick="go('flats')">← Byty</button></div></div>`;
+}
+// Nahrání přímo k bytu z karty (tlačítko je v horní liště, takže je vidět i po sjetí)
+function flatUpload(fid){
+ const i=document.createElement('input');
+ i.type='file';i.multiple=true;i.accept='image/*,application/pdf';
+ i.onchange=()=>uploadFiles([...i.files],fid);
+ i.click();
 }
 function flatTiles(fid){
  const docs=S.docs.filter(d=>String(d.flat_id)===String(fid)&&d.status==='zarazeno');
@@ -1895,8 +1917,8 @@ function docGroups(list,emptyText){
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status==='ke_kontrole');
  const pend=pendingBanner(pendingGroups('all'));
- return `<div class="row"><h1>Dokumenty</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
- <p class="mut small">Hotové PDF nebo fotky jednotlivých dokumentů nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
+ return `<div class="row"><h1>Upload</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
+ <p class="mut small">Dokumenty nahrané sem nemají byt a zůstanou v nepřiřazených, dokud je k bytu nepřiřadíte. Nejrychleji ale nahrajete přímo na kartu bytu. Hotové PDF nebo fotky nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
   ${pageLabel(null,pendKey(null),'<b>📷 Vyfotit dokument po stránkách</b>','btn','margin:0')}
@@ -1908,7 +1930,7 @@ function docsTab(){
   <div id="up" class="small mut" style="margin-top:8px"></div>
  </div>
  ${pend}
- ${inbox.length?`<h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')}`:''}
+ ${inbox.length?`<h2>Nepřiřazené a ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')}`:''}
  <h2 id="reportsAnchor">Přehled a třídění</h2>
  ${reportsHtml()}`;
 }
