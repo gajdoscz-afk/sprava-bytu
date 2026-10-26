@@ -134,6 +134,8 @@ h2{font-size:17px;font-weight:600;letter-spacing:-.005em;margin:28px 0 12px;text
 main{max-width:1180px}
 .card,.stat,.flatTile,.kpi,.tile{background:var(--card);border:1px solid var(--line);box-shadow:var(--glow);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .card{border-radius:18px}
+.card.txOk{border-color:rgba(34,197,94,.55);box-shadow:0 0 0 1px rgba(34,197,94,.25),0 0 26px -6px rgba(34,197,94,.55)}
+.card.txMiss{border-color:rgba(239,68,68,.6);box-shadow:0 0 0 1px rgba(239,68,68,.3),0 0 26px -6px rgba(239,68,68,.6)}
 .btn{border-radius:12px;box-shadow:0 8px 24px -10px var(--acc)}
 .kpiRow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 6px}
 .kpi{border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
@@ -576,9 +578,9 @@ function econHome(){
   const rs=missingOf(x);if(!rs.length)return '';
   return `<div class="card"><h3>${monthLabel(x.period)}</h3>${rs.map(r=>`<div class="resRow"><div><b>${esc(r.tenant||r.addr)}</b><div class="small mut">${esc(r.addr)} · ${STAT[r.status]}: chybí ${kc(r.missing)}</div></div><button class="btn sm" onclick="reminderDraft(${r.flat_id},'${x.period}',${r.missing})">Připravit upomínku</button></div>`).join('')}</div>`;
  }).join('');
- const unm=e.unmatched.length?e.unmatched.map(t=>`<div class="card"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}${t.note?' · '+esc(t.note):''}</div></div></div>
+ const unm=e.unmatched.length?e.unmatched.map(t=>`<div class="card txMiss"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}${t.note?' · '+esc(t.note):''}</div></div></div>
   <div class="grid2"><div><label>Byt</label><select id="ut${t.id}">${flatOpts(null)}</select></div><div style="align-self:end"><button class="btn sm" onclick="assignTx(${t.id})">Přiřadit</button></div></div></div>`).join(''):'<div class="card mut">Všechny platby z výpisů jsou přiřazené.</div>';
- const asg=(e.assigned||[]).map(t=>`<div class="card"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}</div><div class="small">Přiřazeno: <b>${esc(t.flat_addr)}</b></div></div></div>
+ const asg=(e.assigned||[]).map(t=>`<div class="card txOk"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}</div><div class="small">Přiřazeno: <b>${esc(t.flat_addr)}</b></div></div></div>
   <div class="grid2"><div><label>Opravit byt</label><select id="ut${t.id}">${flatOpts(t.flat_id)}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="assignTx(${t.id})">Uložit</button><button class="btn sec sm" onclick="assignTx(${t.id},true)">Odpojit</button></div></div></div>`).join('');
  return `<div class="row"><h1>Ekonomika</h1>
   <label style="margin:0;cursor:pointer"><span class="btn sec sm">+ Nahrát výpis (CSV / PDF)</span><input type="file" accept=".csv,.pdf,text/csv,application/pdf" style="display:none" onchange="uploadBank(this)"></label></div>
