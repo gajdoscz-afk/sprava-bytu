@@ -165,6 +165,16 @@ nav{padding-top:70px}
 .bar{transform-box:fill-box;transform-origin:50% 100%;animation:barGrow .9s cubic-bezier(.2,.8,.2,1) both}
 @keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @media (prefers-reduced-motion:reduce){.bar{animation:none}}
+
+/* levý panel: širší, tmavé dlaždice s oranžovým písmem a zeleným podsvícením */
+nav{width:142px}
+body{padding-left:142px}
+.toast{left:calc(50% + 71px)}
+nav button,nav button:not(.brand){background:#0B1024;color:#FB923C;border:1px solid rgba(34,197,94,.45);box-shadow:0 0 16px -4px rgba(34,197,94,.6),0 0 0 1px rgba(34,197,94,.12);font-weight:600;transition:box-shadow .2s,transform .2s,color .2s}
+nav button:not(.brand):hover{color:#FDBA74;transform:translateY(-1px);box-shadow:0 0 22px -2px rgba(34,197,94,.8),0 0 0 1px rgba(34,197,94,.3)}
+nav button.on{background:#0F2A1C;color:#FDBA74;border-color:#22C55E;box-shadow:0 0 26px -2px rgba(34,197,94,.9),0 0 0 1px rgba(34,197,94,.55)}
+nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-color:rgba(34,197,94,.3)}
+@media (max-width:560px){body{padding-left:116px}nav{width:116px}.toast{left:calc(50% + 58px)}}
 </style>
 </head>
 <body>
