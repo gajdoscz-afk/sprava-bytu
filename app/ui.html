@@ -277,11 +277,12 @@ function home(){
   <div class="kpi"><span>Výdaje ${y}</span><b>${kc(ov.expenses)}</b><small>náklady SVJ za rok</small></div>
   <div class="kpi"><span>Zisk ${y}</span><b class="${ov.profit<0?'bad':'ok'}">${kc(ov.profit)}</b><small>příjmy minus výdaje</small></div>
  </div>
- ${portWidget()}
- ${newsBlock()}
+ ${flatChart(ov.income,ov.expenses,ov.profit,`Souhrn za ${y} – všechny byty`,`Součet za všechny byty za rok ${y}. Modře příjmy, červeně výdaje, zeleně zisk.`)}
  <h2>Byty</h2>
  <div class="tiles">${tiles||'<div class="mut">Zatím žádné byty.</div>'}</div>
  <div class="btns"><button class="btn" onclick="tenantNew()">+ Nový nájemník (doklad)</button><button class="btn sec" onclick="flatForm()">+ Přidat byt</button><button class="btn sec" onclick="exportBackup()">Stáhnout zálohu</button></div>
+ ${newsBlock()}
+ ${portWidget()}
  ${debts.length?`<h2>K řešení</h2>${debts.map(d=>`<div class="card item row" onclick="openFlat(${d.f.id})"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div>`).join('')}`:''}
  ${notes.length?`<h2>Oznámení</h2>${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')}`:''}
  `;
@@ -315,7 +316,7 @@ function flatTiles(fid){
   ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
  return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports({flat:${fid},types:${JSON.stringify(types)},label:${JSON.stringify(n)}})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
 }
-function flatChart(income,cost,profit){
+function flatChart(income,cost,profit,title='Měsíční přehled v grafu',note='Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.'){
  const vals=[['Výnosy',income,'#3B82F6'],['Náklady',cost,'#EF4444'],['Zisk',profit,'#22C55E']];
  const max=Math.max(1,...vals.map(v=>Math.abs(v[1])));
  const H=150,base=H+10;
@@ -325,11 +326,11 @@ function flatChart(income,cost,profit){
    <text x="${x+35}" y="${y-8}" text-anchor="middle" font-size="13" fill="var(--ink)" font-weight="700">${kc(v)}</text>
    <text x="${x+35}" y="${base+22}" text-anchor="middle" font-size="13" fill="var(--mut)">${n}</text>`;
  }).join('');
- return `<h2>Měsíční přehled v grafu</h2><div class="card">
+ return `<h2>${title}</h2><div class="card">
   <svg viewBox="0 0 380 ${base+34}" width="100%" role="img" aria-label="Výnosy, náklady a zisk za měsíc" style="max-width:520px;display:block;margin:0 auto">
    <line x1="20" y1="${base}" x2="360" y2="${base}" stroke="var(--line)" stroke-width="1"/>${bars}
   </svg>
-  <div class="mut small" style="text-align:center;margin-top:6px">Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.</div>
+  <div class="mut small" style="text-align:center;margin-top:6px">${note}</div>
  </div>`;
 }
 function flatDetail(){
