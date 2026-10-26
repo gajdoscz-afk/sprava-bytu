@@ -656,6 +656,7 @@ const FIELDS = [
     ["TradeDirection", "Směr", "sel", "", [["0", "Buy i Sell"], ["1", "Jen Buy"], ["2", "Jen Sell"]]],
   ]],
   ["Velikost a síť", [
+    ["AOSCapital", "Kapitál AOS", "num", "jen tato částka + výsledky EA; změní se hned i při otevřeném koši; 0 = celý účet"],
     ["RiskPerBasketPercent", "Riziko plného koše %", "num", "lot se spočítá sám; 0 = pevný start lot"],
     ["StartLots", "Start lot", "num", "při lotu podle rizika = nejvyšší povolený"], ["LotMultiplier", "Násobek lotu", "num"], ["MaxOrders", "Max. pozic v koši", "int"],
     ["GridMode", "Odstup sítě", "sel", "", [["0", "Pevný (pipy)"], ["1", "% ADR"], ["2", "ATR"]]],
@@ -691,6 +692,8 @@ const FIELDS = [
     ["TrendDistanceATR", "Silný trend × ATR", "num", "cena od EMA200 dál než X × ATR"],
     ["TrendBlockNew", "Trend blokuje i nové koše", "bool", "neotevírat koš proti silnému trendu"],
     ["UseSlowTrendFilter", "Filtr pomalého trendu", "bool", "EMA50 H1: neotevírat ani nepřikupovat proti ní"],
+    ["SlowTrendMinSlopeATR", "Pomalý trend: min. sklon × ATR", "num", "plochá EMA v pásmu neblokuje"],
+    ["SlowTrendMinDistATR", "Pomalý trend: min. vzdálenost × ATR", "num", "cena zřetelně pod/nad EMA"],
     ["AddConfirmFromLevel", "Potvrzené přikoupení od pozice", "int", "čeká na obrat Stochasticu na M15; 0 = vypnuto"],
     ["UseFridayGuard", "Páteční ochrana", "bool", "od 18:00 bez nových košů, koš na nule zavřít"],
     ["MaxBasketHours", "Max. stáří koše (h)", "num", "pak zavřít na nule/v zisku; 0 = vypnuto"],

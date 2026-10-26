@@ -58,7 +58,8 @@ const PARAMS = {
   UseTrendFilter: ["bool"], TrendDistanceATR: ["num", 0.5, 20],
   UseFridayGuard: ["bool"], MaxBasketHours: ["num", 0, 720],
   MinMinutesBetweenAdds: ["int", 0, 1440], RiskPerBasketPercent: ["num", 0, 50], UseSlowTrendFilter: ["bool"], AddConfirmFromLevel: ["int", 0, 20],
-  UseImpulseLock: ["bool"], UseTrendTrailing: ["bool"], OppositeSignalMode: ["int", 0, 2], AddOnlyOnSignal: ["bool"], UseHTFConfirm: ["bool"], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
+  UseImpulseLock: ["bool"], UseTrendTrailing: ["bool"], OppositeSignalMode: ["int", 0, 2], AddOnlyOnSignal: ["bool"], UseHTFConfirm: ["bool"],
+  SlowTrendMinSlopeATR: ["num", 0, 10], SlowTrendMinDistATR: ["num", 0, 10], AOSCapital: ["num", 0, 100000000], VolGuardBlocksNew: ["bool"], TrendBlockNew: ["bool"],
 };
 function normParams(obj) {
   const out = [];
