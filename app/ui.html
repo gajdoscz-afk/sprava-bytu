@@ -648,7 +648,7 @@ async function openContract(fid,prefill,type){
  sigInit('sig_l');sigInit('sig_t');
 }
 const CT_TOPICS=[['rent','Výše nájmu'],['adv','Zálohy na služby (předpis)'],['term','Doba nájmu'],['deposit','Kauce'],['other','Jiná ujednání']];
-const WATER_RE=/vod|stočn/i, NOT_WATER_RE=/správ|účetn|odměn/i;
+const WATER_RE=/vod|stočn|\btuv\b|\bsuv\b/i, NOT_WATER_RE=/správ|účetn|odměn/i;
 function ctBody(fid){
  const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
  const dod=$('#ct').value==='dodatek';
@@ -952,7 +952,7 @@ function wzBank(skip){
  W.bank=skip?'':iv('wz_bank');
  wzGo('advances');
 }
-const WZ_WATER=/vod|stočn/i, WZ_NOT_WATER=/správ|účetn|odměn/i;
+const WZ_WATER=/vod|stočn|\btuv\b|\bsuv\b/i, WZ_NOT_WATER=/správ|účetn|odměn/i;
 function wzScaled(name,amt){
  const base=W.d.base_persons, n=W.npers;
  if(WZ_WATER.test(name)&&!WZ_NOT_WATER.test(name)&&base&&n)return Math.round(amt*n/base);
@@ -1159,11 +1159,12 @@ function prV_sign(){
  return prHead('Podpis a uložení')+`<div class="card small">Předání ${esc(P.date)}<br>Nájemce: ${esc(P.people.join(', ')||'—')}<br>Zapsaných měřidel: ${P.meters.length}</div>
  <h3 style="margin-top:12px">Podpisy na displeji (nepovinné)</h3>
  <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('pr_sl')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('pr_st')}</div></div>
+ <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="pr_att"> Přiložit fotky měřidel do protokolu (volitelné)</label>
  <div class="btns" style="margin-top:12px"><button class="btn sec" onclick="P.view='people';prRender()">Upravit</button><button class="btn" onclick="prSave()">Uložit protokol do karty bytu</button></div>`;
 }
 async function prSave(){
  const body={kind:'prevzeti',date:P.date,landlord_name:(LANDLORD_DEF&&LANDLORD_DEF.name)||'',people:P.people,
-  meters:P.meters.map(m=>({...m,photo:m.photo})),notes:P.notes,sign_landlord:sigData('pr_sl'),sign_tenant:sigData('pr_st')};
+  meters:P.meters.map(m=>({...m,photo:m.photo})),notes:P.notes,attach_photos:!!$('#pr_att')?.checked,sign_landlord:sigData('pr_sl'),sign_tenant:sigData('pr_st')};
  try{
   progress('Vytvářím protokol…');
   const doc=await api(`/flats/${P.fid}/protocols`,'POST',body);

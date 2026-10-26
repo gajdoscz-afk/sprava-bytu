@@ -797,6 +797,14 @@ async def meter_photo(flat_id: int, file: UploadFile = File(...), meter: str = F
 def create_protocol(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
     """Předávací protokol ve Word formátu, uložený ke kartě bytu."""
     f = get_flat(db, flat_id)
+    if body.get("attach_photos"):
+        photos = []
+        for mt in body.get("meters") or []:
+            if mt.get("doc_id"):
+                ph = db.get(m.Document, int(mt["doc_id"]))
+                if ph and ph.flat_id == f.id and ph.data:
+                    photos.append((ph.filename, ph.data))
+        body["_photos"] = photos
     try:
         data = protocols.handover_docx(f, body)
     except (TypeError, ValueError) as e:

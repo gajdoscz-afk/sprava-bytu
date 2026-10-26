@@ -1,4 +1,8 @@
-"""Předávací protokol bytu ve Word formátu: stavy měřidel, fotky jsou archivované ke kartě bytu."""
+"""Předávací protokol bytu ve Word formátu: stavy měřidel, volitelně s fotkami jako přílohami."""
+from io import BytesIO
+
+from docx.shared import Mm
+
 from . import docgen
 from .contracts import _signatures, cz_date
 
@@ -18,4 +22,14 @@ def handover_docx(flat, b: dict) -> bytes:
     d.add_paragraph()
     d.add_paragraph("Nájemce potvrzuje převzetí bytu ve stavu popsaném výše a stavy měřidel k datu předání.")
     _signatures(d, b)
+    photos = b.get("_photos") or []
+    if photos:
+        d.add_page_break()
+        d.add_heading("Přílohy: fotky měřidel", level=2)
+        for name, data in photos:
+            try:
+                d.add_paragraph(name)
+                d.add_picture(BytesIO(data), width=Mm(130))
+            except Exception:
+                d.add_paragraph("(fotku se nepodařilo vložit)")
     return docgen._save(d)

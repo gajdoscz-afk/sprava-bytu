@@ -1,4 +1,5 @@
 """Vyúčtování služeb za kalendářní rok: co se přeúčtuje nájemníkovi a jak to vychází."""
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -9,7 +10,9 @@ from . import bank
 from . import models as m
 
 # Přeúčtovávají se jen tyto služby
-BILLABLE = ("teplo", "ohřev", "voda", "stočné", "osvětlen", "elektřin", "výtah")
+BILLABLE = ("teplo", "ohřev", "voda", "stočné", "osvětlen", "elektřin", "výtah", "úklid", "tuv", "suv")
+# Zkratky, které se musí shodovat celé slovo (TUV, SUV), aby se nechytly jiné názvy
+BILLABLE_WORDS = ("tuv", "suv")
 # Tyto položky se nikdy nepřeúčtují (správa vodoměrů, účetnictví, odměna SVJ, správa)
 NOT_BILLABLE = ("vodoměr", "odečt", "účetn", "odměn", "správ")
 SOURCE_TYPES = ("vyuctovani_svj", "vyuctovani_spravy")
@@ -19,7 +22,9 @@ def is_billable(name: str) -> bool:
     n = (name or "").lower()
     if any(k in n for k in NOT_BILLABLE):
         return False
-    return any(k in n for k in BILLABLE)
+    if any(re.search(rf"\b{w}\b", n) for w in BILLABLE_WORDS):
+        return True
+    return any(k in n for k in BILLABLE if k not in BILLABLE_WORDS)
 
 
 def _money(v) -> Decimal | None:
