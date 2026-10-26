@@ -88,8 +88,11 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 .flatTile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 12px;min-height:76px;color:var(--ink);font:inherit;font-weight:600;font-size:15px;line-height:1.3;text-align:center;cursor:pointer;overflow-wrap:anywhere;box-shadow:0 8px 20px -12px rgba(76,29,149,.5)}
 .flatTile:active{transform:scale(.98)}
 /* Záhlaví bytu zůstává nahoře při listování */
-.stickyFlat{position:sticky;top:0;z-index:4;background:var(--paper);border-bottom:1px solid var(--line);margin:-18px -16px 12px;padding:10px 64px 10px 16px;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stickyFlat small{font-family:system-ui,sans-serif;font-weight:400;color:var(--mut);font-size:13px;margin-left:6px}
+.flatBar{position:sticky;top:0;z-index:6;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-18px -16px 14px;padding:12px 64px 12px 176px;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line);box-shadow:0 12px 30px -20px var(--acc)}
+.flatBarKicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut)}
+.flatBarName{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.flatBarMeta{font-size:14px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+@media (max-width:560px){.flatBar{padding:10px 12px 10px 110px;flex-wrap:wrap}.flatBarName{font-size:20px}.flatBarMeta{display:none}}
 .pend{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
 /* Hodnota portfolia: fialový panel s podsvícením */
 .pwidget{position:relative;margin:4px auto 18px;max-width:440px;text-align:center;padding:18px 18px 16px;border-radius:20px;background:radial-gradient(120% 140% at 50% 0%,#2A1656 0%,#0C0818 62%);border:1px solid #7C3AED;box-shadow:0 0 0 1px rgba(168,85,247,.25),0 0 30px rgba(139,92,246,.45),0 0 70px rgba(139,92,246,.18);color:#E9D5FF;cursor:pointer}
@@ -244,7 +247,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=(V.tab==='flat'&&V.flat?flatTiles(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
+ m.innerHTML=(V.tab==='flat'&&V.flat?flatBar(V.flat)+flatTiles(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
 }
 
 // ---------- přehled ----------
@@ -370,6 +373,10 @@ function predpisHistory(fid){
  return {tag:`<span class="tag warn">Předpis měněn ${vs.length}×, naposled ${esc(last)}</span>`,
   html:`<h2>Historie změn předpisu</h2><div class="card">${rows}</div>`};
 }
+function flatBar(fid){
+ const f=flat(fid)||{addr:'',dispo:'',tenant:{}};
+ return `<div class="flatBar"><div style="min-width:0"><div class="flatBarKicker">Karta bytu</div><div class="flatBarName">${esc(f.addr)}</div></div><div class="flatBarMeta">${esc(f.dispo||'')}${f.tenant&&f.tenant.name?' · '+esc(f.tenant.name):''}</div><button class="btn sec sm" onclick="go('flats')" style="flex-shrink:0">← Byty</button></div>`;
+}
 function flatTiles(fid){
  const docs=S.docs.filter(d=>String(d.flat_id)===String(fid)&&d.status==='zarazeno');
  const cnt=t=>docs.filter(d=>t.includes(d.doc_type)).length;
@@ -446,7 +453,7 @@ function flatDetail(){
   <div class="line sum"><span>Celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
   <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button></div></div>`;
  const y=V.year?f.years[V.year]:null;
- return `<div class="stickyFlat">${esc(f.addr)}${f.dispo?`<small>${esc(f.dispo)}</small>`:''}</div>
+ return `
  <button class="link" onclick="go('flats')">← Byty</button>
  <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut" style="margin:0">${esc(f.dispo)}</p><p class="mut small" style="margin:2px 0 14px">${esc(f.tenant.name)||'Bez nájemníka'}</p>
  ${chartCard}
