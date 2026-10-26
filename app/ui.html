@@ -1246,7 +1246,18 @@ function docView(id,pdf){
  const src=(pdf||isWord)?`/documents/${id}/pdf`:`/documents/${id}/file`;
  modal(`<div class="sheetHead"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
   <iframe src="${src}" style="width:100%;height:68vh;border:0;border-radius:10px;background:#fff;margin-top:8px"></iframe>
-  <div class="btns"><button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button></div>`);
+  <div class="btns"><button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button><button class="btn sec sm warnTxt" onclick="docDelete(${id})">Smazat</button></div>`);
+}
+// Smazání dokumentu ze složky (smlouva, doklad, protokol…). Potvrzení předchází nechtěnému smazání.
+async function docDelete(id){
+ const d=S.docs.find(x=>x.id===id);
+ if(!confirm(`Opravdu smazat dokument „${d?d.filename:'dokument'}“? Nejde ho vrátit.`))return;
+ try{
+  await api(`/documents/${id}`,'DELETE');
+  closeModal();
+  toast('Dokument smazán');
+  await reload();render();
+ }catch(e){toast(e.message)}
 }
 // Uloží soubor bez přechodu na jinou stránku, takže aplikace zůstane otevřená
 async function saveDocFile(id){
@@ -1406,7 +1417,7 @@ function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
  const first=(d.summary||'').split(/(?<=\.)\s/)[0].slice(0,140);
- return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button></div></div>`;
+ return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.year?' · '+d.year:''}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button><button class="link small warnTxt" onclick="docDelete(${d.id})">Smazat</button></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
