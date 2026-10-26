@@ -16,7 +16,7 @@ import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, text, update
@@ -29,6 +29,7 @@ from . import documents
 from . import models as m
 from . import news as nw
 from . import geo as gx
+from . import contracts
 from . import docgen
 from . import settlement as stl
 from . import schemas as s
@@ -728,6 +729,33 @@ def save_generated_document(flat_id: int, body: s.GeneratedDocIn, db: Session = 
     safe = re.sub(r"[^\w .-]+", "_", body.title).strip()[:120] or "dokument"
     d = m.Document(flat_id=f.id, status="zarazeno", doc_type=body.doc_type, filename=f"{safe}.docx",
                    mime=docgen.DOCX_MIME, size=len(data), data=data, summary=body.title[:500],
+                   year=date.today().year, note="")
+    db.add(d)
+    db.commit()
+    return doc_out(d)
+
+
+@app.post("/flats/{flat_id}/contracts", status_code=201)
+def create_contract(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Nájemní smlouva nebo dodatek ve Word formátu, uložený ke kartě bytu."""
+    f = get_flat(db, flat_id)
+    kind = body.get("kind")
+    try:
+        if kind == "najem":
+            data, dtype = contracts.lease_docx(f, body), "smlouva"
+            title = f"Nájemní smlouva {f.addr} {body.get('contract_date') or ''}"
+        elif kind == "dodatek":
+            last = sorted(f.leases, key=lambda l: l.valid_from)[-1] if f.leases else None
+            old = {"rent": float(last.rent) if last else 0.0, "deposit": float(last.deposit) if last else 0.0}
+            data, dtype = contracts.amendment_docx(f, body, old), "dodatek"
+            title = f"Dodatek č. {body.get('amendment_no') or ''} {f.addr}"
+        else:
+            raise HTTPException(400, "Neznámý typ dokumentu")
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, f"Zkontrolujte údaje: {e}")
+    safe = re.sub(r"[^\w .-]+", "_", title).strip()[:120] or "dokument"
+    d = m.Document(flat_id=f.id, status="zarazeno", doc_type=dtype, filename=f"{safe}.docx",
+                   mime=docgen.DOCX_MIME, size=len(data), data=data, summary=title[:500],
                    year=date.today().year, note="")
     db.add(d)
     db.commit()

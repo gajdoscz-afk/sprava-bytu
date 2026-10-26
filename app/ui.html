@@ -648,7 +648,28 @@ function ctBody(fid){
  const termSec=sec('term',`<label>Nájem od</label><input type="date" id="ct_from" value="${l.from||''}"><label>Nájem do (prázdné = neurčitě)</label><input type="date" id="ct_to" value="${l.to||''}">`);
  const depSec=sec('deposit',`<label>Kauce (Kč)</label><input type="number" id="ct_deposit" value="${l.deposit||l.kauce||0}">`);
  const otherSec=sec('other',`<label>Jiná ujednání</label><textarea id="ct_other" rows="3"></textarea>`);
- return `<label>${dod?'Účinnost dodatku od':'Účinnost od'}</label><input type="date" id="ct_eff">
+ const pref=(()=>{try{return JSON.parse(localStorage.getItem('mg_landlord')||'{}')}catch(e){return{}}})();
+ const common=`<h3 style="margin-top:14px">Pronajímatel</h3>
+  <label>Jméno</label><input id="lo_name" value="${esc(pref.name||f.owner||'')}">
+  <label>Trvale bytem</label><input id="lo_addr" value="${esc(pref.address||'')}">
+  <label>Telefon a e-mail</label><div class="grid2"><input id="lo_phone" placeholder="telefon" value="${esc(pref.phone||'')}"><input id="lo_mail" placeholder="e-mail" value="${esc(pref.email||'')}"></div>
+  <h3 style="margin-top:14px">Nájemce</h3>
+  <label>Jméno</label><input id="te_name" value="${esc(f.tenant.name||'')}">
+  <label>Trvale bytem</label><input id="te_addr" value="${esc(f.addr||'')}">
+  <div class="grid2"><div><label>Narozen(a)</label><input id="te_birth" placeholder="např. 1. 1. 1990"></div><div><label>Číslo OP</label><input id="te_op"></div></div>
+  <div class="grid2"><div><label>Telefon</label><input id="te_phone" value="${esc(f.tenant.phone||'')}"></div><div><label>E-mail</label><input id="te_mail" value="${esc(f.tenant.email||'')}"></div></div>
+  <h3 style="margin-top:14px">Byt a smlouva</h3>
+  <div class="grid2"><div><label>Číslo jednotky</label><input id="ct_unit"></div><div><label>Podlaží</label><input id="ct_floor" value="${esc(f.floor||'')}"></div></div>
+  <div class="grid2"><div><label>Výměra (m²)</label><input id="ct_area" value="${esc(f.area_m2||'')}"></div><div><label>Dispozice</label><input id="ct_dispo" value="${esc(f.dispo||'')}"></div></div>
+  <div class="grid2"><div><label>Datum uzavření smlouvy</label><input type="date" id="ct_cdate"></div><div><label>Variabilní symbol</label><input id="ct_vs" value="${esc(f.vs||'')}"></div></div>
+  <label>Číslo účtu pronajímatele</label><input id="ct_bank" value="${esc(f.bank?.acc||'')}">
+  ${dod?'':`<label>Osoby nahlášené k pobytu (jedna na řádek)</label><textarea id="ct_persons" rows="2"></textarea>
+  <label>Splatnost nájmu</label><input id="ct_pay" placeholder="28. den v měsíci na měsíc následující (nájemné předem)">
+  <label>Způsob úhrady jistoty</label><input id="ct_depnote" placeholder="Jistota byla uhrazena při podpisu…">`}
+  ${dod?`<div class="grid2"><div><label>Číslo dodatku</label><input id="ct_no" placeholder="1"></div><div><label>Datum dodatku</label><input type="date" id="ct_ddate"></div></div>`:''}`;
+ return `${common}
+ <h3 style="margin-top:14px">${dod?'Změny v dodatku':'Parametry nájmu'}</h3>
+ <label>${dod?'Účinnost dodatku od':'Účinnost od'}</label><input type="date" id="ct_eff">
  ${dod?'<p class="small mut" style="margin-top:12px">Zaškrtněte, co se mění. Ostatní ustanovení smlouvy zůstávají beze změny.</p>':''}
  ${topic('rent','Výše nájmu')}${rentSec}${topic('adv','Zálohy na služby (předpis)')}${advSec}${topic('term','Doba nájmu')}${termSec}${topic('deposit','Kauce')}${depSec}${topic('other','Jiná ujednání')}${otherSec}`;
 }
@@ -708,11 +729,33 @@ function genContract(fid){
  $('#doc').innerHTML=`${warn}<pre class="doc">${esc(txt)}</pre>`;
 }
 async function saveContract(fid){
- const txt=ctText(fid);if(txt===null)return;
- const t=$('#ct').value;
- const title=(t==='dodatek'?'Dodatek':CT_TYPES[t])+' '+flat(fid).addr+' '+new Date().toISOString().slice(0,10);
- try{await api(`/flats/${fid}/generated-documents`,'POST',{doc_type:t==='dodatek'?'dodatek':(t==='najem'?'smlouva':'jine'),title,text:txt});toast('Uloženo do dokumentů bytu');closeModal();await reload();render()}
- catch(e){toast(e.message)}
+ const t=$('#ct').value, dod=t==='dodatek';
+ const v=id=>($('#'+id)?.value||'').trim();
+ const on=id=>!dod||!!$('#on_'+id)?.checked;
+ const f=flat(fid),last=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
+ const adv=on('adv')?parseAdvText($('#ct_adv')?.value):(last.adv||{});
+ const landlord={name:v('lo_name'),address:v('lo_addr'),phone:v('lo_phone'),email:v('lo_mail')};
+ try{localStorage.setItem('mg_landlord',JSON.stringify({name:landlord.name,address:landlord.address,phone:landlord.phone,email:landlord.email}))}catch(e){}
+ const tenant={name:v('te_name'),address:v('te_addr'),birth:v('te_birth'),op:v('te_op'),phone:v('te_phone'),email:v('te_mail')};
+ const body={
+  kind:dod?'dodatek':'najem', landlord, tenant,
+  unit:v('ct_unit'), floor:v('ct_floor'), area:v('ct_area'), dispo:v('ct_dispo'),
+  contract_date:v('ct_cdate'), valid_from:v('ct_from')||v('ct_eff'), valid_to:v('ct_to'), indefinite:!v('ct_to'),
+  rent:on('rent')?(+v('ct_rent')||0):(+last.rent||0),
+  deposit:on('deposit')?(+v('ct_deposit')||0):(+(last.deposit||last.kauce)||0),
+  advances:adv, vs:v('ct_vs'), bank_acc:v('ct_bank'), payment_due:v('ct_pay'), deposit_note:v('ct_depnote'),
+  other:on('other')?v('ct_other'):'', persons:v('ct_persons').split('\n').filter(x=>x.trim()),
+  amendment_no:v('ct_no'), eff_date:v('ct_eff')||v('ct_ddate'),
+  changes:{rent:on('rent'),adv:on('adv'),term:on('term'),deposit:on('deposit'),other:on('other')}
+ };
+ if(dod&&!body.eff_date){toast('Vyplňte, od kdy dodatek platí');return}
+ if(!landlord.name||!tenant.name){toast('Vyplňte jméno pronajímatele a nájemce');return}
+ try{
+  progress('Vytvářím Word dokument…');
+  await api(`/flats/${fid}/contracts`,'POST',body);
+  progress('');
+  toast('Uloženo do dokumentů bytu (Word)');closeModal();await reload();render();
+ }catch(e){progress('');toast(e.message)}
 }
 
 // ---------- vyúčtování služeb za kalendářní rok ----------
