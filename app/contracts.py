@@ -1,10 +1,12 @@
 """Nájemní smlouva a dodatek ve Word formátu, ve stejné struktuře jako vzorová smlouva k bytu Revoluční."""
+import base64
 import json
 from datetime import date
+from io import BytesIO
 from pathlib import Path
 
 from docx.enum.text import WD_BREAK
-from docx.shared import Pt
+from docx.shared import Mm, Pt
 
 from . import docgen
 
@@ -46,6 +48,26 @@ def _clauses(d, paras: list[str]) -> None:
             r.bold = True
         else:
             d.add_paragraph(line)
+
+
+def _signatures(d, b: dict) -> None:
+    """Podpisový blok. Podpisy z displeje (PNG jako base64) se vloží nad jména, pokud jsou."""
+    imgs = []
+    for key in ("sign_landlord", "sign_tenant"):
+        raw = b.get(key)
+        try:
+            imgs.append(base64.b64decode(raw.split(",", 1)[-1]) if raw else None)
+        except (ValueError, AttributeError):
+            imgs.append(None)
+    t = d.add_table(rows=3, cols=2)
+    t.cell(0, 0).text = "Pronajímatel"
+    t.cell(0, 1).text = "Nájemce"
+    for i, png in enumerate(imgs):
+        if png:
+            t.cell(1, i).paragraphs[0].add_run().add_picture(BytesIO(png), width=Mm(45))
+    t.cell(2, 0).text = "______________________"
+    t.cell(2, 1).text = "______________________"
+    d.add_paragraph()
 
 
 def lease_docx(flat, b: dict) -> bytes:
@@ -112,8 +134,7 @@ def lease_docx(flat, b: dict) -> bytes:
 
     _clauses(d, body[first_art:])
     d.add_paragraph()
-    d.add_paragraph("______________________          ______________________")
-    d.add_paragraph("Pronajímatel                     Nájemce")
+    _signatures(d, b)
     d.add_page_break()
     for line in TEXT["protokol"]:
         p = d.add_paragraph()
@@ -177,6 +198,5 @@ def amendment_docx(flat, b: dict, old: dict) -> bytes:
         "Ostatní ustanovení smlouvy zůstávají beze změny. Tento dodatek nabývá účinnosti dnem "
         f"{eff}. Je vyhotoven ve dvou stejnopisech s platností originálu, po jednom pro každou smluvní stranu.")
     d.add_paragraph()
-    d.add_paragraph("______________________          ______________________")
-    d.add_paragraph("Pronajímatel                     Nájemce")
+    _signatures(d, b)
     return docgen._save(d)

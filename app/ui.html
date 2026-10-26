@@ -236,6 +236,7 @@ function home(){
   return `<div class="flatRow" onclick="openFlat(${f.id})"><div><b>${esc(f.addr)}</b><div class="mut small">${esc(f.tenant.name)||'Bez nájemníka'}</div></div>${tag}</div>`;
  }).join('');
  return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div></div>
+ <div class="btns" style="margin:0 0 12px"><button class="btn" onclick="tenantNew()">+ Nový nájemník (doklad)</button></div>
  <div class="statGrid">
   <div class="stat"><span>Bytů</span><b>${S.flats.length}</b></div>
   <div class="stat"><span>Vybírám měsíčně</span><b>${kc(st.inc)}</b></div>
@@ -627,19 +628,25 @@ async function applyDecisions(){
 
 // ---------- smlouva / dodatek ----------
 const CT_TYPES={najem:'Nájemní smlouva',dodatek:'Dodatek ke smlouvě',vypoved:'Výpověď nájmu'};
-function openContract(fid){
+let CT_PREFILL=null;
+function openContract(fid,prefill){
+ CT_PREFILL=prefill||null;
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML='';ctRefresh(${fid})">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
  <div id="ctBody" oninput="ctRefresh(${fid})"></div>
  <div id="ctDiff"></div>
- <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><div id="doc"></div>`);
+ <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><h3 style="margin-top:14px">Podpisy na displeji (nepovinné)</h3>
+ <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('sig_l')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('sig_t')}</div></div>
+ <div id="doc"></div>`);
  $('#ctBody').innerHTML=ctBody(fid);
  ctRefresh(fid);
+ sigInit('sig_l');sigInit('sig_t');
 }
 const CT_TOPICS=[['rent','Výše nájmu'],['adv','Zálohy na služby (předpis)'],['term','Doba nájmu'],['deposit','Kauce'],['other','Jiná ujednání']];
 function ctBody(fid){
  const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
  const dod=$('#ct').value==='dodatek';
+ const pf=CT_PREFILL||{};
  const advTxt=Object.entries(l.adv||{}).map(([k,v])=>`${k}: ${v}`).join('\n');
  const sec=(id,html)=>`<div id="sec_${id}" style="${dod?'display:none':''}">${html}</div>`;
  const topic=(id,label)=>dod?`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="on_${id}" onchange="$('#sec_${id}').style.display=this.checked?'block':'none';ctRefresh(${fid})"> ${label}</label>`:'';
@@ -654,9 +661,9 @@ function ctBody(fid){
   <label>Trvale bytem</label><input id="lo_addr" value="${esc(pref.address||'')}">
   <label>Telefon a e-mail</label><div class="grid2"><input id="lo_phone" placeholder="telefon" value="${esc(pref.phone||'')}"><input id="lo_mail" placeholder="e-mail" value="${esc(pref.email||'')}"></div>
   <h3 style="margin-top:14px">Nájemce</h3>
-  <label>Jméno</label><input id="te_name" value="${esc(f.tenant.name||'')}">
-  <label>Trvale bytem</label><input id="te_addr" value="${esc(f.addr||'')}">
-  <div class="grid2"><div><label>Narozen(a)</label><input id="te_birth" placeholder="např. 1. 1. 1990"></div><div><label>Číslo OP</label><input id="te_op"></div></div>
+  <label>Jméno</label><input id="te_name" value="${esc(pf.name||f.tenant.name||'')}">
+  <label>Trvale bytem</label><input id="te_addr" value="${esc(pf.address||'')}">
+  <div class="grid2"><div><label>Narozen(a)</label><input id="te_birth" placeholder="např. 1. 1. 1990" value="${esc(pf.birth||'')}"></div><div><label>Číslo OP</label><input id="te_op" value="${esc(pf.op||'')}"></div></div>
   <div class="grid2"><div><label>Telefon</label><input id="te_phone" value="${esc(f.tenant.phone||'')}"></div><div><label>E-mail</label><input id="te_mail" value="${esc(f.tenant.email||'')}"></div></div>
   <h3 style="margin-top:14px">Byt a smlouva</h3>
   <div class="grid2"><div><label>Číslo jednotky</label><input id="ct_unit"></div><div><label>Podlaží</label><input id="ct_floor" value="${esc(f.floor||'')}"></div></div>
@@ -746,7 +753,8 @@ async function saveContract(fid){
   advances:adv, vs:v('ct_vs'), bank_acc:v('ct_bank'), payment_due:v('ct_pay'), deposit_note:v('ct_depnote'),
   other:on('other')?v('ct_other'):'', persons:v('ct_persons').split('\n').filter(x=>x.trim()),
   amendment_no:v('ct_no'), eff_date:v('ct_eff')||v('ct_ddate'),
-  changes:{rent:on('rent'),adv:on('adv'),term:on('term'),deposit:on('deposit'),other:on('other')}
+  changes:{rent:on('rent'),adv:on('adv'),term:on('term'),deposit:on('deposit'),other:on('other')},
+  sign_landlord:sigData('sig_l'), sign_tenant:sigData('sig_t')
  };
  if(dod&&!body.eff_date){toast('Vyplňte, od kdy dodatek platí');return}
  if(!landlord.name||!tenant.name){toast('Vyplňte jméno pronajímatele a nájemce');return}
@@ -819,6 +827,72 @@ function ctRefresh(fid){
   ?`<div class="card" style="margin-top:12px"><b>Návrh změn oproti předchozí smlouvě</b><ul style="margin:8px 0 0;padding-left:18px">${rows.map(r=>`<li>${esc(r)}</li>`).join('')}</ul><div class="small mut" style="margin-top:6px">${dod?'Změněné body jsou zaškrtnuté. Zkontrolujte je před uložením.':'Nová smlouva nahrazuje předchozí. Zkontrolujte, že údaje sedí.'}</div></div>`
   :`<div class="small mut" style="margin-top:12px">Oproti předchozí smlouvě se nic nemění.</div>`;
 }
+// ---------- nový nájemník z dokladu ----------
+let TN_DOCS=[];
+function tenantNew(){
+ modal(`<div class="sheetHead"><h2>Nový nájemník</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ <p class="small mut">Vyfoťte občanský průkaz z přední i zadní strany (nebo jiný doklad). Aplikace z něj přečte údaje.</p>
+ <label class="btn sec" style="display:inline-block;cursor:pointer">📷 Vyfotit nebo vybrat doklad<input type="file" accept="image/*" multiple capture="environment" style="display:none" onchange="tenantRead(this)"></label>
+ <div id="tnBox"></div>`);
+}
+async function tenantRead(input){
+ const files=[...input.files];input.value='';
+ if(!files.length)return;
+ const fd=new FormData();files.forEach(f=>fd.append('files',f));
+ progress('Čtu doklad…');
+ try{
+  const r=await fetch('/tenants/read-id',{method:'POST',body:fd});
+  let j=null;try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
+  progress('');
+  TN_DOCS=j.documents||[];
+  tenantForm(j.fields||{});
+ }catch(e){progress('');toast(e.message)}
+}
+function tenantForm(f){
+ const opts=S.flats.map(x=>`<option value="${x.id}">${esc(x.addr)}</option>`).join('');
+ $('#tnBox').innerHTML=`<div class="card" style="margin-top:12px"><h3>Údaje z dokladu</h3>
+  <label>Jméno a příjmení</label><input id="tn_name" value="${esc(f.name||'')}">
+  <label>Datum narození</label><input id="tn_birth" value="${esc(f.birth_date||'')}">
+  <label>Trvalé bydliště</label><input id="tn_addr" value="${esc(f.address||'')}">
+  <label>Číslo dokladu</label><input id="tn_op" value="${esc(f.id_number||'')}">
+  <p class="small mut">Fotky dokladu se uloží k nájemníkovi. Údaje si můžete upravit.</p>
+  <label>Byt</label><select id="tn_flat">${opts}</select>
+  <div class="btns" style="margin-top:12px"><button class="btn" onclick="tenantContract()">Vytvořit smlouvu</button><button class="btn sec" onclick="tenantSaveOnly()">Jen uložit k bytu</button></div></div>`;
+}
+function tenantContract(){
+ const fid=+$('#tn_flat').value;
+ const pf={name:$('#tn_name').value.trim(),birth:$('#tn_birth').value.trim(),address:$('#tn_addr').value.trim(),op:$('#tn_op').value.trim()};
+ closeModal();openContract(fid,pf);
+}
+async function tenantSaveOnly(){
+ const fid=+$('#tn_flat').value;
+ try{
+  for(const d of TN_DOCS)await api(`/documents/${d.id}`,'PATCH',{flat_id:fid,doc_type:'doklad_najemnika'});
+  toast('Doklad uložen k bytu');closeModal();await reload();render();
+ }catch(e){toast(e.message)}
+}
+// Podpisová plocha: podepíše se prstem nebo perem na displeji
+function sigPad(id){
+ return `<canvas id="${id}" width="600" height="220" style="width:100%;height:110px;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none"></canvas><button class="link small" onclick="sigClear('${id}')">Smazat podpis</button>`;
+}
+function sigInit(id){
+ const c=document.getElementById(id);if(!c)return;
+ const ctx=c.getContext('2d');ctx.lineWidth=3;ctx.lineCap='round';ctx.strokeStyle='#111';
+ let down=false,last=null;
+ const pos=e=>{const r=c.getBoundingClientRect();return{x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height}};
+ c.addEventListener('pointerdown',e=>{down=true;last=pos(e);c.setPointerCapture(e.pointerId)});
+ c.addEventListener('pointermove',e=>{if(!down)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p});
+ const end=()=>{down=false};c.addEventListener('pointerup',end);c.addEventListener('pointercancel',end);
+}
+function sigClear(id){const c=document.getElementById(id);if(c)c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function sigData(id){
+ const c=document.getElementById(id);if(!c)return null;
+ const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+ for(let i=3;i<d.length;i+=4)if(d[i]>0)return c.toDataURL('image/png');
+ return null;
+}
+
 // ---------- upomínky ----------
 function mailTab(){
  const rows=S.flats.map(f=>{const y=years(f)[0];if(!y)return '';const b=bal(f.years[y]);if(b>=0)return '';

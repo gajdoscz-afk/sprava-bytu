@@ -779,6 +779,35 @@ async def document_pdf(doc_id: int, db: Session = Depends(get_db)):
                     headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}"})
 
 
+@app.post("/tenants/read-id")
+async def read_tenant_id(files: list[UploadFile] = File(...), flat_id: int | None = Form(None),
+                         db: Session = Depends(get_db)):
+    """Přečte doklad nového nájemníka z fotek. Fotky se uloží jako doklad nájemníka."""
+    if flat_id is not None:
+        get_flat(db, flat_id)
+    images, docs = [], []
+    for up in files:
+        data = await up.read()
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"{up.filename}: soubor je větší než 15 MB")
+        mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "image/jpeg"
+        if mime not in ("image/jpeg", "image/png", "image/webp", "image/gif"):
+            raise HTTPException(400, "Doklad musí být fotka (JPG nebo PNG)")
+        images.append((data, mime))
+        d = m.Document(filename=(up.filename or "doklad.jpg")[:300], mime=mime, size=len(data), data=data,
+                       doc_type="doklad_najemnika", flat_id=flat_id,
+                       status="zarazeno" if flat_id is not None else "ke_kontrole",
+                       summary="Doklad totožnosti nájemníka")
+        db.add(d)
+        docs.append(d)
+    db.commit()
+    try:
+        fields = await run_in_threadpool(documents.read_id, images)
+    except documents.ClassifyError as e:
+        raise HTTPException(503, f"Fotky jsou uložené, ale doklad se nepřečetl: {e}")
+    return {"fields": fields, "documents": [doc_out(d) for d in docs]}
+
+
 @app.get("/flats/{flat_id}/settlement")
 def settlement_preview(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
     """Náhled vyúčtování za kalendářní rok (výchozí: loni). Nic se neukládá."""

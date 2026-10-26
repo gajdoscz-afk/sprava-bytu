@@ -174,3 +174,30 @@ def suggest_flat(result: dict, flats, aliases, filename: str = "") -> int | None
     best = max(scores.values())
     winners = [fid for fid, sc in scores.items() if sc == best]
     return winners[0] if len(winners) == 1 and best >= 3 else None
+
+
+ID_PROMPT = """Jsi asistentka správce bytů v ČR. Na fotkách je občanský průkaz nebo jiný doklad totožnosti nájemce.
+Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
+- name: jméno a příjmení přesně jak jsou v dokladu, nebo null
+- birth_date: datum narození ve formátu D. M. RRRR (např. 7. 9. 1976), nebo null
+- address: trvalé bydliště přesně jak je v dokladu (ulice a číslo, PSČ, obec), nebo null
+- id_number: číslo dokladu, nebo null
+- doc_kind: "občanský průkaz", "pas", "řidičský průkaz" nebo "jiné"
+Nic nevymýšlej. Co není čitelné nebo v dokladu není, dej null."""
+
+
+def read_id(images: list[tuple[bytes, str]]) -> dict:
+    """Přečte údaje nájemníka z fotek dokladu. Vrací jen přečtená pole."""
+    blocks = [{"type": "image", "source": {"type": "base64", "media_type": mime,
+                                           "data": base64.standard_b64encode(data).decode("ascii")}}
+              for data, mime in images]
+    text = call_claude(blocks, ID_PROMPT, 1000)
+    match = re.search(r"\{.*\}", text, re.S)
+    try:
+        res = json.loads(match.group(0)) if match else {}
+    except json.JSONDecodeError:
+        res = {}
+    if not res:
+        raise ClassifyError("Doklad se nepodařilo přečíst. Zkuste ostřejší fotku.")
+    return {k: (str(res.get(k)).strip() or None) if res.get(k) else None
+            for k in ("name", "birth_date", "address", "id_number", "doc_kind")}
