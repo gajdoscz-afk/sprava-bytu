@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -1592,14 +1592,25 @@ def overview(year: int | None = None, db: Session = Depends(get_db)):
     years = {d.year for d in db.scalars(select(m.BankTx.date).distinct()).all()}
     years |= {d for d in db.scalars(select(m.Document.year).where(m.Document.year.is_not(None)).distinct()).all()}
     years.add(y)
+    today = date.today()
+    # Měsíce, za které se počítá: celý minulý rok, u letošního roku jen do aktuálního měsíce
+    months_in_year = 12 if y < today.year else (today.month if y == today.year else 0)
     rows, inc, exp = [], 0.0, 0.0
     for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
         res = stl.compute(db, f, y)
-        r, c = float(res["received"]), float(res["landlord_cost"])
+        r = float(res["received"])
+        stmt_cost = float(res["landlord_cost"])
+        # Výdaje: vyúčtování SVJ za rok, když existuje; jinak měsíční platby SVJ z karty bytu krát počet měsíců
+        monthly = sum(float(c.amount) for c in f.costs)
+        c = stmt_cost if stmt_cost else round(monthly * months_in_year, 2)
+        n_pay = db.scalar(select(func.count(m.BankTx.id)).where(
+            m.BankTx.flat_id == f.id, m.BankTx.period.like(f"{y}-%"))) or 0
         inc += r
         exp += c
         rows.append({"id": f.id, "addr": f.addr, "tenant": f.tenant_name, "received": r,
-                     "landlord_cost": c, "profit": round(r - c, 2)})
+                     "landlord_cost": c, "monthly_cost": monthly, "payments": n_pay,
+                     "cost_source": "vyúčtování" if stmt_cost else "měsíční platby SVJ",
+                     "profit": round(r - c, 2)})
     return {"year": y, "years": sorted(years, reverse=True), "income": round(inc, 2),
             "expenses": round(exp, 2), "profit": round(inc - exp, 2), "flats": rows}
 

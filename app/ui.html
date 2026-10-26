@@ -275,12 +275,12 @@ function home(){
  const debts=S.flats.map(f=>{const yy=years(f)[0];return yy?{f,y:yy,b:bal(f.years[yy])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
  const chips=ov.years.map(v=>`<button class="chip ${v===y?'on':''}" onclick="setHomeYear(${v})">${v}</button>`).join('');
- const tiles=S.flats.map(f=>{const r=ovFlat[f.id]||{};return `<button class="tile" onclick="openFlat(${f.id})"><span>${esc(f.addr)}</span><small>${esc(f.tenant.name)||'Bez nájemníka'}</small><b class="${(r.profit||0)<0?'bad':'ok'}">${kc(r.profit||0)}</b></button>`}).join('');
+ const tiles=S.flats.map(f=>{const r=ovFlat[f.id]||{};return `<button class="tile" onclick="openFlat(${f.id})"><span>${esc(f.addr)}</span><small>${esc(f.tenant.name)||'Bez nájemníka'}</small><b class="${(r.profit||0)<0?'bad':'ok'}">${kc(r.profit||0)}</b><small>${r.payments||0} plateb · výdaje ${kc(r.landlord_cost||0)}</small></button>`}).join('');
  return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div><div class="chips" style="margin:0">${chips}</div></div>
  <div class="kpiRow">
   <div class="kpi"><span>Příjmy ${y}</span><b>${kc(ov.income)}</b><small>přijaté platby přiřazené bytům</small></div>
   <div class="kpi"><span>Výdaje ${y}</span><b>${kc(ov.expenses)}</b><small>náklady SVJ za rok</small></div>
-  <div class="kpi"><span>Zisk ${y}</span><b class="${ov.profit<0?'bad':'ok'}">${kc(ov.profit)}</b><small>příjmy minus výdaje</small></div>
+  <div class="kpi"><span>Zisk ${y}</span><b class="${ov.profit<0?'bad':'ok'}">${kc(ov.profit)}</b><small>příjmy minus výdaje (výdaje z vyúčtování, jinak z měsíčních plateb SVJ)</small></div>
  </div>
  ${flatChart(ov.income,ov.expenses,ov.profit,`Souhrn za ${y} – všechny byty`,`Součet za všechny byty za rok ${y}. Modře příjmy, červeně výdaje, zeleně zisk.`)}
  <h2>Byty</h2>
