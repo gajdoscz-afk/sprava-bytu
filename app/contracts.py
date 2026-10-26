@@ -127,7 +127,8 @@ def lease_docx(flat, b: dict) -> bytes:
 
     d.add_heading("4. OSOBY NAHLÁŠENÉ K POBYTU V NEMOVITOSTI", level=2)
     persons = [p for p in (b.get("persons") or []) if str(p).strip()]
-    d.add_paragraph(f"Celkový počet osob: {len(persons) or 1}")
+    npers = int(b.get("npers") or 0) or len(persons) or 1
+    d.add_paragraph(f"Celkový počet osob: {npers}")
     for p in persons or [T.get("name") or ""]:
         d.add_paragraph(str(p))
     d.add_paragraph()

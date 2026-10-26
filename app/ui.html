@@ -628,12 +628,17 @@ async function applyDecisions(){
 
 // ---------- smlouva / dodatek ----------
 const CT_TYPES={najem:'Nájemní smlouva',dodatek:'Dodatek ke smlouvě',vypoved:'Výpověď nájmu'};
-let CT_PREFILL=null;
-function openContract(fid,prefill){
+let CT_PREFILL=null,LANDLORD_DEF=null,CT_BASE_ADV={},CT_BASE_N=1;
+async function landlordDef(){
+ if(!LANDLORD_DEF){try{LANDLORD_DEF=await api('/landlord')}catch(e){LANDLORD_DEF={}}}
+ return LANDLORD_DEF;
+}
+async function openContract(fid,prefill){
  CT_PREFILL=prefill||null;
+ await landlordDef();
  modal(`<div class="sheetHead"><h2>Smlouva nebo dodatek</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <label>Typ dokumentu</label><select id="ct" onchange="$('#ctBody').innerHTML=ctBody(${fid});$('#doc').innerHTML='';ctRefresh(${fid})">${Object.entries(CT_TYPES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
- <div id="ctBody" oninput="ctRefresh(${fid})"></div>
+ <div id="ctBody" oninput="ctCalc(event,${fid})"></div>
  <div id="ctDiff"></div>
  <div class="btns"><button class="btn sec" onclick="genContract(${fid})">Náhled</button><button class="btn" onclick="saveContract(${fid})">Uložit do dokumentů bytu</button></div><h3 style="margin-top:14px">Podpisy na displeji (nepovinné)</h3>
  <div class="grid2"><div><p class="small mut" style="margin:0 0 4px">Pronajímatel</p>${sigPad('sig_l')}</div><div><p class="small mut" style="margin:0 0 4px">Nájemce</p>${sigPad('sig_t')}</div></div>
@@ -643,11 +648,16 @@ function openContract(fid,prefill){
  sigInit('sig_l');sigInit('sig_t');
 }
 const CT_TOPICS=[['rent','Výše nájmu'],['adv','Zálohy na služby (předpis)'],['term','Doba nájmu'],['deposit','Kauce'],['other','Jiná ujednání']];
+const WATER_RE=/vod|stočn/i, NOT_WATER_RE=/správ|účetn|odměn/i;
 function ctBody(fid){
  const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
  const dod=$('#ct').value==='dodatek';
  const pf=CT_PREFILL||{};
- const advTxt=Object.entries(l.adv||{}).map(([k,v])=>`${k}: ${v}`).join('\n');
+ const pref=LANDLORD_DEF||{};
+ CT_BASE_ADV=l.adv||{};
+ CT_BASE_N=+(l.persons)||+(pf.npers)||1;
+ const npers=+(pf.npers)||CT_BASE_N;
+ const advTxt=Object.entries(CT_BASE_ADV).map(([k,v])=>`${k}: ${v}`).join('\n');
  const sec=(id,html)=>`<div id="sec_${id}" style="${dod?'display:none':''}">${html}</div>`;
  const topic=(id,label)=>dod?`<label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="on_${id}" onchange="$('#sec_${id}').style.display=this.checked?'block':'none';ctRefresh(${fid})"> ${label}</label>`:'';
  const rentSec=sec('rent',`<label>Nájemné bez záloh (Kč měsíčně)</label><input type="number" id="ct_rent" value="${l.rent||0}">`);
@@ -655,7 +665,12 @@ function ctBody(fid){
  const termSec=sec('term',`<label>Nájem od</label><input type="date" id="ct_from" value="${l.from||''}"><label>Nájem do (prázdné = neurčitě)</label><input type="date" id="ct_to" value="${l.to||''}">`);
  const depSec=sec('deposit',`<label>Kauce (Kč)</label><input type="number" id="ct_deposit" value="${l.deposit||l.kauce||0}">`);
  const otherSec=sec('other',`<label>Jiná ujednání</label><textarea id="ct_other" rows="3"></textarea>`);
- const pref=(()=>{try{return JSON.parse(localStorage.getItem('mg_landlord')||'{}')}catch(e){return{}}})();
+ const calcBlock=dod?'':`<h3 style="margin-top:14px">Osoby a výpočet nájmu</h3>
+  <div class="grid2"><div><label>Počet osob v bytě</label><input type="number" id="ct_npers" min="1" value="${npers}"></div><div><label>Osob v posledním předpisu</label><input type="number" id="ct_basen" min="1" value="${CT_BASE_N}" readonly></div></div>
+  <p class="small mut" style="margin:4px 0 8px">Zálohy na vodu (teplá, studená) se přepočítají podle počtu osob. Ostatní zálohy zůstávají.</p>
+  <div class="grid2"><div><label>Čistý nájem, který chcete mít (Kč/měs.)</label><input type="number" id="ct_net" placeholder="např. 12000"></div><div><label>Fond oprav (Kč/měs.)</label><input type="number" id="ct_fund" value="0"></div></div>
+  <p class="small mut" style="margin:4px 0 0">Nájemné bez záloh = čistý nájem + fond oprav. Zálohy se přičtou zvlášť.</p>
+  <div id="ct_sum" class="small" style="margin-top:8px"></div>`;
  const common=`<h3 style="margin-top:14px">Pronajímatel</h3>
   <label>Jméno</label><input id="lo_name" value="${esc(pref.name||f.owner||'')}">
   <label>Trvale bytem</label><input id="lo_addr" value="${esc(pref.address||'')}">
@@ -675,10 +690,35 @@ function ctBody(fid){
   <label>Způsob úhrady jistoty</label><input id="ct_depnote" placeholder="Jistota byla uhrazena při podpisu…">`}
   ${dod?`<div class="grid2"><div><label>Číslo dodatku</label><input id="ct_no" placeholder="1"></div><div><label>Datum dodatku</label><input type="date" id="ct_ddate"></div></div>`:''}`;
  return `${common}
+ ${calcBlock}
  <h3 style="margin-top:14px">${dod?'Změny v dodatku':'Parametry nájmu'}</h3>
  <label>${dod?'Účinnost dodatku od':'Účinnost od'}</label><input type="date" id="ct_eff">
  ${dod?'<p class="small mut" style="margin-top:12px">Zaškrtněte, co se mění. Ostatní ustanovení smlouvy zůstávají beze změny.</p>':''}
  ${topic('rent','Výše nájmu')}${rentSec}${topic('adv','Zálohy na služby (předpis)')}${advSec}${topic('term','Doba nájmu')}${termSec}${topic('deposit','Kauce')}${depSec}${topic('other','Jiná ujednání')}${otherSec}`;
+}
+// Přepočet při změně osob, čistého nájmu nebo fondu oprav
+function ctScaleAdv(){
+ const n=+$('#ct_npers')?.value||0, base=CT_BASE_N||n;
+ const lines=Object.entries(CT_BASE_ADV).map(([k,v])=>{
+  const water=WATER_RE.test(k)&&!NOT_WATER_RE.test(k);
+  const val=water&&n>0&&base>0?Math.round(v*n/base):v;
+  return `${k}: ${val}`;
+ }).join('\n');
+ if($('#ct_adv'))$('#ct_adv').value=lines;
+}
+function ctCalc(e,fid){
+ const id=e&&e.target&&e.target.id;
+ if(id==='ct_npers')ctScaleAdv();
+ if((id==='ct_npers'||id==='ct_net'||id==='ct_fund')&&$('#ct_net')){
+  const net=$('#ct_net').value.trim();
+  if(net!=='')$('#ct_rent').value=Math.round((+net||0)+(+$('#ct_fund').value||0));
+ }
+ if($('#ct_sum')){
+  const rent=+$('#ct_rent')?.value||0, adv=parseAdvText($('#ct_adv')?.value);
+  const as=Object.values(adv).reduce((a,b)=>a+(+b||0),0);
+  $('#ct_sum').innerHTML=`Nájemné bez záloh ${kc(rent)} + zálohy ${kc(as)} = <b>${kc(rent+as)}</b> měsíčně.`;
+ }
+ ctRefresh(fid);
 }
 function ctText(fid){
  const f=flat(fid),l=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
@@ -718,7 +758,7 @@ function ctText(fid){
  const head=dod?`DODATEK č. [doplňte] KE SMLOUVĚ O NÁJMU BYTU ze dne [doplňte]`:(t==='vypoved'?'VÝPOVĚĎ NÁJMU BYTU':'SMLOUVA O NÁJMU BYTU');
  return `${head}
 
-Pronajímatel: ${f.owner||'[doplňte]'}
+Pronajímatel: ${(LANDLORD_DEF&&LANDLORD_DEF.name)||f.owner||'[doplňte]'}
 Nájemce: ${f.tenant.name||'[doplňte]'}
 Byt: ${f.addr}, ${f.dispo||''}, ${f.zip||''}
 
@@ -742,7 +782,6 @@ async function saveContract(fid){
  const f=flat(fid),last=f.leases[f.leases.length-1]||{rent:0,deposit:0,kauce:0,adv:{},from:'',to:''};
  const adv=on('adv')?parseAdvText($('#ct_adv')?.value):(last.adv||{});
  const landlord={name:v('lo_name'),address:v('lo_addr'),phone:v('lo_phone'),email:v('lo_mail')};
- try{localStorage.setItem('mg_landlord',JSON.stringify({name:landlord.name,address:landlord.address,phone:landlord.phone,email:landlord.email}))}catch(e){}
  const tenant={name:v('te_name'),address:v('te_addr'),birth:v('te_birth'),op:v('te_op'),phone:v('te_phone'),email:v('te_mail')};
  const body={
   kind:dod?'dodatek':'najem', landlord, tenant,
@@ -752,6 +791,7 @@ async function saveContract(fid){
   deposit:on('deposit')?(+v('ct_deposit')||0):(+(last.deposit||last.kauce)||0),
   advances:adv, vs:v('ct_vs'), bank_acc:v('ct_bank'), payment_due:v('ct_pay'), deposit_note:v('ct_depnote'),
   other:on('other')?v('ct_other'):'', persons:v('ct_persons').split('\n').filter(x=>x.trim()),
+  npers:dod?0:(+v('ct_npers')||0), net:dod?0:(+v('ct_net')||0), fund:dod?0:(+v('ct_fund')||0),
   amendment_no:v('ct_no'), eff_date:v('ct_eff')||v('ct_ddate'),
   changes:{rent:on('rent'),adv:on('adv'),term:on('term'),deposit:on('deposit'),other:on('other')},
   sign_landlord:sigData('sig_l'), sign_tenant:sigData('sig_t')
@@ -767,7 +807,7 @@ async function saveContract(fid){
    <p class="small mut">${esc(doc.summary||doc.filename)}</p>
    <div class="btns" style="flex-direction:column;align-items:stretch">
     <button class="btn" onclick="docView(${doc.id},true)">Zobrazit a uložit PDF</button>
-    <a class="btn sec" href="/documents/${doc.id}/file" download="${esc(doc.filename)}">Uložit Word</a>
+    <button class="btn sec" onclick="saveDocFile(${doc.id})">Uložit Word</button>
     <button class="btn sec" onclick="shareDoc(${doc.id})">Sdílet Word</button>
     <button class="btn sec" onclick="closeModal();render()">Hotovo</button>
    </div>`);
@@ -842,7 +882,19 @@ function docView(id,pdf){
  const src=(pdf||isWord)?`/documents/${id}/pdf`:`/documents/${id}/file`;
  modal(`<div class="sheetHead"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
   <iframe src="${src}" style="width:100%;height:68vh;border:0;border-radius:10px;background:#fff;margin-top:8px"></iframe>
-  <div class="btns">${isWord?`<a class="btn sec sm" href="/documents/${id}/file" download="${esc(d.filename)}">Stáhnout Word</a>`:`<a class="btn sec sm" href="/documents/${id}/file" download="${esc(d.filename)}">Stáhnout</a>`}<button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button></div>`);
+  <div class="btns"><button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button></div>`);
+}
+// Uloží soubor bez přechodu na jinou stránku, takže aplikace zůstane otevřená
+async function saveDocFile(id){
+ let f;
+ try{f=await docFile(id)}catch(e){toast(e.message);return}
+ if(navigator.canShare&&navigator.canShare({files:[f]})){
+  try{await navigator.share({files:[f],title:f.name});return}catch(e){if(e.name==='AbortError')return}
+ }
+ const url=URL.createObjectURL(f);
+ const a=document.createElement('a');a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),60000);
+ toast('Soubor uložen');
 }
 
 // ---------- nový nájemník z dokladu ----------

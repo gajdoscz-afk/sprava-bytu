@@ -29,6 +29,7 @@ class LeaseIn(BaseModel):
     rent: Decimal = Field(ge=0)
     deposit: Decimal = Field(default=Decimal("0"), ge=0)
     advances: dict[str, Decimal] = {}
+    persons: int | None = Field(default=None, ge=1, le=20)
 
 
 class ItemIn(BaseModel):

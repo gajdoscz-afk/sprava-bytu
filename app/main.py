@@ -30,6 +30,7 @@ from . import models as m
 from . import news as nw
 from . import geo as gx
 from . import contracts
+from . import landlord as landlord_profile
 from . import pdfgen
 from . import docgen
 from . import settlement as stl
@@ -98,6 +99,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
+        conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -380,6 +382,7 @@ def lease_out(l: m.Lease) -> dict:
         "rent": float(l.rent),
         "deposit": float(l.deposit),
         "advances": {a.name: float(a.amount) for a in l.advances},
+        "persons": l.persons,
     }
 
 
@@ -736,14 +739,42 @@ def save_generated_document(flat_id: int, body: s.GeneratedDocIn, db: Session = 
     return doc_out(d)
 
 
+@app.get("/landlord")
+def get_landlord():
+    return landlord_profile.LANDLORD
+
+
+def _upsert_lease_from_contract(db: Session, f: m.Flat, body: dict) -> None:
+    """Nájemní smlouva je zdroj předpisu: nastaví nájem, zálohy a počet osob pro další smlouvy."""
+    vf = date.fromisoformat(body["valid_from"]) if body.get("valid_from") else None
+    if vf is None:
+        return
+    vt = date.fromisoformat(body["valid_to"]) if body.get("valid_to") and not body.get("indefinite") else None
+    adv = [m.Advance(name=str(k)[:200], amount=money(v)) for k, v in (body.get("advances") or {}).items()]
+    leases = sorted(f.leases, key=lambda l: l.valid_from)
+    same = next((l for l in leases if l.valid_from == vf), None)
+    if same is not None:
+        same.rent, same.deposit, same.valid_to = money(body.get("rent") or 0), money(body.get("deposit") or 0), vt
+        same.persons = body.get("npers") or None
+        same.advances = adv
+        return
+    for p in leases:
+        if p.valid_from < vf and (p.valid_to is None or p.valid_to >= vf):
+            p.valid_to = vf - timedelta(days=1)
+    db.add(m.Lease(flat=f, valid_from=vf, valid_to=vt, rent=money(body.get("rent") or 0),
+                   deposit=money(body.get("deposit") or 0), persons=body.get("npers") or None, advances=adv))
+
+
 @app.post("/flats/{flat_id}/contracts", status_code=201)
 def create_contract(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
     """Nájemní smlouva nebo dodatek ve Word formátu, uložený ke kartě bytu."""
     f = get_flat(db, flat_id)
     kind = body.get("kind")
+    body["landlord"] = landlord_profile.merged(body.get("landlord"))
     try:
         if kind == "najem":
             data, dtype = contracts.lease_docx(f, body), "smlouva"
+            _upsert_lease_from_contract(db, f, body)
             title = f"Nájemní smlouva {f.addr} {body.get('contract_date') or ''}"
         elif kind == "dodatek":
             last = sorted(f.leases, key=lambda l: l.valid_from)[-1] if f.leases else None
@@ -843,7 +874,7 @@ def add_lease(flat_id: int, data: s.LeaseIn, db: Session = Depends(get_db)):
     f = get_flat(db, flat_id)
     lease = m.Lease(
         flat=f, valid_from=data.valid_from, valid_to=data.valid_to,
-        rent=money(data.rent), deposit=money(data.deposit),
+        rent=money(data.rent), deposit=money(data.deposit), persons=data.persons,
         advances=[m.Advance(name=k, amount=money(v)) for k, v in data.advances.items()],
     )
     db.add(lease)

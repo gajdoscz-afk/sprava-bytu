@@ -53,6 +53,7 @@ class Lease(Base):
     rent: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     deposit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     source_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # datum dokumentu (smlouvy), ze kterého předpis je
+    persons: Mapped[int | None] = mapped_column(Integer, nullable=True)  # počet osob, na který je předpis záloh na vodu
 
     flat: Mapped[Flat] = relationship(back_populates="leases")
     advances: Mapped[list["Advance"]] = relationship(cascade="all, delete-orphan", order_by="Advance.id")
