@@ -17,7 +17,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
@@ -30,6 +30,7 @@ from . import models as m
 from . import news as nw
 from . import geo as gx
 from . import contracts
+from . import pdfgen
 from . import docgen
 from . import settlement as stl
 from . import schemas as s
@@ -760,6 +761,22 @@ def create_contract(flat_id: int, body: dict = Body(...), db: Session = Depends(
     db.add(d)
     db.commit()
     return doc_out(d)
+
+
+@app.get("/documents/{doc_id}/pdf")
+async def document_pdf(doc_id: int, db: Session = Depends(get_db)):
+    """PDF z Word dokumentu (smlouva, dodatek, vyúčtování). Převod dělá LibreOffice na serveru."""
+    from urllib.parse import quote
+    d = get_document(db, doc_id)
+    if d.mime != docgen.DOCX_MIME:
+        raise HTTPException(400, "PDF jde vytvořit jen z Word dokumentu")
+    try:
+        pdf = await run_in_threadpool(pdfgen.docx_to_pdf, d.data)
+    except pdfgen.PdfError as e:
+        raise HTTPException(503, str(e))
+    name = re.sub(r"\.docx$", "", d.filename, flags=re.I) + ".pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}"})
 
 
 @app.get("/flats/{flat_id}/settlement")
