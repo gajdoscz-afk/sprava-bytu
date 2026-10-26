@@ -150,13 +150,21 @@ nav button{border-radius:14px}
 select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;margin-top:4px}
 .filterBar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 12px}
 .filterBar label{margin-top:0}
+
+/* logo v levém horním rohu */
+.brandTop{position:fixed;top:12px;left:12px;z-index:7;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:7px 14px 7px 7px;color:var(--ink);font:inherit;font-weight:700;font-size:15px;cursor:pointer;box-shadow:var(--glow)}
+.brandTop:hover{color:var(--acc)}
+.logoMark{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#8B7CFF,#22D3EE);color:#0A0B1F;font-weight:800;font-size:12px;letter-spacing:.02em}
+nav{padding-top:70px}
+@media (max-width:560px){ .brandTop{font-size:13px;padding:6px 10px 6px 6px} .brandTop span:last-child{display:none} }
 </style>
 </head>
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span>MG Property</span></button>
 <nav>
-<button class="brand" onclick="go('home')" title="Na hlavní stránku"><span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--paper);font-weight:800;font-size:12px;margin-bottom:6px">MG</span><br>MG Property</button>
+
 <button data-t="home" onclick="go('home')">Přehled</button>
 <button data-t="econ" onclick="go('econ')">Ekonomika</button>
 <button data-t="value" onclick="go('value')">Hodnota</button>
@@ -307,6 +315,23 @@ function flatTiles(fid){
   ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
  return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports({flat:${fid},types:${JSON.stringify(types)},label:${JSON.stringify(n)}})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
 }
+function flatChart(income,cost,profit){
+ const vals=[['Výnosy',income,'#3B82F6'],['Náklady',cost,'#EF4444'],['Zisk',profit,'#22C55E']];
+ const max=Math.max(1,...vals.map(v=>Math.abs(v[1])));
+ const H=150,base=H+10;
+ const bars=vals.map(([n,v,c],i)=>{
+  const h=Math.max(2,Math.abs(v)/max*H), x=50+i*110, y=base-h;
+  return `<rect x="${x}" y="${y}" width="70" height="${h}" rx="8" fill="${c}" opacity=".92"><title>${n}: ${kc(v)}</title></rect>
+   <text x="${x+35}" y="${y-8}" text-anchor="middle" font-size="13" fill="var(--ink)" font-weight="700">${kc(v)}</text>
+   <text x="${x+35}" y="${base+22}" text-anchor="middle" font-size="13" fill="var(--mut)">${n}</text>`;
+ }).join('');
+ return `<h2>Měsíční přehled v grafu</h2><div class="card">
+  <svg viewBox="0 0 380 ${base+34}" width="100%" role="img" aria-label="Výnosy, náklady a zisk za měsíc" style="max-width:520px;display:block;margin:0 auto">
+   <line x1="20" y1="${base}" x2="360" y2="${base}" stroke="var(--line)" stroke-width="1"/>${bars}
+  </svg>
+  <div class="mut small" style="text-align:center;margin-top:6px">Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.</div>
+ </div>`;
+}
 function flatDetail(){
  const f=flat(V.flat);if(!f){go('flats');return ''}
  const l=f.leases[f.leases.length-1];
@@ -315,6 +340,7 @@ function flatDetail(){
  const svjTotal=f.svj.reduce((a,c)=>a+(+c.amount||0),0);
  const incomeM=l?(+l.rent||0)+advTotal:0;
  const net=incomeM-svjTotal;
+ const chartCard=flatChart(incomeM,svjTotal,net);
  const daysTo=l&&l.to?Math.ceil((new Date(l.to)-TODAY)/86400000):null;
  const ly=years(f)[0];
  const lyBal=ly?bal(f.years[ly]):null;
@@ -336,6 +362,7 @@ function flatDetail(){
  return `<div class="stickyFlat">${esc(f.addr)}${f.dispo?`<small>${esc(f.dispo)}</small>`:''}</div>
  <button class="link" onclick="go('flats')">← Byty</button>
  <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut" style="margin:0">${esc(f.dispo)}</p><p class="mut small" style="margin:2px 0 14px">${esc(f.tenant.name)||'Bez nájemníka'}</p>
+ ${chartCard}
  <div class="card">
   <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
   ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>'}</div>
