@@ -157,6 +157,11 @@ select{background:var(--card);color:var(--ink);border:1px solid var(--line);bord
 .logoMark{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#8B7CFF,#22D3EE);color:#0A0B1F;font-weight:800;font-size:12px;letter-spacing:.02em}
 nav{padding-top:70px}
 @media (max-width:560px){ .brandTop{font-size:13px;padding:6px 10px 6px 6px} .brandTop span:last-child{display:none} }
+
+.chartCard{padding:22px 16px 16px;background:radial-gradient(420px 200px at 50% 0%,rgba(139,124,255,.16),transparent 70%),var(--card)}
+.bar{transform-box:fill-box;transform-origin:50% 100%;animation:barGrow .9s cubic-bezier(.2,.8,.2,1) both}
+@keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@media (prefers-reduced-motion:reduce){.bar{animation:none}}
 </style>
 </head>
 <body>
@@ -316,21 +321,36 @@ function flatTiles(fid){
   ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
  return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports({flat:${fid},types:${JSON.stringify(types)},label:${JSON.stringify(n)}})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
 }
+let CH_N=0;
 function flatChart(income,cost,profit,title='Měsíční přehled v grafu',note='Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.'){
- const vals=[['Výnosy',income,'#3B82F6'],['Náklady',cost,'#EF4444'],['Zisk',profit,'#22C55E']];
+ const id='ch'+(++CH_N);
+ const vals=[['Výnosy',income,'#3B82F6','#93C5FD','#1E40AF'],['Náklady',cost,'#EF4444','#FCA5A5','#991B1B'],['Zisk',profit,'#22C55E','#86EFAC','#166534']];
+ const base=222, maxH=160, d=16, bw=84;
  const max=Math.max(1,...vals.map(v=>Math.abs(v[1])));
- const H=150,base=H+10;
- const bars=vals.map(([n,v,c],i)=>{
-  const h=Math.max(2,Math.abs(v)/max*H), x=50+i*110, y=base-h;
-  return `<rect x="${x}" y="${y}" width="70" height="${h}" rx="8" fill="${c}" opacity=".92"><title>${n}: ${kc(v)}</title></rect>
-   <text x="${x+35}" y="${y-8}" text-anchor="middle" font-size="13" fill="var(--ink)" font-weight="700">${kc(v)}</text>
-   <text x="${x+35}" y="${base+22}" text-anchor="middle" font-size="13" fill="var(--mut)">${n}</text>`;
- }).join('');
- return `<h2>${title}</h2><div class="card">
-  <svg viewBox="0 0 380 ${base+34}" width="100%" role="img" aria-label="Výnosy, náklady a zisk za měsíc" style="max-width:520px;display:block;margin:0 auto">
-   <line x1="20" y1="${base}" x2="360" y2="${base}" stroke="var(--line)" stroke-width="1"/>${bars}
+ let defs=`<filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>`;
+ let grid='';
+ for(let g=0;g<=4;g++){const y=base-g*maxH/4;grid+=`<line x1="18" x2="392" y1="${y}" y2="${y}" stroke="var(--line)" stroke-dasharray="3 6"/>`}
+ let bars='';
+ vals.forEach(([n,v,c,cl,cd],i)=>{
+  const x=40+i*118, h=Math.max(4,Math.abs(v)/max*maxH), y=base-h;
+  const gid=`${id}g${i}`, tid=`${id}t${i}`;
+  defs+=`<linearGradient id="${gid}" x1="0" x2="1"><stop offset="0" stop-color="${cl}"/><stop offset=".45" stop-color="${c}"/><stop offset="1" stop-color="${cd}"/></linearGradient>
+   <linearGradient id="${tid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="${cl}"/></linearGradient>`;
+  bars+=`<g class="bar" style="animation-delay:${i*0.14}s">
+   <ellipse cx="${x+bw/2+d/2}" cy="${base+2}" rx="${bw/2+10}" ry="7" fill="${c}" opacity=".35" filter="url(#${id}b)"/>
+   <path d="M${x+bw} ${y} L${x+bw+d} ${y-d} L${x+bw+d} ${base-d} L${x+bw} ${base} Z" fill="${cd}"/>
+   <path d="M${x} ${y} L${x+d} ${y-d} L${x+bw+d} ${y-d} L${x+bw} ${y} Z" fill="url(#${tid})"/>
+   <rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="6" fill="url(#${gid})"/>
+   <text x="${x+bw/2+d/2}" y="${y-d-10}" text-anchor="middle" font-size="14" font-weight="700" fill="var(--ink)">${kc(v)}</text>
+   <text x="${x+bw/2+d/2}" y="${base+26}" text-anchor="middle" font-size="13" fill="var(--mut)">${n}</text>
+  </g>`;
+ });
+ return `<h2>${title}</h2><div class="card chartCard">
+  <svg viewBox="0 0 410 254" width="100%" role="img" aria-label="${esc(title)}" style="max-width:560px;display:block;margin:0 auto;overflow:visible">
+   <defs>${defs}</defs>${grid}
+   <line x1="18" x2="392" y1="${base}" y2="${base}" stroke="var(--line)"/>${bars}
   </svg>
-  <div class="mut small" style="text-align:center;margin-top:6px">${note}</div>
+  <div class="mut small" style="text-align:center;margin-top:8px">${note}</div>
  </div>`;
 }
 function flatDetail(){
