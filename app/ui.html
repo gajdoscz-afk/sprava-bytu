@@ -1779,7 +1779,18 @@ function reportsHtml(){
  const groupName={flat:'Byt',year:'Rok',tenant:'Nájemník',type:'Typ'}[rf.group]||'Byt';
  const summary=keys.length?`<div class="card" style="padding:4px 16px"><table><thead><tr><th>${groupName}</th><th class="r">Dokumentů</th><th class="r">Poslední</th></tr></thead><tbody>${keys.map(k=>{const g=groups[k];const last=g.map(d=>d.year).filter(Boolean).sort().pop()||'—';return `<tr><td><a href="#" class="link" onclick="document.getElementById('grp${keys.indexOf(k)}').open=true;return false">${esc(k)}</a></td><td class="r">${g.length}</td><td class="r">${last}</td></tr>`}).join('')}</tbody></table></div>`:'';
  const body=keys.map((k,i)=>`<details class="docGroup" id="grp${i}" ${keys.length<=2?'open':''}><summary><b>${esc(k)}</b> <span class="mut small">(${groups[k].length})</span></summary>${docGroups(groups[k],'Nic.')}</details>`).join('');
- return `<div class="filterBar">
+ const fid=rf.flat!=='all'?rf.flat:null;
+ const acts=[];
+ if(fid){
+  const t=rf.types||[];
+  if(t.includes('smlouva')||t.includes('dodatek')){acts.push(`<button class="btn sm" onclick="wzStart(${fid})">+ Nová smlouva</button>`);acts.push(`<button class="btn sm sec" onclick="openContract(${fid},null,'dodatek')">+ Dodatek</button>`)}
+  if(t.includes('protokol')||t.includes('foto_meridla'))acts.push(`<button class="btn sm" onclick="protStart(${fid})">+ Předávací protokol</button>`);
+  if(t.includes('vyuctovani_najemnikovi')||t.includes('vyuctovani_svj'))acts.push(`<button class="btn sm" onclick="openSettlement(${fid})">+ Vyúčtování</button>`);
+  if(t.includes('doklad_najemnika'))acts.push(`<button class="btn sm" onclick="tenantNew()">+ Nový nájemník (doklad)</button>`);
+  acts.push(`<button class="btn sm sec" onclick="openFlat(${fid})">← Karta bytu</button>`);
+ }
+ const actBar=acts.length?`<div class="btns" style="margin:0 0 12px">${acts.join('')}</div>`:'';
+ return `${actBar}<div class="filterBar">
   <div><label>Rok</label><select onchange="rfSet('year',this.value)">${opt('all','Všechny roky','all')}${years.map(y=>opt(y,y,rf.year)).join('')}</select></div>
   <div><label>Byt</label><select onchange="rfSet('flat',this.value)">${opt('all','Všechny byty','all')}${S.flats.map(f=>opt(f.id,f.addr,rf.flat)).join('')}</select></div>
   <div><label>Nájemník</label><select onchange="rfSet('tenant',this.value)">${opt('all','Všichni nájemníci','all')}${tenants.map(t=>opt(t,t,rf.tenant)).join('')}</select></div>
