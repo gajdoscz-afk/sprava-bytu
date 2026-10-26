@@ -308,6 +308,49 @@ function flatsList(){
  (tiles?`<div class="flatGrid">${tiles}</div>`:'<div class="card mut">Zatím žádné byty.</div>');
 }
 
+// ---------- úprava částek v kartě bytu (nájemník i já) ----------
+let EM=null;
+function editModal(title,fields,onSave,onDelete){
+ EM={fields:fields.map(f=>f.id),onSave,onDelete};
+ modal(`<div class="sheetHead"><h2>${title}</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
+  ${fields.map(f=>`<label>${f.label}</label><input id="em_${f.id}" ${f.type?`type="${f.type}"`:''} value="${esc(f.value??'')}">`).join('')}
+  <div class="btns"><button class="btn" onclick="emSave()">Uložit</button>${onDelete?'<button class="btn sec warnTxt" onclick="emDelete()">Smazat</button>':''}</div>`);
+}
+async function emSave(){
+ const vals=Object.fromEntries(EM.fields.map(i=>[i,iv('em_'+i)]));
+ try{await EM.onSave(vals);closeModal();await reload();render()}catch(e){toast(e.message)}
+}
+async function emDelete(){
+ if(!confirm('Opravdu smazat tuto položku?'))return;
+ try{await EM.onDelete();closeModal();await reload();render()}catch(e){toast(e.message)}
+}
+function leaseOf(lid){for(const f of S.flats){const l=f.leases.find(x=>x.id===lid);if(l)return {f,l}}return null}
+async function patchLease(lid,body){await api(`/leases/${lid}`,'PATCH',body)}
+function tenantRentEdit(lid){
+ const {l}=leaseOf(lid)||{};
+ editModal('Nájem bez záloh',[{id:'amt',label:'Částka (Kč/měs.)',type:'number',value:l?l.rent:0}],
+  v=>patchLease(lid,{rent:+v.amt||0}));
+}
+function tenantAdvEdit(lid,name){
+ const {l}=leaseOf(lid)||{};
+ const cur=(l&&l.adv)||{};
+ editModal('Záloha nájemníka',[{id:'name',label:'Název',value:name},{id:'amt',label:'Částka (Kč/měs.)',type:'number',value:cur[name]??0}],
+  v=>{const adv={...cur};delete adv[name];adv[v.name||name]=+v.amt||0;return patchLease(lid,{advances:adv})},
+  ()=>{const adv={...cur};delete adv[name];return patchLease(lid,{advances:adv})});
+}
+function tenantAdvAdd(lid){
+ const {l}=leaseOf(lid)||{};
+ const cur=(l&&l.adv)||{};
+ editModal('Nová položka nájemníka',[{id:'name',label:'Název (např. Voda studená)',value:''},{id:'amt',label:'Částka (Kč/měs.)',type:'number',value:''}],
+  v=>{if(!v.name.trim())throw new Error('Vyplňte název');const adv={...cur,[v.name.trim()]:+v.amt||0};return patchLease(lid,{advances:adv})});
+}
+function costEdit(fid,cid){
+ const f=flat(fid);const c=(f&&f.svj||[]).find(x=>x.id===cid)||{name:'',amount:0};
+ editModal('Platba, kterou platím',[{id:'name',label:'Název',value:c.name},{id:'amt',label:'Částka (Kč/měs.)',type:'number',value:c.amount}],
+  v=>api(`/flats/${fid}/costs/${cid}`,'PATCH',{name:v.name,amount:+v.amt||0}),
+  ()=>api(`/flats/${fid}/costs/${cid}`,'DELETE'));
+}
+
 function flatTiles(fid){
  const docs=S.docs.filter(d=>String(d.flat_id)===String(fid)&&d.status==='zarazeno');
  const cnt=t=>docs.filter(d=>t.includes(d.doc_type)).length;
@@ -366,17 +409,20 @@ function flatDetail(){
  const ly=years(f)[0];
  const lyBal=ly?bal(f.years[ly]):null;
  const lastSt=ly?`${ly}: ${lyBal<0?'nedoplatek ':'přeplatek '}${kc(Math.abs(lyBal))}`:'zatím žádné';
- const advRows=l?Object.entries(l.adv||{}).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><span>${kc(v)}</span></div>`).join(''):'';
+ const lid=l?l.id:null;
+ const advRows=l?Object.entries(l.adv||{}).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><button class="link" onclick="tenantAdvEdit(${lid},${JSON.stringify(k).replace(/"/g,'&quot;')})">${kc(v)}</button></div>`).join(''):'';
  const ecoCard=`<h2>Měsíční přehled</h2><div class="card">
-  <div class="mut small">Vybírám od nájemníka</div>
-  ${l?`<div class="line"><span>Nájem bez záloh</span><span>${kc(l.rent)}</span></div>${advRows}`:'<div class="mut small">Bez předpisu</div>'}
+  <div class="mut small">Vybírám od nájemníka (klikněte na částku pro úpravu)</div>
+  ${l?`<div class="line"><span>Nájem bez záloh</span><button class="link" onclick="tenantRentEdit(${lid})">${kc(l.rent)}</button></div>${advRows}`:'<div class="mut small">Bez předpisu. Nejdřív zadejte nájem v průvodci smlouvou.</div>'}
+  ${l?`<div class="btns"><button class="btn sec sm" onclick="tenantAdvAdd(${lid})">+ Přidat položku nájemníka</button></div>`:''}
   <div class="line sum"><span>Vybírám celkem</span><span>${kc(incomeM)}</span></div>
-  <div class="mut small" style="margin-top:12px">Platím SVJ</div>
-  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><span>${kc(c.amount)}</span></div>`).join('')||'<div class="mut small">Zatím nic</div>'}
+  <div class="mut small" style="margin-top:12px">Platím SVJ (klikněte na částku pro úpravu)</div>
+  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><button class="link" onclick="costEdit(${f.id},${c.id})">${kc(c.amount)}</button></div>`).join('')||'<div class="mut small">Zatím nic</div>'}
+  <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku, kterou platím</button></div>
   <div class="line sum"><span>Platím celkem</span><span>${kc(svjTotal)}</span></div>
   <div class="line sum" style="margin-top:12px"><span>Zbývá mi měsíčně</span><span class="${net<0?'bad':'ok'}">${kc(net)}</span></div></div>`;
  const svjCard=`<h2>Co platím SVJ (měsíčně)</h2><div class="card">
-  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><span>${kc(c.amount)} <button class="link small" onclick="delCost(${f.id},${c.id})">smazat</button></span></div>`).join('')||'<div class="mut small">Zatím nic. Přidejte zálohy, které platíte SVJ, a spočítá se čistý příjem.</div>'}
+  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><span><button class="link" onclick="costEdit(${f.id},${c.id})">${kc(c.amount)}</button></span></div>`).join('')||'<div class="mut small">Zatím nic. Přidejte zálohy, které platíte.</div>'}
   <div class="line sum"><span>Celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
   <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button></div></div>`;
  const y=V.year?f.years[V.year]:null;

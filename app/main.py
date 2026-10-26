@@ -726,6 +726,35 @@ def delete_cost(flat_id: int, cost_id: int, db: Session = Depends(get_db)):
     return flat_out(get_flat(db, flat_id))
 
 
+@app.patch("/flats/{flat_id}/costs/{cost_id}")
+def update_cost(flat_id: int, cost_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Úprava měsíční platby, kterou platíte vy (název a částka)."""
+    c = db.get(m.FlatCost, cost_id)
+    if c is None or c.flat_id != flat_id:
+        raise HTTPException(404, "Položka nenalezena")
+    if str(body.get("name") or "").strip():
+        c.name = str(body["name"]).strip()[:200]
+    if body.get("amount") is not None:
+        c.amount = money(body["amount"])
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
+
+
+@app.patch("/leases/{lease_id}")
+def update_lease_items(lease_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Úprava nájmu a záloh, které platí nájemník: nájem a celý seznam záloh (název a částka)."""
+    lease = db.get(m.Lease, lease_id)
+    if lease is None:
+        raise HTTPException(404, "Předpis nenalezen")
+    if body.get("rent") is not None:
+        lease.rent = money(body["rent"])
+    if isinstance(body.get("advances"), dict):
+        lease.advances = [m.Advance(name=str(k).strip()[:200], amount=money(v))
+                          for k, v in body["advances"].items() if str(k).strip()]
+    db.commit()
+    return lease_out(lease)
+
+
 @app.post("/flats/{flat_id}/generated-documents", status_code=201)
 def save_generated_document(flat_id: int, body: s.GeneratedDocIn, db: Session = Depends(get_db)):
     """Uloží vygenerovanou smlouvu nebo dodatek jako Word dokument u bytu."""
