@@ -1585,6 +1585,25 @@ def set_vs(flat_id: int, body: s.VsIn, db: Session = Depends(get_db)):
     return {"vs": vs}
 
 
+@app.get("/overview")
+def overview(year: int | None = None, db: Session = Depends(get_db)):
+    """Přehled za kalendářní rok: příjmy (přijaté platby přiřazené bytům), výdaje (náklady SVJ) a zisk, po bytech."""
+    y = year or date.today().year
+    years = {d.year for d in db.scalars(select(m.BankTx.date).distinct()).all()}
+    years |= {d for d in db.scalars(select(m.Document.year).where(m.Document.year.is_not(None)).distinct()).all()}
+    years.add(y)
+    rows, inc, exp = [], 0.0, 0.0
+    for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
+        res = stl.compute(db, f, y)
+        r, c = float(res["received"]), float(res["landlord_cost"])
+        inc += r
+        exp += c
+        rows.append({"id": f.id, "addr": f.addr, "tenant": f.tenant_name, "received": r,
+                     "landlord_cost": c, "profit": round(r - c, 2)})
+    return {"year": y, "years": sorted(years, reverse=True), "income": round(inc, 2),
+            "expenses": round(exp, 2), "profit": round(inc - exp, 2), "flats": rows}
+
+
 @app.get("/economics")
 def economics(months: int = 6, db: Session = Depends(get_db)):
     """Očekávané a přijaté platby po měsících, za každý byt zvlášť, a platby, které zatím nejsou přiřazené."""

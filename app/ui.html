@@ -120,6 +120,36 @@ nav button.theme{margin-top:auto;font-size:13px;color:var(--mut)}
 .docItem:last-child{border-bottom:0}
 .docItem .t{font-weight:600;line-height:1.35}
 .docItem .acts{display:flex;gap:12px;flex-shrink:0;padding-top:2px}
+
+/* ---- nový vzhled: tmavý, podsvícené panely; světlý režim přes přepínač ---- */
+:root:not([data-theme="light"]){--paper:#070B1A;--card:rgba(22,28,58,.72);--ink:#E8ECFF;--mut:#8C97C4;--line:rgba(139,124,255,.22);--acc:#8B7CFF;--onacc:#0A0B1F;--ok:#5EEAD4;--okB:rgba(94,234,212,.14);--warn:#FCD34D;--warnB:rgba(252,211,77,.14);--bad:#FB7185;--badB:rgba(251,113,133,.16);--glow:0 0 0 1px rgba(139,124,255,.18),0 14px 40px -16px rgba(139,124,255,.55)}
+:root[data-theme="light"]{--paper:#F4F6FC;--card:#FFFFFF;--ink:#171A33;--mut:#5C6494;--line:#DDE2F3;--acc:#5B4BE0;--onacc:#FFFFFF;--ok:#0F766E;--okB:#D7F5EF;--warn:#92400E;--warnB:#FEF3C7;--bad:#B91C1C;--badB:#FEE2E2;--glow:0 6px 24px -14px rgba(91,75,224,.35)}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:radial-gradient(1100px 620px at 8% -12%,rgba(139,124,255,.22),transparent 60%),radial-gradient(900px 520px at 108% 8%,rgba(34,211,238,.13),transparent 60%),var(--paper);min-height:100vh}
+h1,h2,h3{font-family:inherit}
+h1{font-size:30px;font-weight:700;letter-spacing:-.02em}
+h2{font-size:17px;font-weight:600;letter-spacing:-.005em;margin:28px 0 12px;text-transform:none}
+main{max-width:1180px}
+.card,.stat,.flatTile,.kpi,.tile{background:var(--card);border:1px solid var(--line);box-shadow:var(--glow);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.card{border-radius:18px}
+.btn{border-radius:12px;box-shadow:0 8px 24px -10px var(--acc)}
+.kpiRow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 6px}
+.kpi{border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
+.kpi:before{content:"";position:absolute;inset:auto -30% -60% auto;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,var(--acc),transparent 70%);opacity:.28;pointer-events:none}
+.kpi span{font-size:13px;color:var(--mut)}
+.kpi b{font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi small{font-size:12px;color:var(--mut)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.tile{border-radius:16px;padding:14px 16px;text-align:left;color:var(--ink);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-height:92px;transition:transform .15s,box-shadow .2s}
+.tile:hover{transform:translateY(-2px);box-shadow:0 0 0 1px var(--acc),0 18px 40px -14px var(--acc)}
+.tile span{font-size:14px;font-weight:600;line-height:1.25}
+.tile b{font-size:22px;font-variant-numeric:tabular-nums}
+.tile small{color:var(--mut);font-size:12px}
+.chips .chip{border-radius:99px}
+nav{background:rgba(12,16,38,.7);backdrop-filter:blur(12px);border-right:1px solid var(--line)}
+nav button{border-radius:14px}
+select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;margin-top:4px}
+.filterBar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:8px 0 12px}
+.filterBar label{margin-top:0}
 </style>
 </head>
 <body>
@@ -183,7 +213,7 @@ function toFlat(f){
 }
 async function reload(){
  const [flats,versions,docs,econ]=await Promise.all([api('/flats'),api('/versions'),api('/documents'),api('/economics?months=6')]);
- S.econ=econ;
+ S.econ=econ;S.ov=null;
  S.flats=flats.map(toFlat);
  S.docs=docs;
  S.versions=versions.map(v=>({id:v.id,flat:v.flat_id,name:v.name,action:v.action,old:v.old,new:v.new,
@@ -201,7 +231,7 @@ function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)
 function render(){
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab();
+ m.innerHTML=(V.tab==='flat'&&V.flat?flatTiles(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
 }
 
 // ---------- přehled ----------
@@ -226,32 +256,35 @@ function homeStats(){
  return {inc,svj,net:inc-svj};
 }
 function home(){
- const debts=S.flats.map(f=>{const y=years(f)[0];return y?{f,y,b:bal(f.years[y])}:null}).filter(x=>x&&x.b<0);
+ const y=V.homeYear||TODAY.getFullYear();
+ if(!S.ov||S.ov.year!==y){loadOverview(y);return `<div class="mut">Načítám přehled…</div>`}
+ const ov=S.ov, ovFlat=Object.fromEntries(ov.flats.map(r=>[r.id,r]));
+ const debts=S.flats.map(f=>{const yy=years(f)[0];return yy?{f,y:yy,b:bal(f.years[yy])}:null}).filter(x=>x&&x.b<0);
  const notes=notesFor();
- const st=homeStats();
- const flatRows=S.flats.map(f=>{
-  const l=f.leases[f.leases.length-1];
-  const exp=l&&l.to&&new Date(l.to)<TODAY;
-  const tag=!l?'<span class="tag warn">Bez předpisu</span>':exp?'<span class="tag warn">Smlouva skončila</span>':'<span class="tag ok">Obsazený</span>';
-  return `<div class="flatRow" onclick="openFlat(${f.id})"><div><b>${esc(f.addr)}</b><div class="mut small">${esc(f.tenant.name)||'Bez nájemníka'}</div></div>${tag}</div>`;
- }).join('');
- return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div></div>
- <div class="btns" style="margin:0 0 12px"><button class="btn" onclick="tenantNew()">+ Nový nájemník (doklad)</button></div>
- <div class="statGrid">
-  <div class="stat"><span>Bytů</span><b>${S.flats.length}</b></div>
-  <div class="stat"><span>Vybírám měsíčně</span><b>${kc(st.inc)}</b></div>
-  <div class="stat"><span>Platím SVJ</span><b>${kc(st.svj)}</b></div>
-  <div class="stat"><span>Čistý příjem</span><b class="${st.net<0?'bad':'ok'}">${kc(st.net)}</b></div>
+ const chips=ov.years.map(v=>`<button class="chip ${v===y?'on':''}" onclick="setHomeYear(${v})">${v}</button>`).join('');
+ const tiles=S.flats.map(f=>{const r=ovFlat[f.id]||{};return `<button class="tile" onclick="openFlat(${f.id})"><span>${esc(f.addr)}</span><small>${esc(f.tenant.name)||'Bez nájemníka'}</small><b class="${(r.profit||0)<0?'bad':'ok'}">${kc(r.profit||0)}</b></button>`}).join('');
+ return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div><div class="chips" style="margin:0">${chips}</div></div>
+ <div class="kpiRow">
+  <div class="kpi"><span>Příjmy ${y}</span><b>${kc(ov.income)}</b><small>přijaté platby přiřazené bytům</small></div>
+  <div class="kpi"><span>Výdaje ${y}</span><b>${kc(ov.expenses)}</b><small>náklady SVJ za rok</small></div>
+  <div class="kpi"><span>Zisk ${y}</span><b class="${ov.profit<0?'bad':'ok'}">${kc(ov.profit)}</b><small>příjmy minus výdaje</small></div>
  </div>
  ${portWidget()}
- <h2>K řešení</h2>
- ${debts.map(d=>`<div class="card item row" onclick="openFlat(${d.f.id})"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div>`).join('')||'<div class="card mut">Nic nečeká.</div>'}
- <h2>Oznámení</h2>
- ${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')||'<div class="card mut">Žádná oznámení.</div>'}
  ${newsBlock()}
  <h2>Byty</h2>
- <div class="card listCard">${flatRows||'<div class="mut">Zatím žádné byty.</div>'}</div>
- <div class="btns"><button class="btn" onclick="flatForm()">+ Přidat byt</button><button class="btn sec" onclick="exportBackup()">Stáhnout zálohu</button></div>`;
+ <div class="tiles">${tiles||'<div class="mut">Zatím žádné byty.</div>'}</div>
+ <div class="btns"><button class="btn" onclick="tenantNew()">+ Nový nájemník (doklad)</button><button class="btn sec" onclick="flatForm()">+ Přidat byt</button><button class="btn sec" onclick="exportBackup()">Stáhnout zálohu</button></div>
+ ${debts.length?`<h2>K řešení</h2>${debts.map(d=>`<div class="card item row" onclick="openFlat(${d.f.id})"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div>`).join('')}`:''}
+ ${notes.length?`<h2>Oznámení</h2>${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')}`:''}
+ `;
+}
+let OV_LOADING=null;
+function setHomeYear(y){V.homeYear=y;S.ov=null;render()}
+function loadOverview(y){
+ if(OV_LOADING===y)return;
+ OV_LOADING=y;
+ api(`/overview?year=${y}`).then(r=>{S.ov=r;OV_LOADING=null;render()}).catch(e=>{
+  OV_LOADING=null;S.ov={year:y,years:[y],income:0,expenses:0,profit:0,flats:[]};toast(e.message);render()});
 }
 
 // ---------- byty ----------
@@ -261,6 +294,19 @@ function flatsList(){
  (tiles?`<div class="flatGrid">${tiles}</div>`:'<div class="card mut">Zatím žádné byty.</div>');
 }
 
+function flatTiles(fid){
+ const docs=S.docs.filter(d=>String(d.flat_id)===String(fid)&&d.status==='zarazeno');
+ const cnt=t=>docs.filter(d=>t.includes(d.doc_type)).length;
+ const T=[
+  ['Všechny dokumenty',null,docs.length,'Vše, co patří k bytu'],
+  ['Smlouvy a dodatky',['smlouva','dodatek'],cnt(['smlouva','dodatek']),'Nájemní smlouvy'],
+  ['Předávací protokoly',['protokol'],cnt(['protokol']),'Stavy měřidel při předání'],
+  ['Fotky měřidel',['foto_meridla'],cnt(['foto_meridla']),'Archiv podle data a místnosti'],
+  ['Vyúčtování SVJ',['vyuctovani_svj','vyuctovani_spravy'],cnt(['vyuctovani_svj','vyuctovani_spravy']),'Od SVJ a správy'],
+  ['Vyúčtování nájemníkovi',['vyuctovani_najemnikovi'],cnt(['vyuctovani_najemnikovi']),'Pro nájemce'],
+  ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
+ return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports({flat:${fid},types:${JSON.stringify(types)},label:${JSON.stringify(n)}})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
+}
 function flatDetail(){
  const f=flat(V.flat);if(!f){go('flats');return ''}
  const l=f.leases[f.leases.length-1];
@@ -1675,7 +1721,6 @@ function docGroups(list,emptyText){
 }
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status==='ke_kontrole');
- const filed=S.docs.filter(d=>d.status==='zarazeno');
  const pend=pendingBanner(pendingGroups('all'));
  return `<div class="row"><h1>Dokumenty</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
  <p class="mut small">Hotové PDF nebo fotky jednotlivých dokumentů nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
@@ -1690,8 +1735,56 @@ function docsTab(){
   <div id="up" class="small mut" style="margin-top:8px"></div>
  </div>
  ${pend}
- <h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')||'<div class="card mut">Nic nečeká.</div>'}
- <h2>Zařazeno</h2>${docGroups(filed,'Zatím nic.')}`;
+ ${inbox.length?`<h2>Ke kontrole (${inbox.length})</h2>${inbox.map(inboxCard).join('')}`:''}
+ <h2>Přehled a třídění</h2>
+ ${reportsHtml()}`;
+}
+function openReports(o){
+ V.tab='docs';V.flat=null;
+ V.rf={year:'all',flat:o.flat??'all',tenant:'all',types:o.types??null,label:o.label||'',group:'flat'};
+ render();window.scrollTo(0,0);
+}
+function rfSet(k,v){
+ V.rf=V.rf||{year:'all',flat:'all',tenant:'all',types:null,label:'',group:'flat'};
+ V.rf[k]=v;
+ if(k==='type'){V.rf.types=v==='all'?null:[v];V.rf.label=''}
+ render();
+}
+function rfReset(){V.rf={year:'all',flat:'all',tenant:'all',types:null,label:'',group:V.rf?.group||'flat'};render()}
+function reportsHtml(){
+ const rf=V.rf||{year:'all',flat:'all',tenant:'all',types:null,label:'',group:'flat'};
+ const docs=S.docs.filter(d=>d.status==='zarazeno');
+ const years=[...new Set(docs.map(d=>d.year).filter(Boolean))].sort((a,b)=>b-a);
+ const tenants=[...new Set(S.flats.map(f=>f.tenant.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'cs'));
+ let list=docs;
+ if(rf.year!=='all')list=list.filter(d=>String(d.year)===String(rf.year));
+ if(rf.flat!=='all')list=list.filter(d=>String(d.flat_id)===String(rf.flat));
+ if(rf.tenant!=='all')list=list.filter(d=>(flat(d.flat_id)||{}).tenant?.name===rf.tenant);
+ if(rf.types)list=list.filter(d=>rf.types.includes(d.doc_type));
+ const keyOf=d=>{const f=flat(d.flat_id)||{};
+  if(rf.group==='year')return String(d.year||'bez roku');
+  if(rf.group==='tenant')return (f.tenant&&f.tenant.name)||'bez nájemníka';
+  if(rf.group==='type')return DOC_TYPES[d.doc_type]||d.doc_type;
+  return f.addr||'bez bytu'};
+ const groups={};list.forEach(d=>{const k=keyOf(d);(groups[k]=groups[k]||[]).push(d)});
+ const keys=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'cs',{numeric:true}));
+ const opt=(v,l,cur)=>`<option value="${esc(v)}" ${String(v)===String(cur)?'selected':''}>${esc(l)}</option>`;
+ const typeOpts=[opt('all','Všechny typy','all')]
+   .concat(rf.types&&rf.types.length>1?[opt('multi',rf.label||'Vybraná skupina',rf.types.join(','))]:[])
+   .concat(Object.entries(DOC_TYPES).map(([k,v])=>opt(k,v,rf.types&&rf.types.length===1?rf.types[0]:'all')));
+ const groupName={flat:'Byt',year:'Rok',tenant:'Nájemník',type:'Typ'}[rf.group]||'Byt';
+ const summary=keys.length?`<div class="card" style="padding:4px 16px"><table><thead><tr><th>${groupName}</th><th class="r">Dokumentů</th><th class="r">Poslední</th></tr></thead><tbody>${keys.map(k=>{const g=groups[k];const last=g.map(d=>d.year).filter(Boolean).sort().pop()||'—';return `<tr><td><a href="#" class="link" onclick="document.getElementById('grp${keys.indexOf(k)}').open=true;return false">${esc(k)}</a></td><td class="r">${g.length}</td><td class="r">${last}</td></tr>`}).join('')}</tbody></table></div>`:'';
+ const body=keys.map((k,i)=>`<details class="docGroup" id="grp${i}" ${keys.length<=2?'open':''}><summary><b>${esc(k)}</b> <span class="mut small">(${groups[k].length})</span></summary>${docGroups(groups[k],'Nic.')}</details>`).join('');
+ return `<div class="filterBar">
+  <div><label>Rok</label><select onchange="rfSet('year',this.value)">${opt('all','Všechny roky','all')}${years.map(y=>opt(y,y,rf.year)).join('')}</select></div>
+  <div><label>Byt</label><select onchange="rfSet('flat',this.value)">${opt('all','Všechny byty','all')}${S.flats.map(f=>opt(f.id,f.addr,rf.flat)).join('')}</select></div>
+  <div><label>Nájemník</label><select onchange="rfSet('tenant',this.value)">${opt('all','Všichni nájemníci','all')}${tenants.map(t=>opt(t,t,rf.tenant)).join('')}</select></div>
+  <div><label>Typ</label><select onchange="rfSet('type',this.value)">${typeOpts.join('')}</select></div>
+  <div><label>Seskupit podle</label><select onchange="rfSet('group',this.value)">${opt('flat','Byt','flat')}${opt('year','Rok','year')}${opt('tenant','Nájemník','tenant')}${opt('type','Typ','type')}</select></div>
+ </div>
+ <div class="row small mut" style="margin-bottom:8px"><span>Nalezeno ${list.length} dokumentů</span><button class="link small" onclick="rfReset()">Zrušit filtr</button></div>
+ ${summary}
+ ${body||'<div class="card mut">Žádné dokumenty pro tento výběr.</div>'}`;
 }
 // Velké fotky zmenšíme, ať se rychleji nahrají a levněji přečtou
 async function shrink(file){
@@ -1918,7 +2011,7 @@ async function deleteDoc(id){
 }
 
 // ---------- režim zobrazení ----------
-function currentTheme(){return document.documentElement.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+function currentTheme(){return document.documentElement.dataset.theme||'dark'}
 function updateThemeBtn(){const b=$('#themeBtn');if(b)b.textContent=currentTheme()==='dark'?'☀ Světlý režim':'☾ Noční režim'}
 function toggleTheme(){
  const next=currentTheme()==='dark'?'light':'dark';
