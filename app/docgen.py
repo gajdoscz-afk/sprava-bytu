@@ -122,4 +122,12 @@ def settlement_landlord_docx(flat, res: dict) -> bytes:
                  money(res["landlord_balance"]), ""])
     _table(d, ["Položka", "Náklad", "Zaplaceno", "Rozdíl", "Do nájemníka"], rows, money_cols=(1, 2, 3))
     d.add_paragraph("Zálohy SVJ jsou podle položek z vyúčtování SVJ. Platby nájemníka se v tomto přehledu nepoužívají.")
+    d.add_heading("Kontrola: zálohy SVJ podle vašich předpisů", level=2)
+    months = res.get("svj_predpis_by_month") or {}
+    names = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"]
+    rows = [[names[int(k) - 1], money(v)] for k, v in sorted(months.items(), key=lambda kv: int(kv[0]))]
+    rows.append(["Celkem podle předpisů", money(res.get("svj_predpis_total", 0))])
+    rows.append(["Zaplaceno podle vyúčtování SVJ", money(res["landlord_paid"])])
+    rows.append(["Rozdíl (předpisy − vyúčtování SVJ)", money(res.get("svj_predpis_total", 0) - res["landlord_paid"])])
+    _table(d, ["Měsíc / součet", "Částka"], rows, money_cols=(1,))
     return _save(d)
