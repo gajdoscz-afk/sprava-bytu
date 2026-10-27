@@ -523,6 +523,7 @@ def flat_out(f: m.Flat) -> dict:
         "leases": [lease_out(l) for l in f.leases],
         "statements": [statement_out(st) for st in f.statements],
         "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None} for c in f.costs if _cost_active(c, date.today())],
+        "svj_all": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None, "valid_to": c.valid_to.isoformat() if c.valid_to else None} for c in f.costs],
         "acquisition": (
             {"acquired_on": f.acquisition.acquired_on.isoformat() if f.acquisition.acquired_on else None,
              "price": float(f.acquisition.price) if f.acquisition.price is not None else None,
@@ -943,21 +944,12 @@ def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(g
                              action=f"změna od {eff.isoformat()}", old=old, new=new))
     if isinstance(body.get("costs"), list):
         old, new = {}, {}
-        wanted = {}
+        items = []
         for w in body["costs"]:
             name = str(w.get("name") or "").strip()[:200]
             if name:
-                wanted[name] = money(w.get("amount") or 0)
-        active = [c for c in f.costs if _cost_active(c, eff)]
-        for c in active:
-            if c.name not in wanted:
-                old[c.name] = float(c.amount)
-                if c.valid_from is None or eff > c.valid_from:
-                    c.valid_to = eff - timedelta(days=1)
-                else:
-                    db.delete(c)
-        for name, val in wanted.items():
-            _set_cost_from(db, f, name, val, eff, old, new)
+                items.append((name, money(w.get("amount") or 0)))
+        replace_svj_set(db, f, items, eff, old, new)
         if old or new:
             db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                              old=old or None, new=new or None))
@@ -1527,37 +1519,72 @@ def rematch_all(db: Session) -> None:
 SVJ_COSTS = {"svj_services": "Služby SVJ (měsíční záloha)", "svj_admin": "Příspěvek SVJ na správu domu a pozemku"}
 
 
+def _ckey(name: str) -> str:
+    """Klíč položky pro porovnání: bez mezer a velkých písmen (různá čtení se liší v mezerách)."""
+    return re.sub(r"\s+", "", name).upper()
+
+
+def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict) -> None:
+    """Celý předpis SVJ nahradí novým od data eff. Položky, které v novém nejsou, se ukončí; starý předpis
+    zůstane v historii (valid_to), aby šel použít pro vyúčtování dřívějšího období."""
+    wanted = {}
+    for name, amt in items:
+        wanted[_ckey(name)] = (name, amt)
+    seen = set()
+    for c in [c for c in f.costs if _cost_active(c, eff)]:
+        k = _ckey(c.name)
+        if k in wanted:
+            seen.add(k)
+            name, amt = wanted[k]
+            if c.amount == amt and c.name == name:
+                continue
+            if c.valid_from is None or eff > c.valid_from:
+                old[c.name] = float(c.amount)
+                c.valid_to = eff - timedelta(days=1)
+                db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff))
+                new[name] = float(amt)
+            else:  # oprava hned od začátku platnosti
+                old[c.name] = float(c.amount)
+                c.name, c.amount = name, amt
+                new[name] = float(amt)
+        else:
+            old[c.name] = float(c.amount)
+            if c.valid_from is None or eff > c.valid_from:
+                c.valid_to = eff - timedelta(days=1)
+            else:
+                db.delete(c)
+    for k, (name, amt) in wanted.items():
+        if k not in seen:
+            db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff))
+            new[name] = float(amt)
+
+
 def sync_svj_costs(db: Session, d: m.Document) -> None:
-    """Z předpisu SVJ doplní nebo přepíše všechny položky v části „Co platím SVJ“. Změnu zapíše do historie."""
+    """Z předpisu SVJ nahradí celý rozpis „Co platím SVJ“ od data dokumentu (nebo dnes). Opakované čtení nic nezdvojí."""
     if d.flat_id is None or d.doc_type != "predpis_svj":
         return
     ex = d.extracted or {}
     f = db.get(m.Flat, d.flat_id)
-    items: dict[str, Decimal] = {}
+    items: list = []
     for it in ex.get("svj_items") or []:
         if not isinstance(it, dict):
             continue
         val = _dec(it.get("amount"))
         name = str(it.get("name") or "").strip()[:200]
         if name and val is not None and val > 0:
-            items[name] = val
+            items.append((name, val))
     if not items:  # starší čtení: jen dvě souhrnné částky
         for key, name in SVJ_COSTS.items():
             val = _dec(ex.get(key))
             if val is not None and val > 0:
-                items[name] = val
+                items.append((name, val))
+    if not items:
+        return
+    eff = d.valid_from or date.today()
     old, new = {}, {}
-    today = date.today()
-    for c in list(f.costs):  # dřívější souhrnné položky z dokumentu nahradí nové položky
-        if c.name in SVJ_COSTS.values() and c.name not in items and _cost_active(c, today):
-            old[c.name] = float(c.amount)
-            c.valid_to = today - timedelta(days=1) if (c.valid_from and c.valid_from < today) else None
-            if c.valid_to is None:
-                db.delete(c)
-    for name, val in items.items():
-        _set_cost_from(db, f, name, val, today, old, new)
+    replace_svj_set(db, f, items, eff, old, new)
     if new or old:
-        db.add(m.Version(flat_id=f.id, name="Platby SVJ", action="přepsáno z dokumentu",
+        db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                          old=old or None, new={**new, "doc_id": d.id}))
 
 
