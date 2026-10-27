@@ -20,6 +20,7 @@ class FlatIn(BaseModel):
     owner: str = ""
     bank_acc: str = ""
     area_m2: Decimal | None = Field(default=None, ge=0)
+    color: str | None = Field(default=None, max_length=16)
     tenant: TenantIn = TenantIn()
 
 

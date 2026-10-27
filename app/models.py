@@ -16,6 +16,7 @@ class Flat(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     addr: Mapped[str] = mapped_column(String(200))
+    color: Mapped[str | None] = mapped_column(String(16), nullable=True)  # barva dlaždice (hex), None = automaticky
     dispo: Mapped[str] = mapped_column(String(20), default="")
     floor: Mapped[str] = mapped_column(String(20), default="")
     zip: Mapped[str] = mapped_column(String(120), default="")

@@ -91,6 +91,7 @@ async def lifespan(_app: FastAPI):
     Base.metadata.create_all(engine)
     with engine.begin() as conn:  # create_all nové sloupce do existujících tabulek nepřidá
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS area_m2 NUMERIC(8,2)"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS color VARCHAR(16)"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS valuation_radius_km DOUBLE PRECISION NOT NULL DEFAULT 1.0"))
@@ -510,6 +511,7 @@ def flat_out(f: m.Flat) -> dict:
     return {
         "id": f.id,
         "addr": f.addr,
+        "color": f.color,
         "dispo": f.dispo,
         "floor": f.floor,
         "zip": f.zip,
@@ -539,6 +541,8 @@ DATED_ATTRS = ("dispo", "floor", "zip", "area_m2", "tenant_name", "tenant_email"
 
 
 def apply_flat(f: m.Flat, data: s.FlatIn) -> None:
+    if data.color and re.fullmatch(r"#[0-9A-Fa-f]{6}", data.color):
+        f.color = data.color.upper()
     if (f.addr, f.zip) != (data.addr, data.zip):
         f.lat = f.lon = None  # změnila se adresa, souřadnice se zjistí znovu
     f.addr = data.addr
