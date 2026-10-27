@@ -246,11 +246,16 @@ def portfolio_values(db: Session) -> list[dict]:
     """Hodnota každého bytu = poslední zadaná nebo odhadnutá hodnota. Odhad z nabídek je uveden zvlášť pro porovnání."""
     sales = db.scalars(select(m.Listing).where(m.Listing.kind == "sale")).all()
     latest = latest_flat_values(db)
+    pending = {sg.flat_id: sg for sg in db.scalars(
+        select(m.ValueSuggestion).where(m.ValueSuggestion.status == "čeká")).all()}
     rows = []
     for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
         est = gx.valuation(f.lat, f.lon, f.dispo, f.area_m2, f.valuation_radius_km or gx.DEFAULT_RADIUS_KM, sales)
         e = latest.get(f.id)
+        sg = pending.get(f.id)
         rows.append({
+            "suggestion": {"id": sg.id, "amount": float(sg.amount), "basis": sg.basis, "n": sg.n,
+                           "created_at": sg.created_at.isoformat()} if sg else None,
             "id": f.id, "addr": f.addr,
             "value": float(e.amount) if e else None,
             "source": e.source if e else None,
@@ -317,19 +322,27 @@ def geo_later() -> None:
 
 
 def snapshot_portfolio_now() -> None:
-    """Zapíše aktuální odhad z nabídek jako hodnotu každého bytu k dnešku. Ruční zápis ze stejného dne má přednost."""
+    """Porovná odhad z nabídek s potvrzenou hodnotou bytu. Při větší změně vytvoří návrh, hodnotu nemění."""
     with Session(engine) as db:
-        today = today_prague()
+        latest = latest_flat_values(db)
         for r in portfolio_values(db):
             if r["estimate"] is None:
                 continue
-            amount = Decimal(str(round(r["estimate"], 2)))
-            row = db.scalar(select(m.FlatValue).where(
-                m.FlatValue.flat_id == r["id"], m.FlatValue.on_date == today, m.FlatValue.source == "odhad"))
-            if row:
-                row.amount = amount
+            est = Decimal(str(round(r["estimate"], 2)))
+            cur = latest.get(r["id"])
+            pending = db.scalar(select(m.ValueSuggestion).where(
+                m.ValueSuggestion.flat_id == r["id"], m.ValueSuggestion.status == "čeká"))
+            # změna do 3 % se nenavrhuje; bez potvrzené hodnoty se navrhne vždy
+            small = cur is not None and cur.amount and abs(est - cur.amount) / cur.amount < Decimal("0.03")
+            if small:
+                if pending:
+                    db.delete(pending)
+                continue
+            if pending:
+                pending.amount, pending.basis, pending.n = est, r["basis"], r["n"]
+                pending.created_at = datetime.now(timezone.utc)
             else:
-                db.add(m.FlatValue(flat_id=r["id"], on_date=today, amount=amount, source="odhad"))
+                db.add(m.ValueSuggestion(flat_id=r["id"], amount=est, basis=r["basis"], n=r["n"]))
         db.commit()
 
 
@@ -667,6 +680,7 @@ def portfolio(db: Session = Depends(get_db)):
         "flats_count": len(rows),
         "without_value": sum(1 for r in rows if r["value"] is None),
         "stale_count": sum(1 for r in rows if r.get("stale")),
+        "suggestion_count": sum(1 for r in rows if r.get("suggestion")),
         "change_1m": round(total - base_total) if base_total else None,
         "change_1m_pct": bm.growth_pct(total, base_total),
         "base_date": base["date"] if base else None,
@@ -707,6 +721,35 @@ def add_flat_value(flat_id: int, body: dict = Body(...), db: Session = Depends(g
         row.amount, row.note = amount, note
     else:
         db.add(m.FlatValue(flat_id=flat_id, on_date=on, amount=amount, source="ručně", note=note))
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/value-suggestions/{sug_id}/accept")
+def accept_value_suggestion(sug_id: int, db: Session = Depends(get_db)):
+    """Potvrdí návrh z trhu: stane se z něj ruční hodnota bytu k dnešku."""
+    sg = db.get(m.ValueSuggestion, sug_id)
+    if not sg or sg.status != "čeká":
+        raise HTTPException(404, "Návrh už neexistuje.")
+    today = today_prague()
+    row = db.scalar(select(m.FlatValue).where(
+        m.FlatValue.flat_id == sg.flat_id, m.FlatValue.on_date == today, m.FlatValue.source == "ručně"))
+    note = f"potvrzeno z trhu ({sg.n} nabídek)" if sg.n else "potvrzeno z trhu"
+    if row:
+        row.amount, row.note = sg.amount, note
+    else:
+        db.add(m.FlatValue(flat_id=sg.flat_id, on_date=today, amount=sg.amount, source="ručně", note=note))
+    sg.status = "potvrzeno"
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/value-suggestions/{sug_id}/dismiss")
+def dismiss_value_suggestion(sug_id: int, db: Session = Depends(get_db)):
+    sg = db.get(m.ValueSuggestion, sug_id)
+    if not sg or sg.status != "čeká":
+        raise HTTPException(404, "Návrh už neexistuje.")
+    sg.status = "zamítnuto"
     db.commit()
     return {"ok": True}
 

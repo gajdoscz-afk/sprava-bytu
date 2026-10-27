@@ -1742,8 +1742,9 @@ function valDetails(P){
  const rows=P.flats.map(f=>{
   const opts=[0.5,1,2,3,5,10].map(r=>`<option value="${r}" ${Math.abs(f.radius_km-r)<0.001?'selected':''}>${String(r).replace('.',',')} km</option>`).join('');
   const val=f.value!=null?`Hodnota ${kc(f.value)} (${f.source==='ručně'?'ručně zadaná':'odhad'} k ${dmy(f.value_date)})`:'Bez hodnoty';
+  const sg=f.suggestion?`<div class="card" style="margin:8px 0 0;border-color:rgba(245,158,11,.6);box-shadow:0 0 22px -6px rgba(245,158,11,.5)"><div class="small"><b>Trh navrhuje ${kc(f.suggestion.amount)}</b>${f.value!=null?` (${f.suggestion.amount>=f.value?'+':''}${String(Math.round((f.suggestion.amount/f.value-1)*1000)/10).replace('.',',')} % oproti aktuální hodnotě)`:''}<div class="mut">${esc(f.suggestion.basis||'')} · ${f.suggestion.n} nabídek</div></div><div class="btns" style="margin:8px 0 0"><button class="btn sm" onclick="suggestionAct(${f.suggestion.id},'accept')">Potvrdit</button><button class="btn sm sec" onclick="suggestionAct(${f.suggestion.id},'dismiss')">Zamítnout</button></div></div>`:'';
   const est=f.estimate!=null?`odhad z nabídek ${kc(f.estimate)} · spolehlivost ${esc(f.confidence)} · ${f.n} nabídek · ${esc(f.basis)}`:esc(f.reason);
-  const head=`<div class="row"><div><b>${esc(f.addr)}</b><div class="small mut">${val}<br>${est}</div></div>
+  const head=`<div class="row"><div style="min-width:0;flex:1"><b>${esc(f.addr)}</b><div class="small mut">${val}<br>${est}</div>${sg}</div>
    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" onclick="valueModal(${f.id})">+ Zadat hodnotu</button><label class="small mut">okruh <select onchange="setRadius(${f.id},this.value)">${opts}</select></label></div></div>`;
   const comps=(f.comps||[]).map(c=>`<div class="line small"><span><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title||c.url)}</a><span class="mut"> · ${c.area_m2!=null?String(c.area_m2).replace('.',',')+' m² · ':''}${String(c.dist_km).replace('.',',')} km</span></span><span>${kc(c.price)}</span></div>`).join('');
   return `<div class="card">${head}${comps?`<div style="margin-top:8px">${comps}</div>`:''}</div>`;
@@ -1754,6 +1755,14 @@ function valDetails(P){
 async function setRadius(id,v){
  try{ await api(`/flats/${id}/valuation`,'PUT',{radius_km:parseFloat(v)}); await loadPortfolio(); render() }
  catch(e){ toast(e.message) }
+}
+// Návrh z trhu: člověk ho potvrdí nebo zamítne. Hodnota bytu se nemění sama.
+async function suggestionAct(id,action){
+ try{
+  await api(`/value-suggestions/${id}/${action}`,'POST');
+  toast(action==='accept'?'Hodnota potvrzena':'Návrh zamítnut');
+  PORT=null; await loadPortfolio(); render();
+ }catch(e){ toast(e.message) }
 }
 // Ruční hodnota bytu k datu: zadání, seznam dřívějších zápisů a jejich smazání
 async function valueModal(fid){
@@ -1790,9 +1799,10 @@ function valueTab(){
   const h=f.value!=null?Math.max(8,Math.round(f.value/max*190)):0;
   const chg=f.change!=null?`<div class="vchg" style="color:${f.change>=0?'var(--ok)':'var(--bad)'}">${arrow(f.change)} ${kc(Math.abs(f.change))} za měsíc</div>`:'';
   const src=f.value!=null?`<div class="vchg mut">${f.source==='ručně'?'ručně':'odhad'} · ${dmy(f.value_date)}</div>`:'';
+  const sgBadge=f.suggestion?`<div class="vchg" style="color:#F59E0B;font-weight:600">● návrh z trhu ${kc(f.suggestion.amount)}</div>`:'';
   const old=f.stale?`<div class="vchg" style="color:var(--warn,#F59E0B);font-weight:600">⚠ aktualizovat (starší než měsíc)</div>`:'';
   return `<div class="vcol" style="cursor:pointer" onclick="valueModal(${f.id})" title="Kliknutím zadáte hodnotu k datu${f.basis?' · '+esc(f.basis):''}">
-   <div class="vval">${f.value!=null?kc(f.value):'bez hodnoty'}</div>${src}${old}${chg}
+   <div class="vval">${f.value!=null?kc(f.value):'bez hodnoty'}</div>${src}${sgBadge}${old}${chg}
    <div class="vbar${f.value==null?' none':''}" style="height:${h}px"></div>
    <div class="vname">${esc(f.addr)}</div></div>`;
  }).join('');
@@ -1800,10 +1810,11 @@ function valueTab(){
  const hist=P.history.slice(-12).reverse().map(h=>`<div class="line"><span class="mut small">${dmy(h.date)}</span><span>${kc(h.total)}</span></div>`).join('');
  return `<div class="row"><h1>Portfolio</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="refreshAllBench()" ${REF.running?'disabled':''}>↻ Aktualizovat hodnoty</button></div></div>
  <div id="benchStatus" class="bstat">${refreshLine()}</div>
- <p class="mut small">Hodnota každého bytu je poslední zadaná nebo odhadnutá k danému dni. Kliknutím na byt zadáte hodnotu k datu. Odhad vychází z podobných nabídek prodeje v okruhu kolem adresy.</p>
+ <p class="mut small">Hodnotu bytu zadáváte vy. Když trh ukáže výraznou změnu (víc než 3 %), objeví se návrh, který potvrdíte nebo zamítnete. Odhad vychází z podobných nabídek prodeje v okruhu kolem adresy.</p>
  <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
  <div class="pwidget fixed">
   <div class="pl">Aktuální hodnota portfolia</div>
+  ${P.suggestion_count?`<div class="pc" style="color:#F59E0B;margin-bottom:4px">● ${P.suggestion_count} ${P.suggestion_count===1?'návrh čeká':'návrhy čekají'} na potvrzení níže</div>`:''}
   ${P.stale_count?`<div class="pc" style="color:var(--warn,#F59E0B);margin-bottom:4px">⚠ ${P.stale_count} ${P.stale_count===1?'byt má':'bytů má'} hodnotu starší než měsíc. Zadejte novou.</div>`:''}
   <div class="pv pvl">${kc(P.total)}</div>
   ${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${kc(Math.abs(ch))} (${pctS(pct)}) za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže, až bude snímek starý měsíc</div>'}

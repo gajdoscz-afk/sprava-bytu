@@ -256,6 +256,20 @@ class FlatValue(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ValueSuggestion(Base):
+    """Návrh nové hodnoty bytu z trhu. Platí až po potvrzení člověkem; do té doby hodnota bytu zůstává stejná."""
+
+    __tablename__ = "value_suggestions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    basis: Mapped[str] = mapped_column(Text, default="")
+    n: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(12), default="čeká", index=True)  # čeká | potvrzeno | zamítnuto
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MarketNews(Base):
     """Zpráva z tržního přehledu (daně, zákony a lhůty, nájemní trh, sazby). Týdně se nahrazuje."""
 
