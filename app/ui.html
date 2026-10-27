@@ -386,16 +386,24 @@ function costEdit(fid,cid){
   v=>{const list=f.svj.map(x=>x.id===cid?{name:v.name,amount:+v.amt||0}:{name:x.name,amount:x.amount});return changePredpis(fid,{effective:v.eff,costs:list})},
   ()=>{const list=f.svj.filter(x=>x.id!==cid).map(x=>({name:x.name,amount:x.amount}));return changePredpis(fid,{effective:TODAY_ISO(),costs:list})});
 }
-// Položky SVJ pro zvolený rok, s daty platnosti. Platné nahoře, ukončené šedě.
+// Položky SVJ pro zvolený rok, seskupené podle předpisu (období platnosti). Platné nahoře, ukončené šedě.
 function svjRows(f){
  const Y=V.year||TODAY.getFullYear(), today=TODAY_ISO();
  const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return (a<=`${Y}-12-31`&&b>=`${Y}-01-01`)||b>=today});
  if(!rows.length)return '<div class="mut small">Zatím nic. Přidejte zálohy, které platíte, nebo načtěte předpis z dokumentu.</div>';
- const ended=c=>!!(c.valid_to&&c.valid_to<today);
- rows.sort((x,y)=>(ended(x)-ended(y))||String(y.valid_from||'').localeCompare(String(x.valid_from||'')));
- return `<div class="mut small" style="margin-bottom:6px">Rok ${Y}. Klikněte na položku pro úpravu částky a dat platnosti.</div>`+
-  rows.map(c=>{const per=`${c.valid_from?'od '+dmy(c.valid_from):'odjakživa'} ${c.valid_to?'· do '+dmy(c.valid_to):'· neurčitě'}`;
-   return `<div class="line" style="cursor:pointer;${ended(c)?'opacity:.5;color:var(--mut)':''}" onclick="costRowEdit(${f.id},${c.id})"><span>${esc(c.name)}${ended(c)?' <span class="small">(už neplatí)</span>':''}<div class="small mut">${per}</div></span><span>${kc(c.amount)}</span></div>`}).join('');
+ const groups={};
+ rows.forEach(c=>{const k=`${c.valid_from||''}|${c.valid_to||''}`;(groups[k]=groups[k]||{from:c.valid_from,to:c.valid_to,items:[]}).items.push(c)});
+ const gs=Object.values(groups).sort((x,y)=>String(y.from||'').localeCompare(String(x.from||'')));
+ return `<div class="mut small" style="margin-bottom:6px">Rok ${Y}. Podrobný rozpis podle předpisů. Kliknutím na položku upravíte částku a data.</div>`+
+  gs.map(g=>{
+   const running=!g.to||g.to>=today;
+   const sum=g.items.reduce((t,c)=>t+(+c.amount||0),0);
+   const docId=g.items.find(c=>c.source_doc_id)?.source_doc_id;
+   const doc=docId?(S.docs.find(d=>d.id===docId)||{}).filename:'';
+   const head=`<div class="row" style="margin:12px 0 4px"><b>Předpis ${g.from?'od '+dmy(g.from):'odjakživa'} ${g.to?'do '+dmy(g.to):'· neurčitě'}${running?'':' · už neplatí'}</b><span>${kc(sum)} měsíčně</span></div>${doc?`<div class="small mut" style="margin-bottom:4px">z dokumentu ${esc(doc)}</div>`:''}`;
+   const lines=g.items.sort((x,y)=>String(x.name).localeCompare(String(y.name),'cs')).map(c=>`<div class="line" style="cursor:pointer" onclick="costRowEdit(${f.id},${c.id})"><span>${esc(c.name)}</span><span>${kc(c.amount)}</span></div>`).join('');
+   return `<div style="${running?'':'opacity:.5;color:var(--mut)'}">${head}${lines}</div>`;
+  }).join('');
 }
 // Doklad s rozpisem: jen tento jeden doklad se načte nebo odstraní
 function svjDocBox(f){
