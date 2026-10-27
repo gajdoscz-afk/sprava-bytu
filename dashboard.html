@@ -705,20 +705,35 @@ function normLots(l, ri) {
   return Math.max(ri.minLot || 0.01, Math.min(ri.maxLot || 100, Math.floor(l / step + 1e-9) * step));
 }
 // riziko plné sítě až po hard stop (stejný výpočet jako EA)
-function calcRisk(p, ri, bal) {
-  if (!ri || !(p.HardStopPips > 0)) return null;
-  let base = p.GridMode == 0 ? p.GridStepPips : p.GridMode == 1 ? (ri.adr || 0) * p.ADRPercent / 100 : (ri.atrStep || 0);
-  if (p.GridMode != 0) base = base > 0 ? Math.max(ri.gridMin, Math.min(ri.gridMax, base)) : p.GridStepPips;
-  const n = ri.useMart ? p.MaxOrders : 1;
+function fullLoss(p, ri, base, lot, n) {
   let off = 0, loss = 0; const levels = [];
   for (let k = 0; k < n; k++) {
     if (k > 0) off += base * Math.pow(ri.gridExp || 1, k - 1);
     if (off >= p.HardStopPips) break;
     if (k > 0) levels.push(off);
-    loss += (p.HardStopPips - off) * ri.pipValue * normLots(p.StartLots * Math.pow(p.LotMultiplier, k), ri);
+    loss += (p.HardStopPips - off) * ri.pipValue * normLots(lot * Math.pow(p.LotMultiplier, k), ri);
+  }
+  return { loss, levels };
+}
+// riziko plné sítě až po hard stop – stejný plán jako EA (PlanBasket): lot podle rizika, StartLots = strop
+function calcRisk(p, ri, bal) {
+  if (!ri || !(p.HardStopPips > 0)) return null;
+  let base = p.GridMode == 0 ? p.GridStepPips : p.GridMode == 1 ? (ri.adr || 0) * p.ADRPercent / 100 : (ri.atrStep || 0);
+  if (p.GridMode != 0) base = base > 0 ? Math.max(ri.gridMin, Math.min(ri.gridMax, base)) : p.GridStepPips;
+  const maxN = ri.useMart ? Number(p.MaxOrders) || 1 : 1;
+  const step = ri.lotStep || 0.01, mn = ri.minLot || step;
+  let lot = normLots(p.StartLots, ri), n = maxN, r = fullLoss(p, ri, base, lot, n), fits = true, budget = null;
+  if (Number(p.RiskPerBasketPercent) > 0 && bal > 0) {
+    budget = bal * p.RiskPerBasketPercent / 100;
+    const cap = Math.max(mn, lot); fits = false;
+    for (let m = maxN; m >= 1 && !fits; m--) {
+      let best = 0;
+      for (let l = mn; l <= cap + 1e-9; l += step) { if (fullLoss(p, ri, base, l, m).loss <= budget) best = l; else break; }
+      if (best > 0) { lot = normLots(best, ri); n = m; r = fullLoss(p, ri, base, lot, n); fits = true; }
+    }
   }
   const tp = p.TPFromADR ? Math.max(ri.tpMin, Math.min(ri.tpMax, (ri.adr || 0) * p.TP_ADRPercent / 100)) : p.TakeProfitPips;
-  return { loss, pct: bal > 0 ? loss / bal * 100 : null, base, levels, tp };
+  return { loss: fits ? r.loss : 0, pct: bal > 0 ? (fits ? r.loss : 0) / bal * 100 : null, base, levels: r.levels, tp, lot, n, fits, budget };
 }
 
 async function loadSettingsView() {
@@ -768,13 +783,15 @@ function renderSettings(resetDraft) {
   const preview = el("div", "preview");
   const saveBar = el("div", "sticky-save");
 
+  const riskBal = () => { const a = s.account || {}; return a.riskBalance > 0 ? a.riskBalance : a.balance || 0; };
   const changedKeys = () => Object.keys(setDraft).filter((k) => String(setDraft[k]) !== String(setBase[k]));
   function repaintPreview() {
     preview.replaceChildren();
-    const bal = (s.account || {}).balance || 0, cur = (s.account || {}).currency || "";
+    const bal = riskBal(), cur = (s.account || {}).currency || "";
     const a = calcRisk(setBase, s.riskInputs, bal), b = calcRisk(setDraft, s.riskInputs, bal);
     preview.append(el("h2", "", "Náhled dopadu"));
-    const fmtR = (x) => x && x.pct != null ? "−" + x.pct.toFixed(1) + " % (" + x.loss.toFixed(2) + " " + cur + ")" : "bez hard stopu";
+    const fmtR = (x) => !x || x.pct == null ? "bez hard stopu" : !x.fits ? "koš se do rizika nevejde – EA neotevře" :
+      x.lot.toFixed(2) + " lot × " + x.n + " poz. → −" + x.loss.toFixed(2) + " " + cur + " (" + x.pct.toFixed(1) + " %)";
     const cls = (x) => !x || x.pct == null ? "dim" : x.pct >= 10 ? "bad" : x.pct >= 5 ? "warn" : "good";
     preview.append(row("Riziko plné sítě – nyní", fmtR(a), cls(a)));
     preview.append(row("Riziko plné sítě – po změně", fmtR(b), cls(b)));
@@ -783,7 +800,7 @@ function renderSettings(resetDraft) {
       preview.append(row("Přikoupení od 1. pozice", (b.levels.map((x) => x.toFixed(0)).join(" · ") || "–") + " p"));
       preview.append(row("TP první pozice", b.tp > 0 ? b.tp.toFixed(1) + " p" : "vypnuto"));
       if (Number(setDraft.BasketTPMode) === 1 && b.tp > 0 && s.riskInputs) {
-        const one = b.tp * normLots(setDraft.StartLots, s.riskInputs) * s.riskInputs.pipValue;
+        const one = b.tp * b.lot * s.riskInputs.pipValue;
         const n = Number(setDraft.MaxOrders) || 1, k = Number(setDraft.BasketTPPerPos) || 1;
         const parts = []; for (let i = 1; i <= Math.min(n, 6); i++) parts.push(`${i} poz. ${(i === 1 ? one : i * k * one).toFixed(2)}`);
         preview.append(row("Cíl koše (" + cur + ")", parts.join(" · ")));
@@ -821,8 +838,8 @@ function renderSettings(resetDraft) {
     const ch = changedKeys();
     if (!ch.length) return;
     const lines = ch.map((k) => `${k}: ${setBase[k]} → ${setDraft[k]}`).join("\n");
-    const b = calcRisk(setDraft, s.riskInputs, (s.account || {}).balance || 0);
-    const msg = `Uložit změny pro ${s.symbol}?\n\n${lines}` + (b && b.pct != null ? `\n\nRiziko plné sítě po změně: −${b.pct.toFixed(1)} %` : "") +
+    const b = calcRisk(setDraft, s.riskInputs, riskBal());
+    const msg = `Uložit změny pro ${s.symbol}?\n\n${lines}` + (b && b.pct != null ? (b.fits ? `\n\nPlán koše po změně: ${b.lot.toFixed(2)} lot × ${b.n} poz., plný koš −${b.loss.toFixed(2)} (${b.pct.toFixed(1)} %)` : "\n\nPOZOR: koš se do rizika nevejde – EA nové koše neotevře.") : "") +
       (bk.count > 0 ? "\n\nJe otevřený koš – změny se použijí až po jeho zavření." : "");
     if (!confirm(msg)) return;
     const params = {}; ch.forEach((k) => (params[k] = setDraft[k]));
