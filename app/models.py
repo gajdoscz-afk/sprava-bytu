@@ -136,6 +136,7 @@ class Document(Base):
     note: Mapped[str] = mapped_column(Text, default="")
     suggested_flat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     extracted: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # celý výstup čtení
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # datum pořízení z fotky (EXIF)
     data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

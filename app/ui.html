@@ -206,6 +206,9 @@ nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-col
 <script>
 const $=s=>document.querySelector(s);
 const kc=n=>Math.round(n||0).toLocaleString('cs-CZ')+' Kč';
+// Datum pořízení (z fotky), jinak datum nahrání. U každého dokumentu, ať je vidět, kdy vznikl.
+const fdt=iso=>iso?new Date(iso).toLocaleString('cs-CZ',{dateStyle:'short',timeStyle:'short'}):'';
+const docWhen=d=>d.taken_at?`pořízeno ${fdt(d.taken_at)}`:`nahráno ${fdt(d.created_at)}`;
 const fd=s=>{if(!s)return'—';const d=new Date(s);return isNaN(d)?'—':d.getDate()+'. '+(d.getMonth()+1)+'. '+d.getFullYear()};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const costs=it=>it.reduce((s,r)=>s+(+r[1]||0),0);
@@ -1450,9 +1453,15 @@ function docView(id,pdf){
  const body=isImg
   ?`<div style="margin-top:10px;background:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;height:68vh;overflow:hidden"><img src="${src}" alt="${esc(d.filename)}" style="max-width:100%;max-height:100%;object-fit:contain;display:block"></div>`
   :`<iframe src="${src}" style="width:100%;height:68vh;border:0;border-radius:12px;background:#fff;margin-top:10px"></iframe>`;
- modal(`<div class="sheetHead"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
+ modal(`<div class="sheetHead"><div style="min-width:0"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><div class="small mut">${docWhen(d)}</div></div><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
   ${body}
-  <div class="btns"><button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button><button class="btn sec sm warnTxt" onclick="docDelete(${id})">Smazat</button></div>`);
+  <div class="btns">${d.mime&&d.mime.startsWith('image/')?`<button class="btn sec sm" onclick="mergeBatch(${id})">Sloučit stránky z téhož nahrání</button>`:''}<button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button><button class="btn sec sm warnTxt" onclick="docDelete(${id})">Smazat</button></div>`);
+}
+// Spojí fotky, které se nahrály se stejným dokumentem (do 15 minut), do jednoho PDF
+async function mergeBatch(id){
+ if(!confirm('Spojit fotky nahrané ke stejnému dokumentu (do 15 minut) do jednoho PDF? Původní fotky se nahradí PDF.'))return;
+ try{ await api(`/documents/${id}/merge-batch`,'POST'); toast('Stránky spojeny do jednoho dokumentu'); await reload(); render(); closeModal() }
+ catch(e){ toast(e.message) }
 }
 // Smazání dokumentu ze složky (smlouva, doklad, protokol…). Potvrzení předchází nechtěnému smazání.
 async function docDelete(id){
@@ -1623,10 +1632,11 @@ function docTypeOpts(sel){return Object.entries(DOC_TYPES).map(([k,v])=>`<option
 function docRow(d){
  const fl=d.flat_id?(flat(d.flat_id)||{}).addr:'';
  const first=(d.summary||'').split(/(?<=\.)\s/)[0].slice(0,140);
- return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)}${d.valid_from?` · platnost ${fd(d.valid_from)} – ${d.valid_to?fd(d.valid_to):'neurčitě'}`:(d.year?' · '+d.year:'')}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button><button class="link small warnTxt" onclick="docDelete(${d.id})">Smazat</button></div></div>`;
+ return `<div class="docItem"><div style="min-width:0"><div class="t">${esc(first||d.filename)}</div><div class="mut small">${docType(d.doc_type)} · ${docWhen(d)}${d.valid_from?` · platnost ${fd(d.valid_from)} – ${d.valid_to?fd(d.valid_to):'neurčitě'}`:(d.year?' · '+d.year:'')}${fl?' · '+esc(fl):''} · ${esc(d.filename)}</div></div><div class="acts"><button class="link small" onclick="docView(${d.id})">Otevřít</button>${/\.docx$/i.test(d.filename)?`<button class="link small" onclick="docView(${d.id},true)">PDF</button>`:''}<button class="link small" onclick="shareDoc(${d.id})">Sdílet</button><button class="link small" onclick="classifyDoc(${d.id})">Znovu</button><button class="link small warnTxt" onclick="docDelete(${d.id})">Smazat</button></div></div>`;
 }
 function inboxCard(d){
  return `<div class="card"><div class="row"><div><b>${esc(d.filename)}</b>
+ <div class="small mut">${docWhen(d)}</div>
  ${d.summary?`<div class="small mut">${esc(d.summary)}</div>`:''}
  ${d.note?`<div class="small warnTxt" style="margin-top:4px">${esc(d.note)}</div>`:''}</div>
  <div class="row" style="gap:12px;justify-content:flex-end"><button class="link small" onclick="docView(${d.id})">Otevřít</button><button class="link small" onclick="shareDoc(${d.id})">Sdílet</button></div></div>
@@ -2060,6 +2070,22 @@ async function uploadDocs(input,flatId){
 // Společné nahrávání pro tlačítka, přetažení i Ctrl+V. flatId vyplněné = dokumenty rovnou patří k bytu
 async function uploadFiles(all,flatId,groupKey){
  const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
+ // Víc fotek najednou je jeden vícestránkový dokument: spojí se do jednoho PDF
+ const imgs=files.filter(f=>f.type.startsWith('image/')||/\.(jpe?g|png|webp|gif)$/i.test(f.name));
+ if(imgs.length>1&&!groupKey){
+  const key=newKey();
+  progress(`Nahrávám ${imgs.length} stránek jako jeden dokument…`);
+  try{
+   for(const f of imgs){const fd=new FormData();fd.append('files',await shrink(f).catch(()=>f));if(flatId)fd.append('flat_id',flatId);fd.append('group_key',key);
+    const res=await fetch('/documents',{method:'POST',body:fd});if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}}
+   await api(`/document-groups/${key}/finish`,'POST');
+   toast(`Dokument vytvořen z ${imgs.length} stránek`);
+  }catch(e){toast(e.message)}
+  progress('');
+  const rest=files.filter(f=>!imgs.includes(f));
+  if(rest.length)return uploadFiles(rest,flatId);
+  await reload();render();return;
+ }
  const skipped=all.length-files.length;
  if(!files.length){toast('Žádný podporovaný soubor (PDF nebo obrázek)');return}
  let ok=0,fail=0;

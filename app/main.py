@@ -105,6 +105,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_to DATE"))
+        conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS taken_at TIMESTAMPTZ"))
     try:
         with Session(engine) as db:
             migrate_snapshots_to_values(db)
@@ -1363,6 +1364,7 @@ def doc_out(d: m.Document) -> dict:
         "valid_from": d.valid_from.isoformat() if d.valid_from else None,
         "valid_to": d.valid_to.isoformat() if d.valid_to else None,
         "extracted": d.extracted, "created_at": d.created_at.isoformat(),
+        "taken_at": d.taken_at.isoformat() if d.taken_at else None,
     }
 
 
@@ -1618,6 +1620,22 @@ def sync_acquisition(db: Session, d: m.Document) -> None:
     acq.source, acq.doc_id = "kupní smlouva", d.id
 
 
+def exif_taken(raw: bytes):
+    """Datum pořízení fotky z EXIF (původní čas exponování, jinak čas uložení)."""
+    try:
+        from PIL import Image
+        from zoneinfo import ZoneInfo
+        with Image.open(io.BytesIO(raw)) as im:
+            ex = im.getexif()
+            sub = ex.get_ifd(0x8769) if ex else {}
+            val = sub.get(36867) or sub.get(36868) or (ex.get(306) if ex else None)
+        if not val:
+            return None
+        return datetime.strptime(str(val)[:19], "%Y:%m:%d %H:%M:%S").replace(tzinfo=ZoneInfo("Europe/Prague"))
+    except Exception:
+        return None
+
+
 @app.post("/documents", status_code=201)
 async def upload_documents(
     files: list[UploadFile] = File(...),
@@ -1635,6 +1653,8 @@ async def upload_documents(
             raise HTTPException(413, f"{up.filename}: soubor je větší než 15 MB")
         mime = up.content_type or mimetypes.guess_type(up.filename or "")[0] or "application/octet-stream"
         d = m.Document(filename=(up.filename or "dokument")[:300], mime=mime, size=len(data), data=data)
+        if mime.startswith("image/"):
+            d.taken_at = exif_taken(data)
         if group_key:
             # Stránka jednoho dokumentu: čeká, až přijde celý dokument, a teprve pak se spojí do PDF
             if not mime.startswith("image/"):
@@ -1721,6 +1741,33 @@ def _group_pages(db: Session, key: str) -> list[m.Document]:
         m.Document.group_key == key, m.Document.status == "rozpracováno").order_by(m.Document.id)).all())
 
 
+@app.post("/documents/{doc_id}/merge-batch")
+async def merge_upload_batch(doc_id: int, db: Session = Depends(get_db)):
+    """Spojí fotky stejného bytu a typu nahrané do 15 minut od tohoto dokumentu do jednoho PDF."""
+    base = db.get(m.Document, doc_id)
+    if not base or not base.mime.startswith("image/"):
+        raise HTTPException(400, "Spojit se dají jen fotky.")
+    sibs = [x for x in db.scalars(select(m.Document).where(
+                m.Document.flat_id.is_(None) if base.flat_id is None else m.Document.flat_id == base.flat_id,
+                m.Document.doc_type == base.doc_type, m.Document.status == base.status)).all()
+            if x.mime.startswith("image/") and abs(x.created_at - base.created_at) <= timedelta(minutes=15)]
+    if len(sibs) < 2:
+        raise HTTPException(400, "Nenašel jsem další stránky nahrané se stejným dokumentem.")
+    sibs.sort(key=lambda x: (x.created_at, x.id))
+    pdf_bytes = await run_in_threadpool(_images_to_pdf, [x.data for x in sibs])
+    taken = [x.taken_at for x in sibs if x.taken_at]
+    stem = re.sub(r"\.\w+$", "", sibs[0].filename)[:200] or "dokument"
+    d = m.Document(filename=f"{stem} ({len(sibs)} str.).pdf"[:300], mime="application/pdf", size=len(pdf_bytes),
+                   data=pdf_bytes, flat_id=base.flat_id, status=base.status, doc_type=base.doc_type,
+                   year=base.year, valid_from=base.valid_from, valid_to=base.valid_to,
+                   taken_at=min(taken) if taken else None)
+    for x in sibs:
+        db.delete(x)
+    db.add(d)
+    db.commit()
+    return doc_out(d)
+
+
 @app.post("/document-groups/{key}/finish")
 async def finish_document_group(key: str, db: Session = Depends(get_db)):
     """Spojí stránky do jednoho PDF, zařadí ho a přečte celý najednou (první stránka i ty další)."""
@@ -1736,8 +1783,10 @@ async def finish_document_group(key: str, db: Session = Depends(get_db)):
     first = docs[0]
     stem = re.sub(r"\.\w+$", "", first.filename)[:200] or "dokument"
     name = first.filename if len(docs) == 1 else f"{stem} ({len(docs)} str.).pdf"
+    taken = [x.taken_at for x in docs if x.taken_at]
     d = m.Document(filename=name[:300], mime="application/pdf", size=len(pdf_bytes), data=pdf_bytes,
-                   flat_id=first.flat_id, status="zarazeno" if first.flat_id else "ke_kontrole")
+                   flat_id=first.flat_id, status="zarazeno" if first.flat_id else "ke_kontrole",
+                   taken_at=min(taken) if taken else None)
     for x in docs:
         db.delete(x)
     db.add(d)
