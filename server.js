@@ -240,6 +240,7 @@ function buildReport(hrs) {
     L.push(`Účet: balance ${f2(a.balance)} ${cur}, equity ${f2(a.equity)}, DD ${f2(a.ddPct)} % (limit ${a.ddLimit ?? "?"} %), den ${f2(a.dayPct)} %, spread ${a.spread ?? "?"}` +
       (a.aosCapital > 0 ? ` · kapitál AOS ${f2(a.riskEquity)} (vklad ${f2(a.aosCapital)})` : ""));
     if (a.plan) L.push(`Plán dalšího koše: ${a.plan}`);
+    if (s.dir) L.push(`Povolený směr: ${s.dir}`);
     L.push(`Signál: ${s.signal || "?"} · odstup ${s.grid || "?"} · ADR ${(s.riskInputs || {}).adr ?? "?"} p`);
     if (b.count) L.push(`OTEVŘENÝ KOŠ: ${b.dir || ""} ${b.count}/${b.max} pozic, ${f2(b.lots)} lot, průměr ${b.avg}, P/L ${f2(b.pl)} ${cur}` +
       (s.depthNow ? ` · zatím nejhůř ${f2(s.depthNow.worst)} (${f2(s.depthNow.pct)} %), ${f2(s.depthNow.pips)} p proti` : ""));

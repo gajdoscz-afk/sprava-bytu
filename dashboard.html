@@ -445,6 +445,7 @@ function renderInstance(it) {
   f.append(row("Zprávy", s.news || "–", s.newsBlocked ? "warn" : ""));
   if (s.nextNews) f.append(row("Další zpráva", s.nextNews));
   if (s.exit) f.append(row("Výstup", s.exit, /^standardní/.test(s.exit) ? "" : "good"));
+  if (s.dir !== undefined) f.append(row("Směr", s.dir, s.dirOk ? "good" : "warn"));
   if (s.guard !== undefined) f.append(row("Ochrany", s.guard || ("v klidu" + (s.trend ? " (" + s.trend + ")" : "")), s.guard ? "warn" : ""));
   f.append(row("Signál", s.signal || "–"));
   f.append(row("Poslední svíčka", s.lastBar || "–"));
