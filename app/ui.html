@@ -209,6 +209,11 @@ nav button,nav button:not(.brand){background:linear-gradient(160deg,rgba(34,197,
 nav button:not(.brand):hover{color:#FDBA74;transform:translateY(-1px);box-shadow:0 0 22px -2px rgba(34,197,94,.8),0 0 0 1px rgba(34,197,94,.3)}
 nav button.on{background:linear-gradient(160deg,rgba(34,197,94,.28),rgba(34,197,94,.08)),#0F2A1C;color:#FDBA74;border-color:#22C55E;box-shadow:0 0 34px -2px rgba(34,197,94,1),0 0 0 1px rgba(34,197,94,.7)}
 nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-color:rgba(34,197,94,.3)}
+/* názvy dlaždic: tmavě modré velké písmo, na střed dlaždice; světlejší plocha kvůli čitelnosti */
+nav button,nav button:not(.brand),nav button.on,nav button:not(.brand):hover{color:#1E3A8A !important;text-transform:uppercase;text-align:center;display:flex;align-items:center;justify-content:center;letter-spacing:.06em;font-size:13px}
+nav button:not(.brand),nav button.on{background:linear-gradient(160deg,#ECFDF5,#D1FAE5) !important}
+nav button.on{background:linear-gradient(160deg,#A7F3D0,#6EE7B7) !important}
+nav button.theme{background:transparent !important;color:#1E3A8A !important}
 @media (max-width:560px){body{padding-left:116px}nav{width:116px}.toast{left:calc(50% + 58px)}}
 </style>
 </head>
@@ -227,7 +232,7 @@ nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-col
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
-<div class="appVer">verze 1.4</div>
+<div class="appVer">verze 1.5</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
