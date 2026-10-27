@@ -406,11 +406,11 @@ async function applySvjFromDoc(fid){
  const eff=d.valid_from?String(d.valid_from).slice(0,10):TODAY_ISO();
  const txt=[`Celý rozpis z dokumentu: ${Object.keys(want).length} položek, celkem ${kc(total)} měsíčně.`,
   add.length?`Přidá se: ${esc(add.join(', '))}`:'',chg.length?`Změní se částka: ${esc(chg.join(', '))}`:'',
-  rem.length?`Smažou se (nejsou v dokumentu): ${esc(rem.join(', '))}`:''].filter(Boolean).join('<br>');
+  rem.length?`Odeberou se (nejsou v dokumentu): ${esc(rem.join(', '))}`:''].filter(Boolean).join('<br>');
  modal(`<div class="sheetHead"><h2>Načíst rozpis SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
   <p class="small">${txt}</p>
   <label>Platí od</label><input id="svjEff" type="date" value="${eff}">
-  <p class="mut small">Evidují se jen položky z tohoto dokladu. Ostatní položky se smažou.</p>
+  <p class="mut small">Předchozí předpis tohoto bytu zůstane v historii, takže v roce můžou platit dva různé předpisy. Smažou se jen chybně přečtené položky tohoto dokladu.</p>
   <div class="btns"><button class="btn" onclick="confirmSvjApply(${fid},${id})">Použít tento rozpis</button></div>`);
 }
 async function confirmSvjApply(fid,docId){
@@ -419,7 +419,7 @@ async function confirmSvjApply(fid,docId){
  const items=(d?.extracted?.svj_items||[]).filter(it=>it&&String(it.name||'').trim()&&+it.amount>0);
  const want=Object.entries(Object.fromEntries(items.map(it=>[String(it.name).trim(),+it.amount])));
  try{
-  await changePredpis(fid,{effective:eff,from_doc:true,costs:want.map(([name,amount])=>({name,amount}))});
+  await changePredpis(fid,{effective:eff,from_doc:docId,costs:want.map(([name,amount])=>({name,amount}))});
   closeModal(); toast('Rozpis SVJ načten z dokumentu'); await reload(); render();
  }catch(e){toast(e.message)}
 }

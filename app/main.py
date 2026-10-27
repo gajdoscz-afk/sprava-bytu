@@ -103,6 +103,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
+        conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS source_doc_id INTEGER"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_to DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS taken_at TIMESTAMPTZ"))
@@ -949,7 +950,7 @@ def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(g
             name = str(w.get("name") or "").strip()[:200]
             if name:
                 items.append((name, money(w.get("amount") or 0)))
-        replace_svj_set(db, f, items, eff, old, new, purge=bool(body.get("from_doc")))
+        replace_svj_set(db, f, items, eff, old, new, doc_id=int(body["from_doc"]) if body.get("from_doc") else None)
         if old or new:
             db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                              old=old or None, new=new or None))
@@ -1524,7 +1525,7 @@ def _ckey(name: str) -> str:
     return re.sub(r"\s+", "", name).upper()
 
 
-def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict, purge: bool = False) -> None:
+def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict, doc_id: int | None = None) -> None:
     """Celý předpis SVJ nahradí novým od data eff. Položky, které v novém nejsou, se ukončí; starý předpis
     zůstane v historii (valid_to), aby šel použít pro vyúčtování dřívějšího období."""
     wanted = {}
@@ -1541,7 +1542,7 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
             if c.valid_from is None or eff > c.valid_from:
                 old[c.name] = float(c.amount)
                 c.valid_to = eff - timedelta(days=1)
-                db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff))
+                db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, source_doc_id=doc_id))
                 new[name] = float(amt)
             else:  # oprava hned od začátku platnosti
                 old[c.name] = float(c.amount)
@@ -1555,11 +1556,11 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
                 db.delete(c)
     for k, (name, amt) in wanted.items():
         if k not in seen:
-            db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff))
+            db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, source_doc_id=doc_id))
             new[name] = float(amt)
-    if purge:  # z dokladu se evidují jen položky, které na něm jsou; ostatní se smažou i z historie
+    if doc_id is not None:  # položky z tohoto dokladu, které už na něm nejsou (chyba čtení), se smažou; ostatní předpisy zůstávají
         for c in list(f.costs):
-            if _ckey(c.name) not in wanted:
+            if c.source_doc_id == doc_id and _ckey(c.name) not in wanted:
                 old.setdefault(c.name, float(c.amount))
                 db.delete(c)
 
@@ -1587,7 +1588,7 @@ def sync_svj_costs(db: Session, d: m.Document) -> None:
         return
     eff = d.valid_from or date.today()
     old, new = {}, {}
-    replace_svj_set(db, f, items, eff, old, new, purge=True)
+    replace_svj_set(db, f, items, eff, old, new, doc_id=d.id)
     if new or old:
         db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                          old=old or None, new={**new, "doc_id": d.id}))
