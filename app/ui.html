@@ -404,14 +404,33 @@ async function applySvjFromDoc(fid){
  const chg=Object.keys(want).filter(k=>k in cur&&cur[k]!==want[k]);
  const total=Object.values(want).reduce((a,b)=>a+b,0);
  const eff=d.valid_from?String(d.valid_from).slice(0,10):TODAY_ISO();
- const txt=[`Rozpis z dokumentu: ${Object.keys(want).length} položek, celkem ${kc(total)} měsíčně.`,
-  add.length?`Přidá se: ${add.join(', ')}`:'',chg.length?`Změní se částka: ${chg.join(', ')}`:'',
-  rem.length?`Odebere se (není v dokumentu): ${rem.join(', ')}`:''].filter(Boolean).join('\n');
- if(!confirm(`${txt}\n\nPoužít tento rozpis od ${dmy(eff)}?`))return;
+ const txt=[`Celý rozpis z dokumentu: ${Object.keys(want).length} položek, celkem ${kc(total)} měsíčně.`,
+  add.length?`Přidá se: ${esc(add.join(', '))}`:'',chg.length?`Změní se částka: ${esc(chg.join(', '))}`:'',
+  rem.length?`Ukončí se (není v dokumentu): ${esc(rem.join(', '))}`:''].filter(Boolean).join('<br>');
+ modal(`<div class="sheetHead"><h2>Načíst rozpis SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
+  <p class="small">${txt}</p>
+  <label>Platí od</label><input id="svjEff" type="date" value="${eff}">
+  <p class="mut small">Předchozí předpis zůstane v historii a v roce, kdy platil, šedě vidět. Vyúčtování za každý kalendářní rok se tak počítá správně.</p>
+  <div class="btns"><button class="btn" onclick="confirmSvjApply(${fid},${id})">Použít tento rozpis</button></div>`);
+}
+async function confirmSvjApply(fid,docId){
+ const d=S.docs.find(x=>x.id===docId); const f=flat(fid);
+ const eff=$('#svjEff').value||TODAY_ISO();
+ const items=(d?.extracted?.svj_items||[]).filter(it=>it&&String(it.name||'').trim()&&+it.amount>0);
+ const want=Object.entries(Object.fromEntries(items.map(it=>[String(it.name).trim(),+it.amount])));
  try{
-  await changePredpis(fid,{effective:eff,costs:Object.entries(want).map(([name,amount])=>({name,amount}))});
-  toast('Rozpis SVJ načten z dokumentu'); await reload(); render();
+  await changePredpis(fid,{effective:eff,costs:want.map(([name,amount])=>({name,amount}))});
+  closeModal(); toast('Rozpis SVJ načten z dokumentu'); await reload(); render();
  }catch(e){toast(e.message)}
+}
+// Předchozí předpisy v daném roce: šedě, aby bylo jasné, že už neplatí, ale pro vyúčtování roku potřebné
+function svjYearHistory(f){
+ const Y=V.year||TODAY.getFullYear();
+ const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return a<=`${Y}-12-31`&&b>=`${Y}-01-01`});
+ const ended=rows.filter(c=>c.valid_to&&c.valid_to<TODAY_ISO());
+ if(!ended.length)return '';
+ return `<div class="mut small" style="margin-top:14px">Předchozí předpis v roce ${Y} (už neplatí)</div>`+
+  ended.map(c=>`<div class="line" style="opacity:.55;color:var(--mut)"><span>${esc(c.name)} <span class="small">· ${c.valid_from?'od '+dmy(c.valid_from):''} do ${dmy(c.valid_to)}</span></span><span>${kc(c.amount)}</span></div>`).join('');
 }
 function predpisHistory(fid){
  const vs=S.versions.filter(v=>String(v.flat)===String(fid)&&/změna od/.test(v.action||''));
@@ -513,7 +532,8 @@ function flatDetail(){
   ${svjSourcePicker(f)}
   ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><button class="link" onclick="costEdit(${f.id},${c.id})">${kc(c.amount)}</button></div>`).join('')||'<div class="mut small">Zatím nic. Přidejte zálohy, které platíte.</div>'}
   <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku, kterou platím</button></div>
-  <div class="line sum"><span>Platím SVJ celkem měsíčně</span><span>${kc(svjTotal)}</span></div></div>`;
+  <div class="line sum"><span>Platím SVJ celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
+  ${svjYearHistory(f)}</div>`;
  const netCard=`<div class="card" style="margin-top:12px"><div class="line sum"><span>Zbývá mi měsíčně (vybírám − platím)</span><span class="${net<0?'bad':'ok'}">${kc(net)}</span></div></div>`;
  const y=V.year?f.years[V.year]:null;
  return `
@@ -757,12 +777,13 @@ function costForm(fid){
  <p class="small mut">Měsíční částka, kterou platíte vy (ne nájemník). Nepřenáší se na nájemníka.</p>
  <label>Název</label><input id="cn" placeholder="např. Záloha na teplo">
  <label>Částka měsíčně (Kč)</label><input id="ca" type="number" min="0" step="0.01">
+ <label>Platí od</label><input id="ce" type="date" value="${TODAY_ISO()}">
  <div class="btns"><button class="btn" onclick="saveCost(${fid})">Uložit</button></div>`);
 }
 async function saveCost(fid){
  const name=$('#cn').value.trim(),amount=parseFloat(($('#ca').value||'').replace(',','.'));
  if(!name||isNaN(amount)){toast('Vyplňte název a částku');return}
- try{const list=flat(fid).svj.map(x=>({name:x.name,amount:x.amount})).concat([{name,amount}]);await changePredpis(fid,{effective:TODAY_ISO(),costs:list});closeModal();toast('Uloženo');await reload();render()}
+ try{const list=flat(fid).svj.map(x=>({name:x.name,amount:x.amount})).concat([{name,amount}]);await changePredpis(fid,{effective:$('#ce').value||TODAY_ISO(),costs:list});closeModal();toast('Uloženo');await reload();render()}
  catch(e){toast(e.message)}
 }
 async function delCost(fid,cid){
