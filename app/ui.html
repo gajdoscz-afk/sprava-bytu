@@ -190,6 +190,8 @@ select{background:var(--card);color:var(--ink);border:1px solid var(--line);bord
 .brandTop:hover{color:var(--acc)}
 .logoMark{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#8B7CFF,#22D3EE);color:#0A0B1F;font-weight:800;font-size:12px;letter-spacing:.02em}
 nav{padding-top:70px}
+.navVal{margin:auto 0;padding:14px 8px;text-align:center;border-radius:16px;background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.6);box-shadow:0 0 24px -4px rgba(34,197,94,.75);color:#FDBA74;font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.navVal b{display:block;margin-top:4px;font-size:15px;color:#4ADE80;letter-spacing:0;text-transform:none;font-variant-numeric:tabular-nums;text-shadow:0 0 12px rgba(74,222,128,.6)}
 @media (max-width:560px){ .brandTop{font-size:13px;padding:6px 10px 6px 6px} .brandTop span:last-child{display:none} }
 
 .annualTile{position:absolute;top:14px;right:16px;padding:10px 14px;border-radius:14px;text-align:right;background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.6);box-shadow:0 0 24px -4px rgba(34,197,94,.75);z-index:1}
@@ -236,7 +238,8 @@ nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-col
 <button data-t="mail" onclick="go('mail')">Upomínky</button>
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
-<div class="appVer">verze 1.6</div>
+<div id="navVal" class="navVal"></div>
+<div class="appVer">verze 1.7</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -304,6 +307,8 @@ function closeModal(){$('#modal').classList.remove('show')}
 function go(t){V.tab=t;V.flat=null;render();window.scrollTo(0,0)}
 function openFlat(id){const f=flat(id);V.tab='flat';V.flat=id;V.year=f?(years(f)[0]||null):null;render();window.scrollTo(0,0)}
 function render(){
+ if(!PORT&&!PORT_LOADING)loadPortfolio().then(render);
+ const nv=$('#navVal'); if(nv)nv.innerHTML=PORT?`<small>Hodnota portfolia</small><b>${kc(PORT.total)}</b>`:'';
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
  m.innerHTML=(V.tab==='flat'&&V.flat?flatBar(V.flat)+flatTiles(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
@@ -348,19 +353,17 @@ function home(){
  const chips=ov.years.map(v=>`<button class="chip ${v===y?'on':''}" onclick="setHomeYear(${v})">${v}</button>`).join('');
  const tiles=S.flats.map(f=>{const r=ovFlat[f.id]||{};return `<button class="tile" onclick="openFlat(${f.id})"><span>${esc(f.addr)}</span><small>${esc(f.tenant.name)||'Bez nájemníka'}</small><b class="${(r.profit||0)<0?'bad':'ok'}">${kc(r.profit||0)}</b><small>${r.payments||0} plateb · výdaje ${kc(r.landlord_cost||0)}</small></button>`}).join('');
  return `<div class="homeHead"><div><div class="mut small">Stav k ${fd(TODAY)}</div><h1>Přehled</h1></div><div class="chips" style="margin:0">${chips}</div></div>
- ${recentActivity()}
- ${valueTrendChart()}
  <div class="kpiRow">
-  <div class="kpi"><span>Příjmy ${y}</span><b>${kc(ov.income)}</b><small>přijaté platby přiřazené bytům</small></div>
-  <div class="kpi"><span>Výdaje ${y}</span><b>${kc(ov.expenses)}</b><small>náklady SVJ za rok</small></div>
+  <div class="kpi"><span>Výnosy ${y}</span><b>${kc(ov.income)}</b><small>přijaté platby přiřazené bytům</small></div>
+  <div class="kpi"><span>Náklady ${y}</span><b>${kc(ov.expenses)}</b><small>náklady SVJ za rok</small></div>
   <div class="kpi"><span>Zisk ${y}</span><b class="${ov.profit<0?'bad':'ok'}">${kc(ov.profit)}</b><small>příjmy minus výdaje (výdaje z vyúčtování, jinak z měsíčních plateb SVJ)</small></div>
  </div>
- ${flatChart(ov.income,ov.expenses,ov.profit,`Souhrn za ${y} – všechny byty`,`Součet za všechny byty za rok ${y}. Modře příjmy, červeně výdaje, zeleně zisk.`)}
  <h2>Byty</h2>
  <div class="tiles">${tiles||'<div class="mut">Zatím žádné byty.</div>'}</div>
  <div class="btns"><button class="btn" onclick="tenantNew()">+ Nový nájemník (doklad)</button><button class="btn sec" onclick="flatForm()">+ Přidat byt</button><button class="btn sec" onclick="exportBackup()">Stáhnout zálohu</button></div>
  ${newsBlock()}
  ${portWidget()}
+ ${recentActivity()}
  ${debts.length?`<h2>K řešení</h2>${debts.map(d=>`<div class="card item row" onclick="openFlat(${d.f.id})"><div><b>${esc(d.f.addr)}</b><div class="mut small">${esc(d.f.tenant.name)} · vyúčtování ${d.y}</div></div><span class="tag bad">${kc(-d.b)}</span></div>`).join('')}`:''}
  ${notes.length?`<h2>Oznámení</h2>${notes.map(n=>`<div class="card item row" onclick="openFlat(${n.id})"><span>${esc(n.t)}</span><span class="tag ${n.k}">${n.k==='bad'?'Pozor':'Ověřit'}</span></div>`).join('')}`:''}
  `;
