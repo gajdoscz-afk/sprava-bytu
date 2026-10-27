@@ -1726,7 +1726,7 @@ function valueTrendChart(){
    <line x1="${X(0)}" y1="${t0}" x2="${X(n-1)}" y2="${t1}" stroke="#8B7CFF" stroke-width="2" stroke-dasharray="6 6"/>
    ${dots}${labels}
   </svg>
-  <div class="mut small" style="text-align:center;margin-top:6px">Součet odhadů všech bytů podle nabídek na trhu, jeden snímek za měsíc. Fialová čára je trend.</div>
+  <div class="mut small" style="text-align:center;margin-top:6px">Součet hodnot všech bytů: poslední zadaná nebo odhadnutá hodnota k danému dni. Fialová čára je trend.</div>
  </div>`;
 }
 function portWidget(){
@@ -1741,8 +1741,10 @@ function portWidget(){
 function valDetails(P){
  const rows=P.flats.map(f=>{
   const opts=[0.5,1,2,3,5,10].map(r=>`<option value="${r}" ${Math.abs(f.radius_km-r)<0.001?'selected':''}>${String(r).replace('.',',')} km</option>`).join('');
-  const head=`<div class="row"><div><b>${esc(f.addr)}</b><div class="small mut">${f.value!=null?`${kc(f.value)} · spolehlivost ${esc(f.confidence)} · ${f.n} nabídek · ${esc(f.basis)}`:esc(f.reason)}</div></div>
-   <label class="small mut">okruh <select onchange="setRadius(${f.id},this.value)">${opts}</select></label></div>`;
+  const val=f.value!=null?`Hodnota ${kc(f.value)} (${f.source==='ručně'?'ručně zadaná':'odhad'} k ${dmy(f.value_date)})`:'Bez hodnoty';
+  const est=f.estimate!=null?`odhad z nabídek ${kc(f.estimate)} · spolehlivost ${esc(f.confidence)} · ${f.n} nabídek · ${esc(f.basis)}`:esc(f.reason);
+  const head=`<div class="row"><div><b>${esc(f.addr)}</b><div class="small mut">${val}<br>${est}</div></div>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn sm" onclick="valueModal(${f.id})">+ Zadat hodnotu</button><label class="small mut">okruh <select onchange="setRadius(${f.id},this.value)">${opts}</select></label></div></div>`;
   const comps=(f.comps||[]).map(c=>`<div class="line small"><span><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title||c.url)}</a><span class="mut"> · ${c.area_m2!=null?String(c.area_m2).replace('.',',')+' m² · ':''}${String(c.dist_km).replace('.',',')} km</span></span><span>${kc(c.price)}</span></div>`).join('');
   return `<div class="card">${head}${comps?`<div style="margin-top:8px">${comps}</div>`:''}</div>`;
  }).join('');
@@ -1751,6 +1753,30 @@ function valDetails(P){
 }
 async function setRadius(id,v){
  try{ await api(`/flats/${id}/valuation`,'PUT',{radius_km:parseFloat(v)}); await loadPortfolio(); render() }
+ catch(e){ toast(e.message) }
+}
+// Ruční hodnota bytu k datu: zadání, seznam dřívějších zápisů a jejich smazání
+async function valueModal(fid){
+ const f=flat(fid)||{addr:''};
+ let list=[];
+ try{ list=await api(`/flats/${fid}/values`) }catch(e){ toast(e.message) }
+ const rows=list.length?list.map(v=>`<div class="line"><span>${dmy(v.on_date)} · <b>${kc(v.amount)}</b> <span class="mut small">${v.source==='ručně'?'ručně':'odhad'}${v.note?' · '+esc(v.note):''}</span></span><button class="link" onclick="deleteFlatValue(${v.id},${fid})">Smazat</button></div>`).join(''):'<div class="mut small">Zatím žádná hodnota.</div>';
+ modal(`<h2>Hodnota bytu</h2><p class="mut small">${esc(f.addr)}. Platí poslední zápis do daného data, takže se stejně objeví v součtu portfolia i v grafu.</p>
+  <div class="grid2"><div><label>Datum</label><input type="date" id="vdOn" value="${TODAY_ISO()}" max="${TODAY_ISO()}"></div><div><label>Hodnota (Kč)</label><input id="vdAm" inputmode="numeric" placeholder="např. 4 200 000"></div></div>
+  <label>Poznámka</label><input id="vdNote" placeholder="např. znalecký posudek, odhad makléře">
+  <div class="btns"><button class="btn" onclick="saveFlatValue(${fid})">Uložit hodnotu</button><button class="btn sec" onclick="closeModal()">Zavřít</button></div>
+  <h3>Zadané hodnoty</h3>${rows}`);
+}
+async function saveFlatValue(fid){
+ try{
+  await api(`/flats/${fid}/values`,'POST',{on_date:$('#vdOn').value,amount:$('#vdAm').value,note:$('#vdNote').value.trim()});
+  toast('Hodnota uložena');
+  closeModal(); PORT=null; await loadPortfolio(); render();
+ }catch(e){ toast(e.message) }
+}
+async function deleteFlatValue(id,fid){
+ if(!confirm('Smazat tuto hodnotu?'))return;
+ try{ await api(`/flat-values/${id}`,'DELETE'); toast('Smazáno'); PORT=null; await loadPortfolio(); await valueModal(fid); render() }
  catch(e){ toast(e.message) }
 }
 function valueTab(){
@@ -1763,8 +1789,9 @@ function valueTab(){
  const cols=P.flats.map(f=>{
   const h=f.value!=null?Math.max(8,Math.round(f.value/max*190)):0;
   const chg=f.change!=null?`<div class="vchg" style="color:${f.change>=0?'var(--ok)':'var(--bad)'}">${arrow(f.change)} ${kc(Math.abs(f.change))} za měsíc</div>`:'';
-  return `<div class="vcol" title="${esc(f.addr)}${f.basis?' · '+esc(f.basis):''}">
-   <div class="vval">${f.value!=null?kc(f.value):'bez odhadu'}</div>${chg}
+  const src=f.value!=null?`<div class="vchg mut">${f.source==='ručně'?'ručně':'odhad'} · ${dmy(f.value_date)}</div>`:'';
+  return `<div class="vcol" style="cursor:pointer" onclick="valueModal(${f.id})" title="Kliknutím zadáte hodnotu k datu${f.basis?' · '+esc(f.basis):''}">
+   <div class="vval">${f.value!=null?kc(f.value):'bez hodnoty'}</div>${src}${chg}
    <div class="vbar${f.value==null?' none':''}" style="height:${h}px"></div>
    <div class="vname">${esc(f.addr)}</div></div>`;
  }).join('');
@@ -1772,7 +1799,7 @@ function valueTab(){
  const hist=P.history.slice(-12).reverse().map(h=>`<div class="line"><span class="mut small">${dmy(h.date)}</span><span>${kc(h.total)}</span></div>`).join('');
  return `<div class="row"><h1>Portfolio</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="refreshAllBench()" ${REF.running?'disabled':''}>↻ Aktualizovat hodnoty</button></div></div>
  <div id="benchStatus" class="bstat">${refreshLine()}</div>
- <p class="mut small">Součet odhadů z podobných nabídek prodeje v okruhu kolem adresy bytu. Pořizovací cena se nepoužívá.</p>
+ <p class="mut small">Hodnota každého bytu je poslední zadaná nebo odhadnutá k danému dni. Kliknutím na byt zadáte hodnotu k datu. Odhad vychází z podobných nabídek prodeje v okruhu kolem adresy.</p>
  <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
  <div class="pwidget fixed">
   <div class="pl">Aktuální hodnota portfolia</div>
@@ -1783,7 +1810,7 @@ function valueTab(){
  ${valDetails(P)}
  <div class="card"><label class="row" style="cursor:pointer"><span>Zobrazovat hodnotu na hlavní stránce</span><input type="checkbox" ${showValue()?'checked':''} onchange="setShowValue(this.checked);render()"></label></div>
  <h2>Historie</h2>
- <div class="card">${hist||'<div class="mut small">Zatím žádný snímek. Ukládá se při každém týdenním hledání, nejvýš jeden za den.</div>'}</div>`;
+ <div class="card">${hist||'<div class="mut small">Zatím žádná hodnota. Zadejte ji u bytu nebo spusťte aktualizaci.</div>'}</div>`;
 }
 
 // ---------- tržní přehled (každé pondělí) ----------

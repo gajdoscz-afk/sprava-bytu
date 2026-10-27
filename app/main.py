@@ -105,6 +105,11 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_to DATE"))
+    try:
+        with Session(engine) as db:
+            migrate_snapshots_to_values(db)
+    except Exception as e:
+        print(f"[portfolio] migrace snímků selhala: {e}", flush=True)
     _fix_owners_from_documents()
     threading.Thread(target=_benchmark_scheduler, daemon=True).start()
     yield
@@ -219,14 +224,75 @@ def _snapshot_growth(db: Session, kind: str, dispo: str) -> tuple[float | None, 
     return bm.growth_pct(value(latest), base(30, 10)), bm.growth_pct(value(latest), base(365, 45))
 
 
+def today_prague() -> date:
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Prague")).date()
+    except Exception:
+        return date.today()
+
+
+def latest_flat_values(db: Session, on: date | None = None) -> dict:
+    """Pro každý byt poslední platná hodnota k danému dni. Při shodě data vyhrává ruční zápis."""
+    on = on or today_prague()
+    entries = db.scalars(select(m.FlatValue).where(m.FlatValue.on_date <= on)).all()
+    latest: dict = {}
+    for v in sorted(entries, key=lambda e: (e.on_date, e.source != "odhad")):
+        latest[v.flat_id] = v
+    return latest
+
+
 def portfolio_values(db: Session) -> list[dict]:
-    """Hodnota každého bytu z podobných nabídek prodeje v okruhu kolem adresy. Pořizovací cena se nepoužívá."""
+    """Hodnota každého bytu = poslední zadaná nebo odhadnutá hodnota. Odhad z nabídek je uveden zvlášť pro porovnání."""
     sales = db.scalars(select(m.Listing).where(m.Listing.kind == "sale")).all()
+    latest = latest_flat_values(db)
     rows = []
     for f in db.scalars(select(m.Flat).order_by(m.Flat.addr)).all():
-        v = gx.valuation(f.lat, f.lon, f.dispo, f.area_m2, f.valuation_radius_km or gx.DEFAULT_RADIUS_KM, sales)
-        rows.append({"id": f.id, "addr": f.addr, **v})
+        est = gx.valuation(f.lat, f.lon, f.dispo, f.area_m2, f.valuation_radius_km or gx.DEFAULT_RADIUS_KM, sales)
+        e = latest.get(f.id)
+        rows.append({
+            "id": f.id, "addr": f.addr,
+            "value": float(e.amount) if e else None,
+            "source": e.source if e else None,
+            "value_date": e.on_date.isoformat() if e else None,
+            "note": e.note if e else "",
+            "estimate": est.get("value"),
+            "basis": est.get("basis", ""), "confidence": est.get("confidence", ""),
+            "n": est.get("n", 0), "n_in_radius": est.get("n_in_radius", 0),
+            "radius_km": est.get("radius_km"), "reason": est.get("reason", ""), "comps": est.get("comps", []),
+        })
     return rows
+
+
+def portfolio_history(db: Session) -> list[dict]:
+    """Celková hodnota k každému datu, kdy se něco zapsalo. Hodnota bytu se přenáší do dalšího zápisu.
+    Poslední bod je vždy stejný jako aktuální součet na stránce Portfolio."""
+    by_date: dict = defaultdict(list)
+    for e in db.scalars(select(m.FlatValue)).all():
+        by_date[e.on_date].append(e)
+    state: dict = {}
+    hist = []
+    for d in sorted(by_date):
+        for e in sorted(by_date[d], key=lambda e: e.source != "odhad"):
+            state[e.flat_id] = e
+        hist.append({"date": d.isoformat(), "total": round(sum(float(e.amount) for e in state.values()), 2)})
+    return hist
+
+
+def migrate_snapshots_to_values(db: Session) -> None:
+    """Jednorázově přepíše dřívější snímky portfolia do hodnot bytů, aby graf neztratil historii."""
+    if db.scalar(select(func.count()).select_from(m.FlatValue)):
+        return
+    flat_ids = set(db.scalars(select(m.Flat.id)).all())
+    seen = set()
+    for snap in db.scalars(select(m.PortfolioSnapshot).order_by(m.PortfolioSnapshot.taken_at)).all():
+        d = snap.taken_at.astimezone(timezone.utc).date()
+        for fid, val in (snap.per_flat or {}).items():
+            fid = int(fid)
+            if fid in flat_ids and val is not None and (fid, d) not in seen:
+                seen.add((fid, d))
+                db.add(m.FlatValue(flat_id=fid, on_date=d, amount=Decimal(str(val)), source="odhad"))
+    db.commit()
 
 
 def ensure_geo(limit: int = 200) -> None:
@@ -251,21 +317,19 @@ def geo_later() -> None:
 
 
 def snapshot_portfolio_now() -> None:
-    """Uloží snímek hodnoty portfolia (nejvýš jeden za den)."""
+    """Zapíše aktuální odhad z nabídek jako hodnotu každého bytu k dnešku. Ruční zápis ze stejného dne má přednost."""
     with Session(engine) as db:
-        rows = portfolio_values(db)
-        valued = [r for r in rows if r["value"] is not None]
-        if not valued:
-            return
-        now = datetime.now(timezone.utc)
-        last = db.scalar(select(m.PortfolioSnapshot).order_by(m.PortfolioSnapshot.taken_at.desc()).limit(1))
-        if last and last.taken_at.astimezone(timezone.utc).date() == now.date():
-            return
-        db.add(m.PortfolioSnapshot(
-            taken_at=now,
-            total=Decimal(str(sum(r["value"] for r in valued))),
-            per_flat={str(r["id"]): r["value"] for r in valued},
-        ))
+        today = today_prague()
+        for r in portfolio_values(db):
+            if r["estimate"] is None:
+                continue
+            amount = Decimal(str(round(r["estimate"], 2)))
+            row = db.scalar(select(m.FlatValue).where(
+                m.FlatValue.flat_id == r["id"], m.FlatValue.on_date == today, m.FlatValue.source == "odhad"))
+            if row:
+                row.amount = amount
+            else:
+                db.add(m.FlatValue(flat_id=r["id"], on_date=today, amount=amount, source="odhad"))
         db.commit()
 
 
@@ -585,25 +649,73 @@ def benchmark_refresh_status() -> dict:
 
 @app.get("/portfolio")
 def portfolio(db: Session = Depends(get_db)):
-    """Hodnota portfolia: součet hodnot bytů, změna za měsíc a historie snímků."""
+    """Hodnota portfolia: součet posledních hodnot bytů, změna za měsíc a historie (stejné číslo jako graf na přehledu)."""
     rows = portfolio_values(db)
     total = sum(r["value"] for r in rows if r["value"] is not None)
-    snaps = db.scalars(select(m.PortfolioSnapshot).order_by(m.PortfolioSnapshot.taken_at)).all()
-    base = pick_snapshot(snaps, 30, 10)
-    base_total = float(base.total) if base and base.total else None
+    hist = portfolio_history(db)
+    target = today_prague() - timedelta(days=30)
+    base = next((h for h in reversed(hist) if h["date"] <= target.isoformat()), None)
+    base_total = base["total"] if base else None
+    base_vals = latest_flat_values(db, target)
     for r in rows:
-        prev = base.per_flat.get(str(r["id"])) if base else None
-        r["change"] = (r["value"] - prev) if (r["value"] is not None and prev) else None
+        e = base_vals.get(r["id"])
+        r["change"] = (r["value"] - float(e.amount)) if (r["value"] is not None and e) else None
     return {
         "total": round(total),
         "flats_count": len(rows),
         "without_value": sum(1 for r in rows if r["value"] is None),
         "change_1m": round(total - base_total) if base_total else None,
         "change_1m_pct": bm.growth_pct(total, base_total),
-        "base_date": base.taken_at.date().isoformat() if base else None,
+        "base_date": base["date"] if base else None,
         "flats": rows,
-        "history": [{"date": s.taken_at.date().isoformat(), "total": float(s.total)} for s in snaps[-52:]],
+        "history": hist[-52:],
     }
+
+
+@app.get("/flats/{flat_id}/values")
+def list_flat_values(flat_id: int, db: Session = Depends(get_db)):
+    get_flat(db, flat_id)
+    vs = db.scalars(select(m.FlatValue).where(m.FlatValue.flat_id == flat_id)
+                    .order_by(m.FlatValue.on_date.desc(), m.FlatValue.source)).all()
+    return [{"id": v.id, "on_date": v.on_date.isoformat(), "amount": float(v.amount),
+             "source": v.source, "note": v.note} for v in vs]
+
+
+@app.post("/flats/{flat_id}/values", status_code=201)
+def add_flat_value(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Ruční hodnota bytu k zadanému datu. Stejné datum a zdroj se přepíše."""
+    get_flat(db, flat_id)
+    try:
+        on = date.fromisoformat(str(body.get("on_date") or ""))
+    except ValueError:
+        raise HTTPException(400, "Zadejte datum.")
+    if on > today_prague():
+        raise HTTPException(400, "Datum nesmí být v budoucnu.")
+    try:
+        amount = Decimal(str(body.get("amount") or "").replace(" ", "").replace("\u00a0", "").replace(",", "."))
+    except Exception:
+        raise HTTPException(400, "Zadejte hodnotu v Kč.")
+    if amount <= 0:
+        raise HTTPException(400, "Hodnota musí být kladná.")
+    note = str(body.get("note") or "").strip()
+    row = db.scalar(select(m.FlatValue).where(
+        m.FlatValue.flat_id == flat_id, m.FlatValue.on_date == on, m.FlatValue.source == "ručně"))
+    if row:
+        row.amount, row.note = amount, note
+    else:
+        db.add(m.FlatValue(flat_id=flat_id, on_date=on, amount=amount, source="ručně", note=note))
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/flat-values/{value_id}")
+def delete_flat_value(value_id: int, db: Session = Depends(get_db)):
+    v = db.get(m.FlatValue, value_id)
+    if not v:
+        raise HTTPException(404, "Hodnota neexistuje.")
+    db.delete(v)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/news")

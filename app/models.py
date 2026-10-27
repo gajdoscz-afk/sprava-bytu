@@ -240,6 +240,22 @@ class PortfolioSnapshot(Base):
     per_flat: Mapped[dict] = mapped_column(JSON, default=dict)  # {"id bytu": hodnota v Kč}
 
 
+class FlatValue(Base):
+    """Hodnota bytu k datu. Zapíše ji člověk ručně (zdroj 'ručně') nebo měsíční odhad z nabídek ('odhad').
+    Platí poslední záznam do daného data; při shodě data má přednost ruční zápis."""
+
+    __tablename__ = "flat_values"
+    __table_args__ = (UniqueConstraint("flat_id", "on_date", "source"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    source: Mapped[str] = mapped_column(String(10))  # 'ručně' | 'odhad'
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MarketNews(Base):
     """Zpráva z tržního přehledu (daně, zákony a lhůty, nájemní trh, sazby). Týdně se nahrazuje."""
 
