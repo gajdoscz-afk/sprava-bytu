@@ -244,6 +244,7 @@ function toFlat(f){
   bank:{acc:f.bank_acc||''},
   leases:f.leases.map(l=>({id:l.id,from:l.valid_from,to:l.valid_to||'',rent:l.rent,kauce:l.deposit,adv:l.advances||{}})),
   svj:(f.svj_costs||[]).map(c=>({id:c.id,name:c.name,amount:c.amount})),
+  svj_all:(f.svj_all||[]).map(c=>({...c})),
   acq:f.acquisition||null,
   area_m2:f.area_m2,
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
