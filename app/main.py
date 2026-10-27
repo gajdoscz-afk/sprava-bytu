@@ -1243,6 +1243,13 @@ async def read_tenant_id(files: list[UploadFile] = File(...), flat_id: int | Non
     return {"fields": fields, "documents": [doc_out(d) for d in docs]}
 
 
+def _parse_day(raw: str | None):
+    try:
+        return date.fromisoformat(raw[:10]) if raw else None
+    except (ValueError, TypeError):
+        return None
+
+
 @app.get("/flats/{flat_id}/settlement")
 def settlement_preview(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
     """Náhled vyúčtování za kalendářní rok (výchozí: loni). Nic se neukládá."""
@@ -1252,14 +1259,14 @@ def settlement_preview(flat_id: int, year: int | None = None, db: Session = Depe
 
 
 @app.post("/flats/{flat_id}/settlement", status_code=201)
-def settlement_save(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
+def settlement_save(flat_id: int, year: int | None = None, doc_date: str | None = None, db: Session = Depends(get_db)):
     """Vygeneruje Word vyúčtování pro nájemníka a přehled pro pronajímatele a uloží je ke kartě bytu."""
     f = get_flat(db, flat_id)
     y = year or date.today().year - 1
     res = stl.compute(db, f, y)
     out = []
     for doc_type, label, data in (
-        ("vyuctovani_najemnikovi", "Vyúčtování nájemník", docgen.settlement_tenant_docx(f, res)),
+        ("vyuctovani_najemnikovi", "Vyúčtování nájemník", docgen.settlement_tenant_docx(f, res, _parse_day(doc_date))),
         ("jine", "Přehled pro pronajímatele", docgen.settlement_landlord_docx(f, res)),
     ):
         d = m.Document(flat_id=f.id, status="zarazeno", doc_type=doc_type,

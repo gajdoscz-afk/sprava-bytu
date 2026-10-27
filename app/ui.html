@@ -1496,7 +1496,8 @@ function openSettlement(fid){
  const y=new Date().getFullYear()-1;
  modal(`<div class="sheetHead"><h2>Vyúčtování služeb</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <p class="small mut">Přeúčtují se jen teplo, voda, osvětlení, společná elektřina a výtah. Správa vodoměrů, účetnictví a odměna SVJ se nepřeúčtují. Vyúčtování se dělá za kalendářní rok, např. v roce 2027 za 2026.</p>
- <label>Rok</label><input type="number" id="sy" value="${y}" min="2000" max="2100">
+ <div class="grid2"><div><label>Rok</label><input type="number" id="sy" value="${y}" min="2000" max="2100"></div>
+ <div><label>Datum na vyúčtování</label><input type="date" id="sd" value="${TODAY_ISO()}"><div class="mut small">Můžete změnit, nebo nechat dnešní.</div></div></div>
  <div class="btns"><button class="btn sec" onclick="settlementPreview(${fid})">Náhled</button><button class="btn" onclick="settlementSave(${fid})">Uložit Word ke kartě bytu</button></div>
  <div id="sp"></div>`);
 }
@@ -1520,7 +1521,8 @@ async function settlementSave(fid){
  if(!confirm(`Vytvořit Word vyúčtování za ${y} a uložit ke kartě bytu?`))return;
  try{
   progress('Vytvářím vyúčtování…');
-  const r=await api(`/flats/${fid}/settlement?year=${y}`,'POST');
+  const dd=$('#sd')?.value||'';
+  const r=await api(`/flats/${fid}/settlement?year=${y}${dd?'&doc_date='+encodeURIComponent(dd):''}`,'POST');
   progress('');
   toast('Uloženo: vyúčtování pro nájemníka a přehled pro pronajímatele');
   closeModal();await reload();render();
