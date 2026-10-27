@@ -949,7 +949,7 @@ def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(g
             name = str(w.get("name") or "").strip()[:200]
             if name:
                 items.append((name, money(w.get("amount") or 0)))
-        replace_svj_set(db, f, items, eff, old, new)
+        replace_svj_set(db, f, items, eff, old, new, purge=bool(body.get("from_doc")))
         if old or new:
             db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                              old=old or None, new=new or None))
@@ -1524,7 +1524,7 @@ def _ckey(name: str) -> str:
     return re.sub(r"\s+", "", name).upper()
 
 
-def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict) -> None:
+def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict, purge: bool = False) -> None:
     """Celý předpis SVJ nahradí novým od data eff. Položky, které v novém nejsou, se ukončí; starý předpis
     zůstane v historii (valid_to), aby šel použít pro vyúčtování dřívějšího období."""
     wanted = {}
@@ -1557,6 +1557,11 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
         if k not in seen:
             db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff))
             new[name] = float(amt)
+    if purge:  # z dokladu se evidují jen položky, které na něm jsou; ostatní se smažou i z historie
+        for c in list(f.costs):
+            if _ckey(c.name) not in wanted:
+                old.setdefault(c.name, float(c.amount))
+                db.delete(c)
 
 
 def sync_svj_costs(db: Session, d: m.Document) -> None:
@@ -1582,7 +1587,7 @@ def sync_svj_costs(db: Session, d: m.Document) -> None:
         return
     eff = d.valid_from or date.today()
     old, new = {}, {}
-    replace_svj_set(db, f, items, eff, old, new)
+    replace_svj_set(db, f, items, eff, old, new, purge=True)
     if new or old:
         db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                          old=old or None, new={**new, "doc_id": d.id}))
