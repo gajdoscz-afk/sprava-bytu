@@ -525,7 +525,7 @@ def flat_out(f: m.Flat) -> dict:
         "leases": [lease_out(l) for l in f.leases],
         "statements": [statement_out(st) for st in f.statements],
         "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None} for c in f.costs if _cost_active(c, date.today())],
-        "svj_all": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None, "valid_to": c.valid_to.isoformat() if c.valid_to else None} for c in f.costs],
+        "svj_all": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None, "valid_to": c.valid_to.isoformat() if c.valid_to else None, "source_doc_id": c.source_doc_id} for c in f.costs],
         "acquisition": (
             {"acquired_on": f.acquisition.acquired_on.isoformat() if f.acquisition.acquired_on else None,
              "price": float(f.acquisition.price) if f.acquisition.price is not None else None,
@@ -951,7 +951,14 @@ def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(g
             name = str(w.get("name") or "").strip()[:200]
             if name:
                 items.append((name, money(w.get("amount") or 0)))
-        replace_svj_set(db, f, items, eff, old, new, doc_id=int(body["from_doc"]) if body.get("from_doc") else None)
+        end_raw = str(body.get("end") or "")[:10]
+        try:
+            end = date.fromisoformat(end_raw) if end_raw else None
+        except ValueError:
+            raise HTTPException(400, "Datum konce platnosti není platné")
+        if end and end < eff:
+            raise HTTPException(400, "Předpis nemůže skončit dřív, než začne.")
+        replace_svj_set(db, f, items, eff, old, new, doc_id=int(body["from_doc"]) if body.get("from_doc") else None, end=end)
         if old or new:
             db.add(m.Version(flat_id=f.id, name=f"Platby SVJ od {eff.isoformat()}", action=f"změna od {eff.isoformat()}",
                              old=old or None, new=new or None))
@@ -969,6 +976,37 @@ def update_cost(flat_id: int, cost_id: int, body: dict = Body(...), db: Session 
         c.name = str(body["name"]).strip()[:200]
     if body.get("amount") is not None:
         c.amount = money(body["amount"])
+    for key, attr in (("valid_from", "valid_from"), ("valid_to", "valid_to")):
+        if key in body:
+            raw = str(body.get(key) or "")[:10]
+            try:
+                setattr(c, attr, date.fromisoformat(raw) if raw else None)
+            except ValueError:
+                raise HTTPException(400, "Datum není platné")
+    if c.valid_from and c.valid_to and c.valid_to < c.valid_from:
+        raise HTTPException(400, "Konec platnosti je dřív než začátek.")
+    db.commit()
+    return flat_out(get_flat(db, flat_id))
+
+
+@app.post("/flats/{flat_id}/svj/end")
+def end_svj_from(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Vynuluje (ukončí) všechny platné položky SVJ od zadaného data. Historie zůstane."""
+    f = get_flat(db, flat_id)
+    try:
+        on = date.fromisoformat(str(body.get("on_date") or "")[:10])
+    except ValueError:
+        raise HTTPException(400, "Zadejte datum.")
+    old = {}
+    for c in list(f.costs):
+        if _cost_active(c, on):
+            old[c.name] = float(c.amount)
+            if c.valid_from is None or on > c.valid_from:
+                c.valid_to = on - timedelta(days=1)
+            else:
+                db.delete(c)
+    if old:
+        db.add(m.Version(flat_id=f.id, name=f"Platby SVJ ukončeny", action=f"ukončeno od {on.isoformat()}", old=old, new=None))
     db.commit()
     return flat_out(get_flat(db, flat_id))
 
@@ -1526,9 +1564,10 @@ def _ckey(name: str) -> str:
     return re.sub(r"\s+", "", name).upper()
 
 
-def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict, doc_id: int | None = None) -> None:
-    """Celý předpis SVJ nahradí novým od data eff. Položky, které v novém nejsou, se ukončí; starý předpis
-    zůstane v historii (valid_to), aby šel použít pro vyúčtování dřívějšího období."""
+def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, new: dict,
+                    doc_id: int | None = None, end: date | None = None) -> None:
+    """Předpis SVJ od data eff (do end, None = neurčitě). Co není v novém, se ukončí dnem před eff; starý předpis zůstane
+    v historii. Při doc_id se smažou jen chybné položky téhož dokladu, které už na něm nejsou."""
     wanted = {}
     for name, amt in items:
         wanted[_ckey(name)] = (name, amt)
@@ -1539,17 +1578,16 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
             seen.add(k)
             name, amt = wanted[k]
             if c.amount == amt and c.name == name:
+                c.valid_to = end  # stejná položka jen s novým koncem
                 continue
+            old[c.name] = float(c.amount)
             if c.valid_from is None or eff > c.valid_from:
-                old[c.name] = float(c.amount)
                 c.valid_to = eff - timedelta(days=1)
                 c.ended_by_doc_id = doc_id
-                db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, source_doc_id=doc_id))
-                new[name] = float(amt)
+                db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, valid_to=end, source_doc_id=doc_id))
             else:  # oprava hned od začátku platnosti
-                old[c.name] = float(c.amount)
-                c.name, c.amount = name, amt
-                new[name] = float(amt)
+                c.name, c.amount, c.valid_to = name, amt, end
+            new[name] = float(amt)
         else:
             old[c.name] = float(c.amount)
             if c.valid_from is None or eff > c.valid_from:
@@ -1559,9 +1597,9 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
                 db.delete(c)
     for k, (name, amt) in wanted.items():
         if k not in seen:
-            db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, source_doc_id=doc_id))
+            db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, valid_to=end, source_doc_id=doc_id))
             new[name] = float(amt)
-    if doc_id is not None:  # položky z tohoto dokladu, které už na něm nejsou (chyba čtení), se smažou; ostatní předpisy zůstávají
+    if doc_id is not None:  # položky z tohoto dokladu, které už na něm nejsou (chyba čtení), se smažou
         for c in list(f.costs):
             if c.source_doc_id == doc_id and _ckey(c.name) not in wanted:
                 old.setdefault(c.name, float(c.amount))
@@ -1785,6 +1823,11 @@ def undo_svj_schedule(doc_id: int, db: Session = Depends(get_db)):
         raise HTTPException(400, "Dokument není přiřazen k bytu.")
     f = get_flat(db, d.flat_id)
     created = [c for c in f.costs if c.source_doc_id == doc_id]
+    if not created:  # položky nahrané před sledováním dokladu: podle data čtení a názvu
+        keys = {_ckey(str(it.get("name") or "")) for it in (d.extracted or {}).get("svj_items") or []
+                if isinstance(it, dict) and it.get("name")}
+        days = {x for x in (d.valid_from, d.created_at.date()) if x}
+        created = [c for c in f.costs if c.source_doc_id is None and c.valid_from in days and _ckey(c.name) in keys]
     ended = [c for c in f.costs if c.ended_by_doc_id == doc_id]
     if not created and not ended:
         raise HTTPException(404, "Z tohoto dokladu není nahraný žádný rozpis.")

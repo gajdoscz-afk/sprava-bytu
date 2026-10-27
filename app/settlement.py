@@ -72,8 +72,20 @@ def tenant_advances(flat: m.Flat, year: int) -> dict[str, Decimal]:
     return out
 
 
+def svj_predpis_months(flat: m.Flat, year: int) -> dict[int, Decimal]:
+    """Měsíční zálohy na SVJ, které jste platil podle předpisů platných v daném měsíci (může jich být víc v roce)."""
+    out: dict[int, Decimal] = {}
+    for mo in range(1, 13):
+        d = date(year, mo, 15)
+        out[mo] = sum((Decimal(c.amount) for c in flat.costs
+                       if (c.valid_from is None or c.valid_from <= d) and (c.valid_to is None or c.valid_to >= d)),
+                      Decimal("0"))
+    return out
+
+
 def compute(db: Session, flat: m.Flat, year: int) -> dict:
     items = svj_items(db, flat.id, year)
+    by_month = svj_predpis_months(flat, year)
     billable = [i for i in items if i["billable"]]
     adv = tenant_advances(flat, year)
     bill_cost = sum((i["cost"] for i in billable), Decimal("0"))
@@ -88,6 +100,7 @@ def compute(db: Session, flat: m.Flat, year: int) -> dict:
         "tenant_balance": bill_cost - adv_total,  # kladné = nedoplatek nájemníka
         "received": received,
         "landlord_cost": l_cost, "landlord_paid": l_paid, "landlord_balance": l_paid - l_cost,
+        "svj_predpis_by_month": by_month, "svj_predpis_total": sum(by_month.values(), Decimal("0")),
     }
 
 
@@ -102,4 +115,6 @@ def to_json(res: dict) -> dict:
         "tenant_balance": f(res["tenant_balance"]), "received": f(res["received"]),
         "landlord_cost": f(res["landlord_cost"]), "landlord_paid": f(res["landlord_paid"]),
         "landlord_balance": f(res["landlord_balance"]),
+        "svj_predpis_by_month": {str(k): f(v) for k, v in res["svj_predpis_by_month"].items()},
+        "svj_predpis_total": f(res["svj_predpis_total"]),
     }

@@ -386,24 +386,71 @@ function costEdit(fid,cid){
   v=>{const list=f.svj.map(x=>x.id===cid?{name:v.name,amount:+v.amt||0}:{name:x.name,amount:x.amount});return changePredpis(fid,{effective:v.eff,costs:list})},
   ()=>{const list=f.svj.filter(x=>x.id!==cid).map(x=>({name:x.name,amount:x.amount}));return changePredpis(fid,{effective:TODAY_ISO(),costs:list})});
 }
-// Rozpis SVJ jen z jednoho vybraného dokumentu (ne ze všech dokumentů najednou)
-function svjSourcePicker(f){
+// Položky SVJ pro zvolený rok, s daty platnosti. Platné nahoře, ukončené šedě.
+function svjRows(f){
+ const Y=V.year||TODAY.getFullYear(), today=TODAY_ISO();
+ const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return a<=`${Y}-12-31`&&b>=`${Y}-01-01`});
+ if(!rows.length)return '<div class="mut small">Zatím nic. Přidejte zálohy, které platíte, nebo načtěte předpis z dokumentu.</div>';
+ const ended=c=>!!(c.valid_to&&c.valid_to<today);
+ rows.sort((x,y)=>(ended(x)-ended(y))||String(y.valid_from||'').localeCompare(String(x.valid_from||'')));
+ return `<div class="mut small" style="margin-bottom:6px">Rok ${Y}. Klikněte na položku pro úpravu částky a dat platnosti.</div>`+
+  rows.map(c=>{const per=`${c.valid_from?'od '+dmy(c.valid_from):'odjakživa'} ${c.valid_to?'· do '+dmy(c.valid_to):'· neurčitě'}`;
+   return `<div class="line" style="cursor:pointer;${ended(c)?'opacity:.5;color:var(--mut)':''}" onclick="costRowEdit(${f.id},${c.id})"><span>${esc(c.name)}${ended(c)?' <span class="small">(už neplatí)</span>':''}<div class="small mut">${per}</div></span><span>${kc(c.amount)}</span></div>`}).join('');
+}
+// Doklad s rozpisem: jen tento jeden doklad se načte nebo odstraní
+function svjDocBox(f){
  const docs=S.docs.filter(d=>String(d.flat_id)===String(f.id)&&d.status==='zarazeno');
- if(!docs.length)return '<div class="mut small" style="margin-bottom:8px">Zatím nemáte žádný dokument. Nahrajte předpis SVJ na kartu bytu.</div>';
+ if(!docs.length)return '<div class="mut small" style="margin:10px 0">Zatím nemáte žádný dokument. Nahrajte předpis SVJ na kartu bytu.</div>';
  const hasItems=d=>Array.isArray(d.extracted?.svj_items)&&d.extracted.svj_items.length>0;
- return `<div class="grid2" style="margin-bottom:10px"><div><label>Načíst z jednoho dokumentu</label><select id="svjDoc">${docs.map(d=>`<option value="${d.id}">${esc(d.filename)} · ${docWhen(d)}${hasItems(d)?'':' (bez rozpisu)'}</option>`).join('')}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="applySvjFromDoc(${f.id})">Načíst z tohoto dokumentu</button><button class="btn sec sm warnTxt" onclick="undoSvjFromDoc(${f.id})">Odstranit rozpis z tohoto dokumentu</button></div></div>`;
+ return `<div class="card" style="margin:12px 0;padding:12px 14px;box-shadow:none"><label>Předpis z dokumentu</label>
+  <select id="svjDoc">${docs.map(d=>`<option value="${d.id}">${esc(d.filename)} · ${docWhen(d)}${hasItems(d)?'':' (bez rozpisu)'}</option>`).join('')}</select>
+  <div class="btns" style="margin-top:8px"><button class="btn sm" onclick="applySvjFromDoc(${f.id})">Načíst jako nový předpis</button><button class="btn sec sm warnTxt" onclick="undoSvjFromDoc(${f.id})">Odstranit rozpis z tohoto dokumentu</button></div></div>`;
+}
+// Vynulování: všechny platné položky se ukončí od zvoleného data
+function svjEndModal(fid){
+ modal(`<div class="sheetHead"><h2>Vynulovat předpis SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <p class="small">Všechny platné položky se ukončí dnem před zvoleným datem. Historie zůstane, takže vyúčtování starších období funguje.</p>
+  <label>Od data</label><input id="svjOn" type="date" value="${TODAY_ISO()}">
+  <div class="btns"><button class="btn" onclick="confirmSvjEnd(${fid})">Vynulovat od tohoto data</button></div>`);
+}
+async function confirmSvjEnd(fid){
+ try{ await api(`/flats/${fid}/svj/end`,'POST',{on_date:$('#svjOn').value}); closeModal(); toast('Předpis ukončen'); await reload(); render() }
+ catch(e){ toast(e.message) }
+}
+// Úprava jedné položky: název, částka, platí od / do
+function costRowEdit(fid,cid){
+ const f=flat(fid); const c=(f.svj_all||[]).find(x=>x.id===cid); if(!c)return;
+ modal(`<div class="sheetHead"><h2>Položka SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <label>Název</label><input id="cre_n" value="${esc(c.name)}">
+  <label>Částka měsíčně (Kč)</label><input id="cre_a" type="number" step="0.01" value="${c.amount}">
+  <div class="grid2"><div><label>Platí od</label><input id="cre_f" type="date" value="${c.valid_from||''}"></div>
+  <div><label>Platí do (prázdné = neurčitě)</label><input id="cre_t" type="date" value="${c.valid_to||''}"></div></div>
+  <div class="btns"><button class="btn" onclick="saveCostRow(${fid},${cid})">Uložit</button><button class="btn sec warnTxt" onclick="delCostRow(${fid},${cid})">Smazat položku</button></div>`);
+}
+async function saveCostRow(fid,cid){
+ try{
+  await api(`/flats/${fid}/costs/${cid}`,'PATCH',{name:$('#cre_n').value.trim(),amount:$('#cre_a').value,valid_from:$('#cre_f').value||null,valid_to:$('#cre_t').value||null});
+  closeModal(); toast('Uloženo'); await reload(); render();
+ }catch(e){ toast(e.message) }
+}
+async function delCostRow(fid,cid){
+ if(!confirm('Smazat tuto položku? Historie ukončených položek zůstane.'))return;
+ try{ await api(`/flats/${fid}/costs/${cid}`,'DELETE'); closeModal(); toast('Smazáno'); await reload(); render() }
+ catch(e){ toast(e.message) }
 }
 // Odstraní rozpis nahraný z vybraného dokladu a obnoví předchozí předpis, který ukončil
 async function undoSvjFromDoc(fid){
- const id=+$('#svjDoc')?.value; const d=S.docs.find(x=>x.id===id);
- if(!d)return;
+ const id=Number($('#svjDoc')?.value); const d=S.docs.find(x=>x.id===id);
+ if(!d){toast('Vyberte dokument');return}
  if(!confirm(`Odstranit rozpis SVJ nahraný z dokumentu „${d.filename}“? Předchozí předpis, který ten doklad ukončil, se obnoví.`))return;
  try{ await api(`/documents/${id}/undo-svj`,'POST'); toast('Rozpis z dokladu odstraněn'); await reload(); render() }
  catch(e){ toast(e.message) }
 }
+// Nový předpis z dokladu: potvrzení změn, platí od a platí do
 async function applySvjFromDoc(fid){
- const id=+$('#svjDoc')?.value; const d=S.docs.find(x=>x.id===id); const f=flat(fid);
- const items=(d?.extracted?.svj_items||[]).filter(it=>it&&String(it.name||'').trim()&&+it.amount>0);
+ const id=Number($('#svjDoc')?.value); const d=S.docs.find(x=>x.id===id); const f=flat(fid);
+ if(!d){toast('Vyberte dokument');return}
+ const items=(d.extracted?.svj_items||[]).filter(it=>it&&String(it.name||'').trim()&&+it.amount>0);
  if(!items.length){toast('Tento dokument nemá rozpis položek. Otevřete ho a klikněte na Přečíst znovu.');return}
  const want={};items.forEach(it=>{want[String(it.name).trim()]=+it.amount});
  const cur={};f.svj.forEach(c=>{cur[c.name]=+c.amount});
@@ -412,33 +459,25 @@ async function applySvjFromDoc(fid){
  const chg=Object.keys(want).filter(k=>k in cur&&cur[k]!==want[k]);
  const total=Object.values(want).reduce((a,b)=>a+b,0);
  const eff=d.valid_from?String(d.valid_from).slice(0,10):TODAY_ISO();
- const txt=[`Celý rozpis z dokumentu: ${Object.keys(want).length} položek, celkem ${kc(total)} měsíčně.`,
+ const txt=[`Rozpis z dokumentu: ${Object.keys(want).length} položek, celkem ${kc(total)} měsíčně.`,
   add.length?`Přidá se: ${esc(add.join(', '))}`:'',chg.length?`Změní se částka: ${esc(chg.join(', '))}`:'',
-  rem.length?`Odeberou se (nejsou v dokumentu): ${esc(rem.join(', '))}`:''].filter(Boolean).join('<br>');
- modal(`<div class="sheetHead"><h2>Načíst rozpis SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
+  rem.length?`Ukončí se (není v dokumentu): ${esc(rem.join(', '))}`:''].filter(Boolean).join('<br>');
+ modal(`<div class="sheetHead"><h2>Nový předpis SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
   <p class="small">${txt}</p>
-  <label>Platí od</label><input id="svjEff" type="date" value="${eff}">
-  <p class="mut small">Předchozí předpis tohoto bytu zůstane v historii, takže v roce můžou platit dva různé předpisy. Smažou se jen chybně přečtené položky tohoto dokladu.</p>
-  <div class="btns"><button class="btn" onclick="confirmSvjApply(${fid},${id})">Použít tento rozpis</button></div>`);
+  <div class="grid2"><div><label>Platí od</label><input id="svjEff" type="date" value="${eff}"></div>
+  <div><label>Platí do</label><input id="svjEnd" type="date"><div class="mut small">prázdné = neurčitě</div></div></div>
+  <p class="mut small">Starý předpis se ukončí dnem před začátkem nového. Vyúčtování pak počítá každý měsíc podle předpisu, který v něm platil.</p>
+  <div class="btns"><button class="btn" onclick="confirmSvjApply(${fid},${id})">Použít tento předpis</button></div>`);
 }
 async function confirmSvjApply(fid,docId){
- const d=S.docs.find(x=>x.id===docId); const f=flat(fid);
- const eff=$('#svjEff').value||TODAY_ISO();
+ const d=S.docs.find(x=>x.id===docId);
+ const eff=$('#svjEff').value||TODAY_ISO(), end=$('#svjEnd').value||null;
  const items=(d?.extracted?.svj_items||[]).filter(it=>it&&String(it.name||'').trim()&&+it.amount>0);
  const want=Object.entries(Object.fromEntries(items.map(it=>[String(it.name).trim(),+it.amount])));
  try{
-  await changePredpis(fid,{effective:eff,from_doc:docId,costs:want.map(([name,amount])=>({name,amount}))});
-  closeModal(); toast('Rozpis SVJ načten z dokumentu'); await reload(); render();
+  await changePredpis(fid,{effective:eff,end,from_doc:docId,costs:want.map(([name,amount])=>({name,amount}))});
+  closeModal(); toast('Předpis SVJ načten z dokumentu'); await reload(); render();
  }catch(e){toast(e.message)}
-}
-// Předchozí předpisy v daném roce: šedě, aby bylo jasné, že už neplatí, ale pro vyúčtování roku potřebné
-function svjYearHistory(f){
- const Y=V.year||TODAY.getFullYear();
- const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return a<=`${Y}-12-31`&&b>=`${Y}-01-01`});
- const ended=rows.filter(c=>c.valid_to&&c.valid_to<TODAY_ISO());
- if(!ended.length)return '';
- return `<div class="mut small" style="margin-top:14px">Předchozí předpis v roce ${Y} (už neplatí)</div>`+
-  ended.map(c=>`<div class="line" style="opacity:.55;color:var(--mut)"><span>${esc(c.name)} <span class="small">· ${c.valid_from?'od '+dmy(c.valid_from):''} do ${dmy(c.valid_to)}</span></span><span>${kc(c.amount)}</span></div>`).join('');
 }
 function predpisHistory(fid){
  const vs=S.versions.filter(v=>String(v.flat)===String(fid)&&/změna od/.test(v.action||''));
@@ -537,11 +576,10 @@ function flatDetail(){
   ${l?`<div class="btns"><button class="btn sec sm" onclick="tenantAdvAdd(${lid})">+ Přidat položku nájemníka</button></div>`:''}
   <div class="line sum"><span>Vybírám celkem měsíčně</span><span>${kc(incomeM)}</span></div></div>`;
  const svjCard=`<h2 class="bigHead">CO PLATÍM SVJ</h2><div class="card">
-  ${svjSourcePicker(f)}
-  ${f.svj.map(c=>`<div class="line"><span>${esc(c.name)}</span><button class="link" onclick="costEdit(${f.id},${c.id})">${kc(c.amount)}</button></div>`).join('')||'<div class="mut small">Zatím nic. Přidejte zálohy, které platíte.</div>'}
-  <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku, kterou platím</button></div>
-  <div class="line sum"><span>Platím SVJ celkem měsíčně</span><span>${kc(svjTotal)}</span></div>
-  ${svjYearHistory(f)}</div>`;
+  ${svjRows(f)}
+  ${svjDocBox(f)}
+  <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button><button class="btn sec sm warnTxt" onclick="svjEndModal(${f.id})">Vynulovat od data…</button></div>
+  <div class="line sum"><span>Platím SVJ celkem měsíčně (dnes)</span><span>${kc(svjTotal)}</span></div></div>`;
  const netCard=`<div class="card" style="margin-top:12px"><div class="line sum"><span>Zbývá mi měsíčně (vybírám − platím)</span><span class="${net<0?'bad':'ok'}">${kc(net)}</span></div></div>`;
  const y=V.year?f.years[V.year]:null;
  return `
