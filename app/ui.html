@@ -389,7 +389,7 @@ function costEdit(fid,cid){
 // Položky SVJ pro zvolený rok, s daty platnosti. Platné nahoře, ukončené šedě.
 function svjRows(f){
  const Y=V.year||TODAY.getFullYear(), today=TODAY_ISO();
- const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return a<=`${Y}-12-31`&&b>=`${Y}-01-01`});
+ const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return (a<=`${Y}-12-31`&&b>=`${Y}-01-01`)||b>=today});
  if(!rows.length)return '<div class="mut small">Zatím nic. Přidejte zálohy, které platíte, nebo načtěte předpis z dokumentu.</div>';
  const ended=c=>!!(c.valid_to&&c.valid_to<today);
  rows.sort((x,y)=>(ended(x)-ended(y))||String(y.valid_from||'').localeCompare(String(x.valid_from||'')));

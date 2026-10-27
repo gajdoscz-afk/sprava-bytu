@@ -999,7 +999,10 @@ def end_svj_from(flat_id: int, body: dict = Body(...), db: Session = Depends(get
         raise HTTPException(400, "Zadejte datum.")
     old = {}
     for c in list(f.costs):
-        if _cost_active(c, on):
+        if c.valid_from is not None and c.valid_from >= on:
+            old[c.name] = float(c.amount)  # začíná až po vynulování: nepatří do předpisu, smaže se
+            db.delete(c)
+        elif c.valid_to is None or c.valid_to >= on:  # běží i v den vynulování
             old[c.name] = float(c.amount)
             if c.valid_from is None or on > c.valid_from:
                 c.valid_to = on - timedelta(days=1)
