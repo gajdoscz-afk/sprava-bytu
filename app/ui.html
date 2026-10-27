@@ -1790,8 +1790,9 @@ function valueTab(){
   const h=f.value!=null?Math.max(8,Math.round(f.value/max*190)):0;
   const chg=f.change!=null?`<div class="vchg" style="color:${f.change>=0?'var(--ok)':'var(--bad)'}">${arrow(f.change)} ${kc(Math.abs(f.change))} za měsíc</div>`:'';
   const src=f.value!=null?`<div class="vchg mut">${f.source==='ručně'?'ručně':'odhad'} · ${dmy(f.value_date)}</div>`:'';
+  const old=f.stale?`<div class="vchg" style="color:var(--warn,#F59E0B);font-weight:600">⚠ aktualizovat (starší než měsíc)</div>`:'';
   return `<div class="vcol" style="cursor:pointer" onclick="valueModal(${f.id})" title="Kliknutím zadáte hodnotu k datu${f.basis?' · '+esc(f.basis):''}">
-   <div class="vval">${f.value!=null?kc(f.value):'bez hodnoty'}</div>${src}${chg}
+   <div class="vval">${f.value!=null?kc(f.value):'bez hodnoty'}</div>${src}${old}${chg}
    <div class="vbar${f.value==null?' none':''}" style="height:${h}px"></div>
    <div class="vname">${esc(f.addr)}</div></div>`;
  }).join('');
@@ -1803,6 +1804,7 @@ function valueTab(){
  <div class="card vwrap"><div class="vrow">${cols||'<div class="mut">Zatím nejsou žádné byty.</div>'}</div></div>
  <div class="pwidget fixed">
   <div class="pl">Aktuální hodnota portfolia</div>
+  ${P.stale_count?`<div class="pc" style="color:var(--warn,#F59E0B);margin-bottom:4px">⚠ ${P.stale_count} ${P.stale_count===1?'byt má':'bytů má'} hodnotu starší než měsíc. Zadejte novou.</div>`:''}
   <div class="pv pvl">${kc(P.total)}</div>
   ${ch!=null?`<div class="pc" style="color:${chgColor(ch)}">${arrow(ch)} ${kc(Math.abs(ch))} (${pctS(pct)}) za měsíc</div>`:'<div class="pc">Měsíční změna se ukáže, až bude snímek starý měsíc</div>'}
   ${P.without_value?`<div class="pc" style="margin-top:4px">Bez hodnoty: ${P.without_value} byt(y)</div>`:''}

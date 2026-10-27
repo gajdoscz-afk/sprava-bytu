@@ -660,10 +660,13 @@ def portfolio(db: Session = Depends(get_db)):
     for r in rows:
         e = base_vals.get(r["id"])
         r["change"] = (r["value"] - float(e.amount)) if (r["value"] is not None and e) else None
+        # hodnota starší než 31 dní se má aktualizovat (ruční zadání nebo měsíční odhad)
+        r["stale"] = r["value_date"] is None or (today_prague() - date.fromisoformat(r["value_date"])).days > 31
     return {
         "total": round(total),
         "flats_count": len(rows),
         "without_value": sum(1 for r in rows if r["value"] is None),
+        "stale_count": sum(1 for r in rows if r.get("stale")),
         "change_1m": round(total - base_total) if base_total else None,
         "change_1m_pct": bm.growth_pct(total, base_total),
         "base_date": base["date"] if base else None,
