@@ -164,6 +164,7 @@ class FlatCost(Base):
     valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)  # od kdy platí (None = odjakživa)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)  # do kdy platí (None = dosud)
     source_doc_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # doklad, ze kterého položka vznikla
+    ended_by_doc_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # doklad, který položku ukončil
 
 
 class BankTx(Base):

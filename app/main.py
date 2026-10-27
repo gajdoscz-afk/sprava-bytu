@@ -104,6 +104,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_to DATE"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS source_doc_id INTEGER"))
+        conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS ended_by_doc_id INTEGER"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_from DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS valid_to DATE"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS taken_at TIMESTAMPTZ"))
@@ -1542,6 +1543,7 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
             if c.valid_from is None or eff > c.valid_from:
                 old[c.name] = float(c.amount)
                 c.valid_to = eff - timedelta(days=1)
+                c.ended_by_doc_id = doc_id
                 db.add(m.FlatCost(flat_id=f.id, name=name, amount=amt, valid_from=eff, source_doc_id=doc_id))
                 new[name] = float(amt)
             else:  # oprava hned od začátku platnosti
@@ -1552,6 +1554,7 @@ def replace_svj_set(db: Session, f: m.Flat, items: list, eff: date, old: dict, n
             old[c.name] = float(c.amount)
             if c.valid_from is None or eff > c.valid_from:
                 c.valid_to = eff - timedelta(days=1)
+                c.ended_by_doc_id = doc_id
             else:
                 db.delete(c)
     for k, (name, amt) in wanted.items():
@@ -1772,6 +1775,28 @@ def _images_to_pdf(images: list[bytes]) -> bytes:
 def _group_pages(db: Session, key: str) -> list[m.Document]:
     return list(db.scalars(select(m.Document).where(
         m.Document.group_key == key, m.Document.status == "rozpracováno").order_by(m.Document.id)).all())
+
+
+@app.post("/documents/{doc_id}/undo-svj")
+def undo_svj_schedule(doc_id: int, db: Session = Depends(get_db)):
+    """Odstraní rozpis SVJ nahraný z tohoto dokladu a vrátí předchozí předpis, který ten doklad ukončil."""
+    d = get_document(db, doc_id)
+    if d.flat_id is None:
+        raise HTTPException(400, "Dokument není přiřazen k bytu.")
+    f = get_flat(db, d.flat_id)
+    created = [c for c in f.costs if c.source_doc_id == doc_id]
+    ended = [c for c in f.costs if c.ended_by_doc_id == doc_id]
+    if not created and not ended:
+        raise HTTPException(404, "Z tohoto dokladu není nahraný žádný rozpis.")
+    old = {c.name: float(c.amount) for c in created}
+    for c in ended:
+        c.valid_to, c.ended_by_doc_id = None, None
+    for c in created:
+        db.delete(c)
+    db.add(m.Version(flat_id=f.id, name=f"Rozpis SVJ z dokladu {d.filename}", action="odstraněn rozpis z dokladu",
+                     old=old or None, new={"doc_id": doc_id}))
+    db.commit()
+    return flat_out(get_flat(db, f.id))
 
 
 @app.post("/documents/{doc_id}/merge-batch")

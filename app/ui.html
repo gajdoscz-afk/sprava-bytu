@@ -391,7 +391,15 @@ function svjSourcePicker(f){
  const docs=S.docs.filter(d=>String(d.flat_id)===String(f.id)&&d.status==='zarazeno');
  if(!docs.length)return '<div class="mut small" style="margin-bottom:8px">Zatím nemáte žádný dokument. Nahrajte předpis SVJ na kartu bytu.</div>';
  const hasItems=d=>Array.isArray(d.extracted?.svj_items)&&d.extracted.svj_items.length>0;
- return `<div class="grid2" style="margin-bottom:10px"><div><label>Načíst z jednoho dokumentu</label><select id="svjDoc">${docs.map(d=>`<option value="${d.id}">${esc(d.filename)} · ${docWhen(d)}${hasItems(d)?'':' (bez rozpisu)'}</option>`).join('')}</select></div><div style="align-self:end"><button class="btn sm" onclick="applySvjFromDoc(${f.id})">Načíst z tohoto dokumentu</button></div></div>`;
+ return `<div class="grid2" style="margin-bottom:10px"><div><label>Načíst z jednoho dokumentu</label><select id="svjDoc">${docs.map(d=>`<option value="${d.id}">${esc(d.filename)} · ${docWhen(d)}${hasItems(d)?'':' (bez rozpisu)'}</option>`).join('')}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="applySvjFromDoc(${f.id})">Načíst z tohoto dokumentu</button><button class="btn sec sm warnTxt" onclick="undoSvjFromDoc(${f.id})">Odstranit rozpis z tohoto dokumentu</button></div></div>`;
+}
+// Odstraní rozpis nahraný z vybraného dokladu a obnoví předchozí předpis, který ukončil
+async function undoSvjFromDoc(fid){
+ const id=+$('#svjDoc')?.value; const d=S.docs.find(x=>x.id===id);
+ if(!d)return;
+ if(!confirm(`Odstranit rozpis SVJ nahraný z dokumentu „${d.filename}“? Předchozí předpis, který ten doklad ukončil, se obnoví.`))return;
+ try{ await api(`/documents/${id}/undo-svj`,'POST'); toast('Rozpis z dokladu odstraněn'); await reload(); render() }
+ catch(e){ toast(e.message) }
 }
 async function applySvjFromDoc(fid){
  const id=+$('#svjDoc')?.value; const d=S.docs.find(x=>x.id===id); const f=flat(fid);
