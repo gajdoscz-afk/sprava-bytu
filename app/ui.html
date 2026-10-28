@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.41</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.42</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -829,7 +829,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const acqPrice=f.acq&&f.acq.price!=null?kc(f.acq.price):'neznámá';
  const missing=[f.addr,f.dispo,f.floor,f.zip,f.area_m2,f.tenant.name,others,f.tenant.email,f.tenant.phone,f.bank.acc].filter(v=>!v).length;
  const status=l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>';
- const lease=l?`<div class="sumLine">Nájem bez záloh <b>${kc(l.rent)}</b></div><div class="sumLine">Kauce <b>${kc(l.kauce)}</b></div><div class="sumLine">Smlouva <b>${l.to?(daysTo>=0?'do '+fd(l.to)+' (za '+daysTo+' dní)':'skončila '+fd(l.to)):'bez konce'}</b></div><div class="sumLine">Poslední vyúčtování <b>${lastSt}</b></div>`:'';
+ const lease=l?`<div class="sumLine">Kauce <button class="link" onclick="kauceEdit(${l.id})"><b>${kc(l.kauce)}</b></button></div><div class="sumLine">Smlouva <b>${l.to?(daysTo>=0?'do '+fd(l.to)+' (za '+daysTo+' dní)':'skončila '+fd(l.to)):'bez konce'}</b></div><div class="sumLine">Poslední vyúčtování <b>${lastSt}</b></div>`:'';
  return `<div class="card sumCard">
   <div class="sumGrid">
    <div class="sumCol">
@@ -841,6 +841,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="sumLine">PSČ a město <b>${esc(f.zip)||'—'}</b></div>
     <div class="sumLine">Koupeno <button class="link" onclick="acqForm(${f.id})"><b>${acqWhen}</b></button></div>
     <div class="sumLine">Kupní cena <button class="link" onclick="acqForm(${f.id})"><b>${acqPrice}</b></button></div>
+    <div class="sumLine">Tržní cena <button class="link" onclick="valueModal(${f.id})"><b>${f.market_value!=null?kc(f.market_value)+' ('+fd(f.market_value_on)+')':'+ zadat'}</b></button></div>
    </div>
    <div class="sumCol">
     <div class="sumH">Aktuální nájemník</div>
@@ -1089,6 +1090,16 @@ function detailsCard(f){
   <div class="mini">${rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?'':'mut'}">${v?esc(v):'—'}</b></div>`).join('')}</div>
   ${contactButtons(f)}
   <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p><div class="btns"><button class="btn sm sec" onclick="reloadFlatDocs(${f.id})">↻ Načíst znovu z dokumentů</button></div></div>`;
+}
+function kauceEdit(lid){
+ const {l}=leaseOf(lid)||{};
+ modal(`<div class="sheetHead"><h2>Kauce</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <label>Kauce (Kč)</label><input id="kv" inputmode="numeric" value="${l?l.kauce:0}">
+  <div class="btns"><button class="btn" onclick="kauceSave(${lid})">Uložit</button></div>`);
+}
+async function kauceSave(lid){
+ const v=+(($('#kv').value||'0').replace(/\s/g,'').replace(',','.'))||0;
+ try{await api(`/leases/${lid}`,'PATCH',{deposit:v});closeModal();toast('Uloženo');await reload();render()}catch(e){toast(e.message)}
 }
 function acqForm(fid){
  const f=flat(fid);const a=f&&f.acq;

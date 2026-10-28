@@ -508,9 +508,24 @@ def statement_out(st: m.Statement) -> dict:
     }
 
 
+def _market_value(f: m.Flat):
+    """Poslední platná hodnota bytu (tržní cena). Při shodě data vyhrává ruční zápis."""
+    from sqlalchemy.orm import object_session
+    sess = object_session(f)
+    if sess is None:
+        return None, None
+    vals = [v for v in sess.scalars(select(m.FlatValue).where(m.FlatValue.flat_id == f.id)).all()
+            if v.on_date <= today_prague()]
+    best = max(vals, key=lambda v: (v.on_date, v.source == "ručně"), default=None)
+    return (float(best.amount), best.on_date.isoformat()) if best else (None, None)
+
+
 def flat_out(f: m.Flat) -> dict:
+    mv = _market_value(f)
     return {
         "id": f.id,
+        "market_value": mv[0],
+        "market_value_on": mv[1],
         "addr": f.addr,
         "color": f.color,
         "cmp_links": f.cmp_links or [],
@@ -1050,6 +1065,8 @@ def update_lease_items(lease_id: int, body: dict = Body(...), db: Session = Depe
     lease = db.get(m.Lease, lease_id)
     if lease is None:
         raise HTTPException(404, "Předpis nenalezen")
+    if body.get("deposit") is not None:
+        lease.deposit = money(body["deposit"])
     if body.get("rent") is not None:
         lease.rent = money(body["rent"])
     if isinstance(body.get("advances"), dict):
