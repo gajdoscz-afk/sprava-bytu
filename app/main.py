@@ -981,9 +981,11 @@ def put_cmp_links(flat_id: int, body: dict = Body(...), db: Session = Depends(ge
         if not isinstance(r, dict):
             continue
         adv = str(r.get("adv") or "").strip()[:200] or None
-        svj = str(r.get("svj") or "").strip()[:200] or None
-        if not adv and not svj:
-            continue
+        if not adv:
+            continue  # položky SVJ bez párování se neukládají, zobrazují se samy
+        raw = r.get("svj")
+        names = raw if isinstance(raw, list) else [raw]
+        svj = [str(x).strip()[:200] for x in names if x and str(x).strip()]
         out.append({"adv": adv, "svj": svj, "bill": r.get("bill") is not False})
     f.cmp_links = out
     db.commit()

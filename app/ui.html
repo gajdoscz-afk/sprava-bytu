@@ -254,6 +254,10 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 .cmpSel{width:100%;margin:0;padding:4px 6px;font-size:13px;min-width:120px}
 .pair{font-size:12px !important;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.5);font-size:13px}
 .pair .x{border:0;background:none;color:var(--bad);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.pairs{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:4px}
+.dropHint{font-size:11.5px;color:var(--mut)}
+.dropCell{cursor:pointer;min-width:150px}
+.dropCell:hover .dropHint{color:var(--ink)}
 .dropZone{display:block;padding:6px 10px;border:1px dashed rgba(139,124,255,.5);border-radius:10px;color:var(--mut);font-size:12.5px;cursor:pointer;min-width:150px}
 .dropZone:hover{border-color:#22C55E;color:var(--ink)}
 .poolH{font-size:12px;color:var(--mut);margin:12px 0 6px}
@@ -269,7 +273,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.19</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.20</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -655,9 +659,17 @@ function cmpRows(f,l){
  const adv=l?Object.keys(l.adv||{}):[];
  const svjNames=[...new Set((f.svj_all||[]).map(c=>c.name))];
  const rows=[],usedAdv=new Set(),usedSvj=new Set();
- (f.cmp_links||[]).forEach(k=>{rows.push({adv:k.adv||null,svj:k.svj||null,bill:k.bill!==false});if(k.adv)usedAdv.add(k.adv);if(k.svj)usedSvj.add(k.svj)});
- adv.forEach(n=>{if(usedAdv.has(n))return;usedAdv.add(n);const hit=svjNames.find(s=>!usedSvj.has(s)&&norm(s)===norm(n));if(hit)usedSvj.add(hit);rows.push({adv:n,svj:hit||null,bill:true})});
- svjNames.forEach(s=>{if(!usedSvj.has(s)){usedSvj.add(s);rows.push({adv:null,svj:s,bill:true})}});
+ (f.cmp_links||[]).forEach(k=>{
+  if(!k.adv)return;
+  const sv=Array.isArray(k.svj)?k.svj:(k.svj?[k.svj]:[]);
+  rows.push({adv:k.adv,svj:sv,bill:k.bill!==false});usedAdv.add(k.adv);sv.forEach(x=>usedSvj.add(x));
+ });
+ adv.forEach(n=>{
+  if(usedAdv.has(n))return;usedAdv.add(n);
+  const hit=svjNames.find(s=>!usedSvj.has(s)&&norm(s)===norm(n));
+  if(hit)usedSvj.add(hit);
+  rows.push({adv:n,svj:hit?[hit]:[],bill:true});
+ });
  return rows;
 }
 function svjPeriods(f,Y){
@@ -673,15 +685,25 @@ async function cmpEdit(fid,i,field,val){
  try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:rows});await reload()}catch(e){toast(e.message)}
 }
 async function cmpSave(fid,rows){
- try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:rows.filter(r=>r.adv||r.svj)});await reload()}catch(e){toast(e.message)}
+ const f=flat(fid);
+ const links=rows.filter(r=>r.adv).map(r=>({adv:r.adv,svj:r.svj,bill:r.bill}));
+ if(f)f.cmp_links=links;   // okamžitě se zobrazí, bez čekání na server
+ window.CMP_SEL=null;
+ render();
+ try{await api(`/flats/${fid}/cmp-links`,'PUT',{links});await reload();render()}
+ catch(e){toast(e.message);await reload();render()}
 }
 function cmpPair(fid,i,name){
+ const f=flat(fid);if(!f||!name)return;
+ const rows=cmpRows(f,f.leases[f.leases.length-1]);
+ rows.forEach(r=>{r.svj=r.svj.filter(x=>x!==name)});   // položka patří jen k jednomu řádku
+ if(rows[i])rows[i].svj=[...rows[i].svj,name];
+ cmpSave(fid,rows);
+}
+function cmpUnpair(fid,i,name){
  const f=flat(fid);if(!f)return;
- const l=f.leases[f.leases.length-1];
- const rows=cmpRows(f,l);
- if(name)rows.forEach(r=>{if(r.svj===name)r.svj=null});
- rows[i].svj=name||null;
- window.CMP_SEL=null;
+ const rows=cmpRows(f,f.leases[f.leases.length-1]);
+ if(rows[i])rows[i].svj=rows[i].svj.filter(x=>x!==name);
  cmpSave(fid,rows);
 }
 function cmpDrop(ev,fid,i){ev.preventDefault();const name=ev.dataTransfer.getData('text/plain');if(name)cmpPair(fid,i,name)}
@@ -698,21 +720,25 @@ function cmpSections(f,l){
   const payOf=n=>p.items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
   const has=n=>p.items.some(c=>c.name===n);
   const pay=p.items.reduce((x,c)=>x+(+c.amount||0),0);
-  const advRows=rows.map((r,i)=>({r,i})).filter(x=>x.r.adv);
-  const paired=new Set(advRows.map(x=>x.r.svj).filter(Boolean));
+  const advRows=rows.map((r,i)=>({r,i}));
+  const paired=new Set(advRows.flatMap(x=>x.r.svj));
   const names=[...new Set(p.items.map(c=>c.name))].filter(n=>!paired.has(n));
   let vyb=0;
   const body=advRows.map(({r,i})=>{
    const get=(l&&l.adv)?(+l.adv[r.adv]||0):0;
    vyb+=get;
-   const pv=(r.svj&&has(r.svj))?payOf(r.svj):null;
+   const inP=r.svj.filter(has);
+   const hasAny=inP.length>0;
+   const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
    const d=get-(pv||0);
-   const cell=r.svj
-    ?`<span class="pair">${esc(r.svj)} <button class="x" title="Odpárovat" onclick="cmpPair(${f.id},${i},null)">×</button></span>`
-    :`<span class="dropZone" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`;
-   return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td><td>${cell}</td><td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${pv!=null?(d<0?'bad':'ok'):''}">${pv!=null?(d>=0?'+':'')+kc(d):'—'}</td><td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
+   const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpair(${f.id},${i},this.dataset.name)">×</button></span>`).join('');
+   const cell=`<div class="pairs">${pills}</div><div class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</div>`;
+   return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
+    `<td class="dropCell" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${cell}</td>`+
+    `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
+    `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
   }).join('');
-  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo kliknutím vyberte a pak kliknutím na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
+  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo kliknutím vyberte a pak klikněte na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
   const diff=vyb-pay;
   const head=p.from||p.to?`Předpis ${p.from?fd(p.from):'odjakživa'} – ${p.to?fd(p.to):'dosud'}`:'Předpis SVJ';
   return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
