@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.31</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.32</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -830,7 +830,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. „Vyúčt.“: zaškrtnutá položka se v korekci nahradí skutečnou cenou (u nespárované položky SVJ nájemník doplatí podíl).</div>
    </div>
   </div>
-  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button><button class="btn sm" onclick="openSettlement(${f.id})">Vyúčtování nájemníka</button></div>
+  <div class="btns">${l?`<button class="btn sec sm" onclick="tenantRentEdit(${l.id})">Upravit nájem</button>`:''}<button class="btn sec sm warnTxt" onclick="svjEndModal(${f.id})">Vynulovat SVJ od data</button><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button><button class="btn sm" onclick="openSettlement(${f.id})">Vyúčtování nájemníka</button></div>
   ${missing?`<p class="small mut" style="margin-top:10px">Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.</p><div class="btns"><button class="btn sm sec" onclick="reloadFlatDocs(${f.id})">↻ Načíst znovu z dokumentů</button></div>`:''}
   ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
  </div>`;
@@ -853,17 +853,6 @@ function flatDetail(){
  const lid=l?l.id:null;
  const advRows=l?Object.entries(l.adv||{}).map(([k,v])=>`<div class="line"><span>${esc(k)}</span><button class="link" onclick="tenantAdvEdit(${lid},${JSON.stringify(k).replace(/"/g,'&quot;')})">${kc(v)}</button></div>`).join(''):'';
  const ph=predpisHistory(f.id);
- const tenantCard=`<h2 class="bigHead">CO VYBÍRÁM OD NÁJEMNÍKA</h2><div class="card">
-  <div class="mut small">Předpis nájmu platí od ${l?fd(l.from):'—'}. Klikněte na částku pro úpravu.</div>
-  ${l?`<div class="line"><span>Nájem bez záloh</span><button class="link" onclick="tenantRentEdit(${lid})">${kc(l.rent)}</button></div>${advRows}`:'<div class="mut small">Bez předpisu. Nejdřív zadejte nájem v průvodci smlouvou.</div>'}
-  ${l?`<div class="btns"><button class="btn sec sm" onclick="tenantAdvAdd(${lid})">+ Přidat položku nájemníka</button></div>`:''}
-  <div class="line sum"><span>Vybírám celkem měsíčně</span><span>${kc(incomeM)}</span></div></div>`;
- const svjCard=`<h2 class="bigHead">CO PLATÍM SVJ</h2><div class="card">
-  ${svjRows(f)}
-  ${svjDocBox(f)}
-  <div class="btns"><button class="btn sec sm" onclick="costForm(${f.id})">+ Přidat položku</button><button class="btn sec sm warnTxt" onclick="svjEndModal(${f.id})">Vynulovat od data…</button></div>
-  <div class="line sum"><span>Platím SVJ celkem měsíčně (dnes)</span><span>${kc(svjTotal)}</span></div></div>`;
- const netCard=`<div class="card" style="margin-top:12px"><div class="line sum"><span>Zbývá mi měsíčně (vybírám − platím)</span><span class="${net<0?'bad':'ok'}">${kc(net)}</span></div></div>`;
  const y=V.year?f.years[V.year]:null;
  return `
  <button class="link" onclick="go('flats')">← Byty</button>
@@ -871,9 +860,7 @@ function flatDetail(){
  <div class="btns" style="margin:0 0 12px"><label class="btn" style="cursor:pointer">+ Nahrát dokument k tomuto bytu<input type="file" multiple accept="image/*,application/pdf,.docx" style="display:none" onchange="uploadDocs(this,${f.id})"></label></div>
  ${chartCard}
  ${flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt)}
-${tenantCard}
- ${svjCard}
- ${netCard}
+${svjDocBox(f)}
  ${acqCard(f)}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
