@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.35</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.36</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1863,6 +1863,7 @@ function docView(id,pdf){
   :`<iframe class="docViewer" src="${src}" style="width:100%;border:0;border-radius:12px;background:#fff;margin-top:10px"></iframe>`;
  modal(`<div class="sheetHead"><div style="min-width:0"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><div class="small mut">${docWhen(d)}</div></div><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
   ${body}
+  ${d.doc_type==='vyuctovani_svj'?`<div class="btns"><button class="btn sm" onclick="yearAsk([S.docs.find(x=>x.id===${id})])">Zařadit do roku…</button></div>`:''}
   <div class="btns"><button class="btn sec sm" onclick="rereadOne(${id})">Přečíst znovu</button>${d.mime&&d.mime.startsWith('image/')?`<button class="btn sec sm" onclick="mergeBatch(${id})">Sloučit stránky z téhož nahrání</button>`:''}<button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button><button class="btn sec sm warnTxt" onclick="docDelete(${id})">Smazat</button></div>`);
  $('#sheet').classList.add('wide');
 }
@@ -2497,7 +2498,7 @@ async function uploadFiles(all,flatId,groupKey){
  }
  const skipped=all.length-files.length;
  if(!files.length){toast('Žádný podporovaný soubor (PDF nebo obrázek)');return}
- let ok=0,fail=0;
+ let ok=0,fail=0;const created=[];
  // posíláme po jednom souboru, ať je vidět průběh a jeden pomalý soubor nic nezastaví
  for(let i=0;i<files.length;i++){
   progress(`Nahrávám a čtu ${i+1} z ${files.length}: ${files[i].name}`);
@@ -2508,12 +2509,32 @@ async function uploadFiles(all,flatId,groupKey){
    if(groupKey)fd.append('group_key',groupKey);
    const res=await fetch('/documents',{method:'POST',body:fd});
    if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
+   const got=await res.json().catch(()=>[]);if(Array.isArray(got))created.push(...got);
    ok++;
   }catch(e){fail++;toast(files[i].name+': '+e.message)}
  }
  progress('');
  toast(`Nahráno ${ok}${fail?', chyb '+fail:''}${skipped?', přeskočeno '+skipped:''}`);
  await reload();render();
+ const yr=created.filter(d=>d.doc_type==='vyuctovani_svj');
+ if(yr.length)yearAsk(yr);
+}
+// Vyúčtování SVJ: systém se zeptá, k jakému roku patří, a zařadí ho a přepíše změněné hodnoty
+let YQ=[];
+function yearAsk(docs){YQ=[...docs];yearAskNext()}
+function yearAskNext(){
+ const d=YQ.shift();
+ if(!d){closeModal();return}
+ const y=d.year||(new Date().getFullYear()-1);
+ modal(`<div class="sheetHead"><h2>K jakému roku patří vyúčtování?</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <p class="small mut">${esc(d.filename)} · čtení odhadlo rok ${d.year||'nezjištěn'}. Změňte ho, pokud je to jinak.</p>
+  <label>Rok</label><input type="number" id="zy" value="${y}">
+  <p class="small mut">Položky se zapíšou do tohoto roku a změněné hodnoty se přepíšou. Starší zůstanou v historii. Ostatní roky se nemění.${YQ.length?` Potom se zeptám na další dokument (zbývá ${YQ.length}).`:''}</p>
+  <div class="btns"><button class="btn" onclick="yearAssign(${d.id})">Zařadit do roku</button><button class="btn sec" onclick="yearAskNext()">Přeskočit</button></div>`);
+}
+async function yearAssign(id){
+ const y=+$('#zy').value;
+ try{await api(`/documents/${id}/zaradit-rok`,'POST',{year:y});toast(`Zařazeno do roku ${y}`);await reload();render();yearAskNext()}catch(e){toast(e.message)}
 }
 // Přetažení a Ctrl+V: na kartě bytu se dokument zařadí k tomuto bytu, v Dokumentech bez přiřazení
 function dropTarget(){

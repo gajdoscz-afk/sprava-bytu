@@ -526,7 +526,7 @@ def flat_out(f: m.Flat) -> dict:
             "phone": f.tenant_phone,
             "others": [x.strip() for x in f.tenant_others.split(",") if x.strip()],
         },
-        "leases": [lease_out(l) for l in f.leases],
+        "leases": [lease_out(l) for l in sorted(f.leases, key=lambda l: l.valid_from)],
         "statements": [statement_out(st) for st in f.statements],
         "svj_costs": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None} for c in f.costs if _cost_active(c, date.today())],
         "svj_all": [{"id": c.id, "name": c.name, "amount": float(c.amount), "valid_from": c.valid_from.isoformat() if c.valid_from else None, "valid_to": c.valid_to.isoformat() if c.valid_to else None, "source_doc_id": c.source_doc_id} for c in f.costs],
@@ -1886,6 +1886,40 @@ def reload_docs_all(db: Session = Depends(get_db)):
         reload_flat_from_docs(db, f)
     db.commit()
     return {"ok": True, "bytů": len(flats)}
+
+
+@app.post("/documents/{doc_id}/zaradit-rok")
+def assign_document_year(doc_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Zařadí vyúčtování SVJ k zadanému roku. Položky se zapíšou do toho roku, změněné hodnoty se přepíšou
+    a starší zůstanou v historii. Ostatní roky se nemění."""
+    d = get_document(db, doc_id)
+    try:
+        year = int(body.get("year"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Rok není číslo")
+    if not 2000 <= year <= 2100:
+        raise HTTPException(400, "Rok je mimo rozsah")
+    if d.flat_id is None:
+        raise HTTPException(400, "Dokument ještě není přiřazen k bytu")
+    d.year = year
+    if d.doc_type == "vyuctovani_svj":
+        items = []
+        for it in (d.extracted or {}).get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()[:200]
+            cost = _dec(it.get("cost"))
+            if name and cost is not None:
+                items.append(s.ItemIn(name=name, cost=cost, paid=_dec(it.get("paid")) or Decimal("0")))
+        if not items:
+            raise HTTPException(400, "V dokumentu není rozpis položek")
+        probe = s.ResolveIn(items=items, doc_label=d.filename)
+        diffs = compare_statement(d.flat_id, year, probe, db)["diffs"]
+        decisions = {x["name"]: "replace" for x in diffs if x["status"] == "changed"}
+        resolve_statement(d.flat_id, year, s.ResolveIn(items=items, doc_label=d.filename, decisions=decisions), db)
+        d.status = "zarazeno"
+    db.commit()
+    return doc_out(d)
 
 
 @app.post("/documents/{doc_id}/classify")
