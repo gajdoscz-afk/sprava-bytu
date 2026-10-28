@@ -251,6 +251,15 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 .cmpHead{font-weight:700;margin:4px 0 6px}
 .cmp .c{text-align:center}
 .cmpSel{width:100%;margin:0;padding:4px 6px;font-size:13px;min-width:120px}
+.pair{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.5);font-size:13px}
+.pair .x{border:0;background:none;color:var(--bad);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+.dropZone{display:block;padding:6px 10px;border:1px dashed rgba(139,124,255,.5);border-radius:10px;color:var(--mut);font-size:12.5px;cursor:pointer;min-width:150px}
+.dropZone:hover{border-color:#22C55E;color:var(--ink)}
+.poolH{font-size:12px;color:var(--mut);margin:12px 0 6px}
+.pool{display:flex;flex-wrap:wrap;gap:8px}
+.chip2{padding:6px 12px;border-radius:999px;border:1px solid rgba(139,124,255,.5);background:var(--card);font-size:13px;cursor:grab;user-select:none}
+.chip2.on{border-color:#22C55E;box-shadow:0 0 14px -4px rgba(34,197,94,.8)}
+.chip2 b{font-variant-numeric:tabular-nums}
 .sumNet{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.35)}
 .sumNet b{font-size:18px;font-variant-numeric:tabular-nums}
 @media (max-width:820px){.sumGrid{grid-template-columns:1fr}}
@@ -259,7 +268,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.16</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.17</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -661,33 +670,53 @@ async function cmpEdit(fid,i,field,val){
  rows[i][field]=val;
  try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:rows});await reload()}catch(e){toast(e.message)}
 }
+async function cmpSave(fid,rows){
+ try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:rows.filter(r=>r.adv||r.svj)});await reload()}catch(e){toast(e.message)}
+}
+function cmpPair(fid,i,name){
+ const f=flat(fid);if(!f)return;
+ const l=f.leases[f.leases.length-1];
+ const rows=cmpRows(f,l);
+ if(name)rows.forEach(r=>{if(r.svj===name)r.svj=null});
+ rows[i].svj=name||null;
+ window.CMP_SEL=null;
+ cmpSave(fid,rows);
+}
+function cmpDrop(ev,fid,i){ev.preventDefault();const name=ev.dataTransfer.getData('text/plain');if(name)cmpPair(fid,i,name)}
+function cmpTap(fid,i){if(window.CMP_SEL)cmpPair(fid,i,window.CMP_SEL)}
+function cmpSelect(name){window.CMP_SEL=window.CMP_SEL===name?null:name;render()}
 function cmpSections(f,l){
  const Y=V.year||TODAY.getFullYear();
  const rows=cmpRows(f,l);
  if(!rows.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
- const names=[...new Set((f.svj_all||[]).map(c=>c.name))];
  const periods=svjPeriods(f,Y);
  const list=periods.length?periods:[{from:null,to:null,items:[]}];
+ const sel=window.CMP_SEL||null;
  return list.map(p=>{
-  const payOf=n=>p.items.filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
+  const payOf=n=>p.items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
   const has=n=>p.items.some(c=>c.name===n);
-  const pay=p.items.reduce((a,c)=>a+(+c.amount||0),0);
+  const pay=p.items.reduce((x,c)=>x+(+c.amount||0),0);
+  const advRows=rows.map((r,i)=>({r,i})).filter(x=>x.r.adv);
+  const paired=new Set(advRows.map(x=>x.r.svj).filter(Boolean));
+  const names=[...new Set(p.items.map(c=>c.name))].filter(n=>!paired.has(n));
   let vyb=0;
-  const body=rows.map((r,i)=>{
-   const get=(r.adv&&l)?(+l.adv[r.adv]||0):null;
+  const body=advRows.map(({r,i})=>{
+   const get=(l&&l.adv)?(+l.adv[r.adv]||0):0;
+   vyb+=get;
    const pv=(r.svj&&has(r.svj))?payOf(r.svj):null;
-   if(get!=null)vyb+=get;
-   const both=get!=null&&pv!=null;const d=(get||0)-(pv||0);
-   return `<tr><td>${esc(r.adv||'—')}</td><td class="r">${get==null?'—':kc(get)}</td>`+
-    `<td><select class="cmpSel" onchange="cmpEdit(${f.id},${i},'svj',this.value||null)"><option value="">— nic —</option>${names.map(n=>`<option value="${esc(n)}"${n===r.svj?' selected':''}>${esc(n)}</option>`).join('')}</select></td>`+
-    `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${both?(d<0?'bad':'ok'):''}">${both?(d>=0?'+':'')+kc(d):'—'}</td>`+
-    `<td class="c">${r.adv?`<input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)">`:''}</td></tr>`;
+   const d=get-(pv||0);
+   const cell=r.svj
+    ?`<span class="pair">${esc(r.svj)}${pv!=null?' · '+kc(pv):''} <button class="x" title="Odpárovat" onclick="cmpPair(${f.id},${i},null)">×</button></span>`
+    :`<span class="dropZone" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`;
+   return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td><td>${cell}</td><td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${pv!=null?(d<0?'bad':'ok'):''}">${pv!=null?(d>=0?'+':'')+kc(d):'—'}</td><td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
   }).join('');
+  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo kliknutím vyberte a pak kliknutím na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
   const diff=vyb-pay;
   const head=p.from||p.to?`Předpis ${p.from?fd(p.from):'odjakživa'} – ${p.to?fd(p.to):'dosud'}`:'Předpis SVJ';
   return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
   <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
-  <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table></div>`;
+  <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
+  ${pool}</div>`;
  }).join('');
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
