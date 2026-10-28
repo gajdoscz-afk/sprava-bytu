@@ -343,6 +343,19 @@ def snapshot_portfolio_now() -> None:
                 if pending:
                     db.delete(pending)
                 continue
+            if cur is not None and cur.source == "ručně" and est > cur.amount:
+                # trh ukazuje víc než můj ruční odhad: hodnota se přepíše automaticky k dnešku
+                today = today_prague()
+                row = db.scalar(select(m.FlatValue).where(
+                    m.FlatValue.flat_id == r["id"], m.FlatValue.on_date == today, m.FlatValue.source == "ručně"))
+                note = f"z trhu automaticky ({r['n']} nabídek)"
+                if row:
+                    row.amount, row.note = est, note
+                else:
+                    db.add(m.FlatValue(flat_id=r["id"], on_date=today, amount=est, source="ručně", note=note))
+                if pending:
+                    db.delete(pending)
+                continue
             if pending:
                 pending.amount, pending.basis, pending.n = est, r["basis"], r["n"]
                 pending.created_at = datetime.now(timezone.utc)
@@ -509,15 +522,15 @@ def statement_out(st: m.Statement) -> dict:
 
 
 def _market_value(f: m.Flat):
-    """Poslední platná hodnota bytu (tržní cena). Při shodě data vyhrává ruční zápis."""
+    """Poslední platná hodnota bytu: (částka, datum, zdroj). Při shodě data vyhrává ruční zápis."""
     from sqlalchemy.orm import object_session
     sess = object_session(f)
     if sess is None:
-        return None, None
+        return None, None, None
     vals = [v for v in sess.scalars(select(m.FlatValue).where(m.FlatValue.flat_id == f.id)).all()
             if v.on_date <= today_prague()]
     best = max(vals, key=lambda v: (v.on_date, v.source == "ručně"), default=None)
-    return (float(best.amount), best.on_date.isoformat()) if best else (None, None)
+    return (float(best.amount), best.on_date.isoformat(), best.source) if best else (None, None, None)
 
 
 def flat_out(f: m.Flat) -> dict:
@@ -526,6 +539,7 @@ def flat_out(f: m.Flat) -> dict:
         "id": f.id,
         "market_value": mv[0],
         "market_value_on": mv[1],
+        "market_value_source": mv[2],
         "addr": f.addr,
         "color": f.color,
         "cmp_links": f.cmp_links or [],
@@ -852,6 +866,8 @@ def benchmark_overview(db: Session = Depends(get_db)):
             "suggested_rent": float(sug) if sug is not None else None,
             "sale": es,
             "sale_reason": v["reason"],
+            "my_value": _market_value(f)[0],
+            "my_value_source": _market_value(f)[2],
         })
     listings = sorted(all_listings, key=lambda l: l.found_at, reverse=True)[:300]
     return {"min_diff": float(bm.MIN_DIFF_KC), "flats": flats, "listings": [listing_out(l) for l in listings]}

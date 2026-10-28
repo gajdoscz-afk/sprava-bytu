@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.42</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.43</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -841,7 +841,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="sumLine">PSČ a město <b>${esc(f.zip)||'—'}</b></div>
     <div class="sumLine">Koupeno <button class="link" onclick="acqForm(${f.id})"><b>${acqWhen}</b></button></div>
     <div class="sumLine">Kupní cena <button class="link" onclick="acqForm(${f.id})"><b>${acqPrice}</b></button></div>
-    <div class="sumLine">Tržní cena <button class="link" onclick="valueModal(${f.id})"><b>${f.market_value!=null?kc(f.market_value)+' ('+fd(f.market_value_on)+')':'+ zadat'}</b></button></div>
+    <div class="sumLine">Tržní cena <button class="link" onclick="valueModal(${f.id})"><b title="${f.market_value_source==='ručně'?'Můj odhad':'Odhad z trhu'}">${f.market_value!=null?kc(f.market_value)+' ('+fd(f.market_value_on)+')':'+ zadat'}</b></button></div>
    </div>
    <div class="sumCol">
     <div class="sumH">Aktuální nájemník</div>
@@ -2079,7 +2079,8 @@ function saleBlock(b){
  return `<div class="card" style="margin:10px 0 0">
   <div class="row"><b>Prodej</b>${s?`<span class="tag ${CONF_CLASS[s.confidence]||''}">${s.confidence}</span>`:'<span class="tag warn">málo dat</span>'}</div>
   <div class="mini">
-   <div><span>Odhad ceny</span><b>${s?kc(s.estimate):'—'}</b></div>
+   <div><span>Odhad ceny (z trhu)</span><b>${s?kc(s.estimate):'/'}</b></div>
+   <div><span>Moje cena</span><b class="${b.my_value==null||!s?'':(b.my_value<s.estimate?'bad':'ok')}" title="${b.my_value_source==='ručně'?'Můj odhad':'Odhad z trhu'}">${b.my_value!=null?kc(b.my_value):'/'}</b></div>
    <div><span>Cena za m²</span><b>${s&&s.per_m2?kc(s.per_m2):'—'}</b></div>
    <div><span>Růst za měsíc</span><b>${pctTxt(s&&s.growth_1m)}</b></div>
    <div><span>Růst za rok</span><b>${pctTxt(s&&s.growth_12m)}</b></div>
