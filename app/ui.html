@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.33</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.34</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -465,6 +465,11 @@ async function emDelete(){
 }
 function leaseOf(lid){for(const f of S.flats){const l=f.leases.find(x=>x.id===lid);if(l)return {f,l}}return null}
 function changePredpis(fid,body){return api(`/flats/${fid}/predpis-zmena`,'POST',body)}
+function rentEditAny(fid){
+ const f=flat(fid);if(!f)return;
+ const l=f.leases[f.leases.length-1];
+ if(l)tenantRentEdit(l.id);else leaseForm(fid);
+}
 function tenantRentEdit(lid){
  const {f,l}=leaseOf(lid)||{};
  editModal('Nájem bez záloh',[{id:'amt',label:'Částka (Kč/měs.)',type:'number',value:l?l.rent:0}],
@@ -750,7 +755,6 @@ function cmpSelect(name){window.CMP_SEL=window.CMP_SEL===name?null:name;render()
 function cmpSections(f,l){
  const rows=cmpRows(f,l);
  const items=f.svj||[];
- if(!rows.length&&!items.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
  const payOf=n=>items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
  const has=n=>items.some(c=>c.name===n);
  const pay=items.reduce((x,c)=>x+(+c.amount||0),0);
@@ -760,7 +764,7 @@ function cmpSections(f,l){
  const rent=l?(+l.rent||0):0;
  const money=v=>(v>0?'+':'')+kc(v);
  let vyb=rent, corr=0;
- const rentRow=`<tr class="rentRow"><td>Holé nájemné</td><td class="r">${kc(rent)}</td><td class="mut">—</td><td class="r mut">—</td><td class="r mut">—</td><td class="c"></td></tr>`;
+ const rentRow=`<tr class="rentRow"><td>Holé nájemné</td><td class="r"><button class="link" onclick="rentEditAny(${f.id})">${kc(rent)}</button></td><td class="mut">—</td><td class="r mut">—</td><td class="r mut">—</td><td class="c"></td></tr>`;
  const tRows=rows.map(r=>{
   const get=(l&&l.adv)?(+l.adv[r.adv]||0):0;
   vyb+=get;
@@ -848,7 +852,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
    <div class="sumCol sumWide">
     <div class="sumH">Zálohy: vybírám × platím</div>
     ${cmpSections(f,l)}
-    <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:''}<button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></div>
+    <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:`<button class="btn sm sec" onclick="leaseForm(${f.id})">+ Předpis: nájem a zálohy</button>`}<button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></div>
     <div class="sumNet"><span>Zbývá mi měsíčně</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
     <div class="sumCorr"><span>Po korekci z vyúčtování <span class="mut small">(zaškrtnuté položky se vyrovnají vyúčtováním nájemníka)</span></span><b class="${netCorr<0?'bad':'ok'}">${kc(netCorr)}</b></div>
     <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. „Vyúčt.“: zaškrtnutá položka se v korekci nahradí skutečnou cenou (u nespárované položky SVJ nájemník doplatí podíl).</div>
