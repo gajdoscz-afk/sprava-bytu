@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.32</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.33</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -790,6 +790,30 @@ function cmpSections(f,l){
  <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r" title="Záporné = přeplatek vracíte, kladné = doplatek nájemníka">Rozdíl</th><th class="c" title="Počítat do vyúčtování">Vyúčt.</th></tr></thead>
  <tbody>${tRows.join('')}${rentRow}${sRows.join('')}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${corr<0?'bad':'ok'}">${money(corr)}</td><td></td></tr></tbody></table></div>`;
 }
+// Údaje nájemníka na kartě bytu: proklik na úpravu a varování, když vypadají jako údaje pronajímatele
+function looksLandlord(v){return /gajdos|predboj|zapadni|280136040|724\s?116\s?856/i.test(String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,''))}
+function tenantEdit(fid,key){
+ const f=flat(fid);if(!f)return;
+ const L={name:['Nájemník',f.tenant.name],email:['E-mail nájemníka',f.tenant.email],phone:['Telefon nájemníka',f.tenant.phone],others:['Další osoby v bytě (čárkou)',(f.tenant.others||[]).join(', ')],bank:['Účet nájemníka',f.bank.acc]}[key];
+ modal(`<div class="sheetHead"><h2>Upravit: ${L[0]}</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
+  <label>${L[0]}</label><input id="te_v" value="${esc(L[1]||'')}">
+  <div class="small mut" style="margin-top:8px">Uloží se na kartu tohoto bytu.</div>
+  <div class="btns"><button class="btn" onclick="tenantSave(${fid},'${key}')">Uložit</button></div>`);
+}
+async function tenantSave(fid,key){
+ const f=flat(fid);if(!f)return;
+ const v=($('#te_v').value||'').trim();
+ const t={name:f.tenant.name,email:f.tenant.email,phone:f.tenant.phone,others:f.tenant.others||[]};
+ if(key==='name')t.name=v;
+ if(key==='email')t.email=v;
+ if(key==='phone')t.phone=v;
+ if(key==='others')t.others=v.split(',').map(x=>x.trim()).filter(Boolean);
+ const bank=key==='bank'?v:f.bank.acc;
+ try{
+  await api(`/flats/${fid}`,'PUT',{addr:f.addr,dispo:f.dispo,floor:f.floor,zip:f.zip,owner:f.owner,bank_acc:bank,area_m2:f.area_m2,color:f.color,tenant:t});
+  closeModal();toast('Uloženo');await reload();render();
+ }catch(e){toast(e.message)}
+}
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const payNow=n=>(f.svj||[]).filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
  let corr=0;
@@ -813,11 +837,11 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
    </div>
    <div class="sumCol">
     <div class="sumH">Aktuální nájemník</div>
-    <div class="sumMain">${esc(f.tenant.name)||'Bez nájemníka'} ${status}</div>
-    ${others?`<div class="sumLine">Další osoby <b>${esc(others)}</b></div>`:''}
-    <div class="sumLine">E-mail <b>${esc(f.tenant.email)||'—'}</b></div>
-    <div class="sumLine">Telefon <b>${esc(f.tenant.phone)||'—'}</b></div>
-    <div class="sumLine">Účet nájemce <b>${esc(f.bank.acc)||'—'}</b></div>
+    <div class="sumMain"><button class="link" onclick="tenantEdit(${f.id},'name')">${esc(f.tenant.name)||'+ doplnit nájemníka'}</button> ${status}${looksLandlord(f.tenant.name)?' <span class="warnTxt small">⚠ vypadá jako údaj pronajímatele, opravte</span>':''}</div>
+    <div class="sumLine">Další osoby <button class="link" onclick="tenantEdit(${f.id},'others')"><b>${esc(others)||'+ doplnit'}</b></button></div>
+    <div class="sumLine">E-mail <button class="link" onclick="tenantEdit(${f.id},'email')"><b>${esc(f.tenant.email)||'+ doplnit'}</b></button>${looksLandlord(f.tenant.email)?' <span class="warnTxt small">⚠</span>':''}</div>
+    <div class="sumLine">Telefon <button class="link" onclick="tenantEdit(${f.id},'phone')"><b>${esc(f.tenant.phone)||'+ doplnit'}</b></button>${looksLandlord(f.tenant.phone)?' <span class="warnTxt small">⚠</span>':''}</div>
+    <div class="sumLine">Účet nájemce <button class="link" onclick="tenantEdit(${f.id},'bank')"><b>${esc(f.bank.acc)||'+ doplnit'}</b></button>${looksLandlord(f.bank.acc)?' <span class="warnTxt small">⚠</span>':''}</div>
     ${lease}
     ${contactButtons(f)}
    </div>

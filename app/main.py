@@ -1471,20 +1471,21 @@ def doc_date(d: m.Document) -> date:
 
 def _is_landlord_value(key: str, raw: str) -> bool:
     """Údaje pronajímatele (smlouva má dvě strany) se nesmí zapsat jako údaje nájemníka."""
+    import unicodedata
     L = landlord_profile.LANDLORD
+    n = "".join(ch for ch in unicodedata.normalize("NFD", raw.lower()) if unicodedata.category(ch) != "Mn")
     digits = lambda v: "".join(ch for ch in v if ch.isdigit())
     if key == "tenant_email":
-        return raw.lower() == L["email"].lower()
+        return "gajdos" in n or n == L["email"].lower()
     if key == "tenant_phone":
         return digits(raw)[-9:] == digits(L["phone"])[-9:]
     if key == "tenant_bank_account":
         return raw.replace(" ", "") == landlord_profile.ACCOUNT
     if key == "tenant_name":
-        return raw.strip().lower() == L["name"].lower()
+        return "gajdos" in n or "michal" in n and "gajdos" in n
     if key == "zip_city":
-        # PSČ a město bytu se nesmí převzít z adresy pronajímatele (Předboj, Západní stráň 346)
-        text = "".join(ch for ch in raw.lower() if ch.isalnum() or ch == " ")
-        return "346" in text and ("predboj" in text or "zapadni" in text)
+        # město a PSČ pronajímatele (Předboj, Západní stráň) se nesmí převzít do bytu
+        return "predboj" in n or "zapadni" in n
     return False
 
 
