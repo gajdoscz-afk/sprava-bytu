@@ -254,7 +254,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
 <div id="navVal" class="navVal"></div>
-<div class="appVer">verze 1.10</div>
+<div class="appVer">verze 1.11</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -567,7 +567,7 @@ function predpisHistory(fid){
 }
 function flatBar(fid){
  const f=flat(fid)||{addr:'',dispo:'',tenant:{}};
- return `<div class="flatBar"><div style="min-width:0"><div class="flatBarKicker">Karta bytu</div><div class="flatBarName">${esc(f.addr)}</div></div><div class="flatBarMeta">${esc(f.dispo||'')}${f.tenant&&f.tenant.name?' · '+esc(f.tenant.name):''}</div><div style="display:flex;gap:6px;flex-shrink:0"><button class="btn sm" onclick="flatUpload(${fid})">↑ Upload dokumentu</button><button class="btn sec sm" onclick="go('flats')">← Byty</button></div></div>`;
+ return `<div class="flatBar"><div style="min-width:0"><div class="flatBarKicker">Karta bytu</div><div class="flatBarName">${esc(f.addr)}</div></div><div class="flatBarMeta">${esc(f.dispo||'')}${f.tenant&&f.tenant.name?' · '+esc(f.tenant.name):''}</div><div style="display:flex;gap:6px;flex-shrink:0"><button class="btn sm" onclick="flatUpload(${fid})">↑ Upload dokumentu</button><button class="btn sm sec" onclick="reloadFlatDocs(${fid})">↻ Údaje z dokumentů</button><button class="btn sec sm" onclick="go('flats')">← Byty</button></div></div>`;
 }
 // Nahrání přímo k bytu z karty (tlačítko je v horní liště, takže je vidět i po sjetí)
 function flatUpload(fid){
@@ -2158,7 +2158,7 @@ function docGroups(list,emptyText){
 function docsTab(){
  const inbox=S.docs.filter(d=>d.status==='ke_kontrole');
  const pend=pendingBanner(pendingGroups('all'));
- return `<div class="row"><h1>Upload</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
+ return `<div class="row"><h1>Upload</h1><div class="btns" style="margin:0"><button class="btn sm sec" onclick="rereadAll()">↻ Přečíst znovu</button><button class="btn sm sec" onclick="reloadAllFlats()">↻ Údaje bytů z dokumentů</button><button class="btn sm sec" onclick="flatForm()">+ Nový byt</button></div></div>
  <p class="mut small">Dokumenty nahrané sem nemají byt a zůstanou v nepřiřazených, dokud je k bytu nepřiřadíte. Nejrychleji ale nahrajete přímo na kartu bytu. Hotové PDF nebo fotky nahrajte tlačítkem níže. Pro více stránek jednoho dokumentu (smlouva, vyúčtování) použijte 📷. Fotky se nic neuloží jako hotový dokument, dokud neřeknete „Je to všechno“.</p>
  <div class="card" style="text-align:center;padding:26px">
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
@@ -2415,6 +2415,14 @@ async function cancelGroup(key){
 }
 
 // Přečte znovu všechny dokumenty: doplní nová pole (dispozice, PSČ, kontakty, účet) a přepočítá přiřazení
+async function reloadAllFlats(){
+ if(!confirm('Přepočítat údaje všech bytů z dokumentů? Údaje doplněné z dokumentů se načtou znovu, ruční údaje zůstanou.'))return;
+ try{const r=await api('/flats/reload-docs','POST');toast(`Přepočítáno ${r.bytů} bytů`);await reload()}catch(e){toast(e.message)}
+}
+async function reloadFlatDocs(fid){
+ if(!confirm('Přepočítat údaje tohoto bytu z dokumentů? Údaje doplněné z dokumentů se načtou znovu, ruční údaje zůstanou.'))return;
+ try{const r=await api(`/flats/${fid}/reload-docs`,'POST');toast(`Přepočítáno z ${r.dokumentů} dokumentů`);await reload()}catch(e){toast(e.message)}
+}
 async function rereadAll(){ return rereadIds(S.docs.filter(d=>d.status!=='rozpracováno').map(d=>d.id),'Přečíst znovu') }
 async function rereadFlat(flatId){ return rereadIds(S.docs.filter(d=>d.flat_id===flatId&&d.status!=='rozpracováno').map(d=>d.id),'Přečíst znovu dokumenty tohoto bytu') }
 async function rereadIds(ids,title){

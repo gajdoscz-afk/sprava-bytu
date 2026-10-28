@@ -1827,6 +1827,40 @@ def update_document(doc_id: int, body: s.DocumentUpdate, db: Session = Depends(g
     return doc_out(d)
 
 
+def reload_flat_from_docs(db: Session, f: m.Flat) -> int:
+    """Smaže údaje, které byt dostal z dokumentů, a načte je znovu ze všech dokumentů bytu (od nejstaršího).
+    Ruční údaje bez záznamu o dokumentu zůstanou. Vrací počet dokumentů."""
+    dates = dict(f.field_dates or {})
+    for attr in set(FLAT_FIELDS.values()):
+        if attr in dates:
+            setattr(f, attr, None if attr == "area_m2" else "")
+            dates.pop(attr, None)
+    f.field_dates = dates
+    docs = db.scalars(select(m.Document).where(m.Document.flat_id == f.id)).all()
+    for d in sorted(docs, key=doc_date):
+        enrich_flat(db, d)
+    db.add(m.Version(flat_id=f.id, name="Údaje bytu", action="přepočítáno z dokumentů",
+                     old=None, new={"dokumentů": len(docs)}))
+    return len(docs)
+
+
+@app.post("/flats/{flat_id}/reload-docs")
+def reload_docs_flat(flat_id: int, db: Session = Depends(get_db)):
+    f = get_flat(db, flat_id)
+    n = reload_flat_from_docs(db, f)
+    db.commit()
+    return {"ok": True, "dokumentů": n, "flat": flat_out(f)}
+
+
+@app.post("/flats/reload-docs")
+def reload_docs_all(db: Session = Depends(get_db)):
+    flats = db.scalars(select(m.Flat)).all()
+    for f in flats:
+        reload_flat_from_docs(db, f)
+    db.commit()
+    return {"ok": True, "bytů": len(flats)}
+
+
 @app.post("/documents/{doc_id}/classify")
 async def reclassify_document(doc_id: int, db: Session = Depends(get_db)):
     d = get_document(db, doc_id)
