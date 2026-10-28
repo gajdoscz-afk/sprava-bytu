@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.34</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.35</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -792,7 +792,7 @@ function cmpSections(f,l){
  const hint=`<div class="mut small" style="margin:6px 0">Do vyúčtování jdou jen zaškrtnuté řádky; přeškrtnuté šedé hodnoty se nepočítají. Záporné = přeplatek, který vracíte nájemníkovi. Kladné = doplatek nájemníka. Celkem odpovídá korekci „Po korekci“ na kartě.</div>`+(unpaired.length?`<div class="mut small" style="margin:0 0 6px">Nespárované položky SVJ jsou dole. Přetáhněte je na řádek nájemníka, nebo na ně klikněte a pak klikněte na řádek.</div>`:'');
  return `<div class="cmpPeriod"><div class="cmpHead">Platný předpis dnes <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>${hint}
  <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r" title="Záporné = přeplatek vracíte, kladné = doplatek nájemníka">Rozdíl</th><th class="c" title="Počítat do vyúčtování">Vyúčt.</th></tr></thead>
- <tbody>${tRows.join('')}${rentRow}${sRows.join('')}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${corr<0?'bad':'ok'}">${money(corr)}</td><td></td></tr></tbody></table></div>`;
+ <tbody>${tRows.join('')}${rentRow}${sRows.join('')}<tr class="addRow"><td></td><td></td><td><button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></td><td></td><td></td><td></td></tr><tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${corr<0?'bad':'ok'}">${money(corr)}</td><td></td></tr></tbody></table></div>`;
 }
 // Údaje nájemníka na kartě bytu: proklik na úpravu a varování, když vypadají jako údaje pronajímatele
 function looksLandlord(v){return /gajdos|predboj|zapadni|280136040|724\s?116\s?856/i.test(String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,''))}
@@ -817,6 +817,18 @@ async function tenantSave(fid,key){
   await api(`/flats/${fid}`,'PUT',{addr:f.addr,dispo:f.dispo,floor:f.floor,zip:f.zip,owner:f.owner,bank_acc:bank,area_m2:f.area_m2,color:f.color,tenant:t});
   closeModal();toast('Uloženo');await reload();render();
  }catch(e){toast(e.message)}
+}
+function phoneMenu(fid){
+ const f=flat(fid);if(!f)return;
+ const ph=phoneIntl(f.tenant.phone);
+ if(!ph){toast('Nejdřív doplňte telefon');return}
+ const st='style="text-decoration:none;text-align:center"';
+ modal(`<div class="sheetHead"><h2>${esc(f.tenant.name)||'Nájemník'} · ${esc(f.tenant.phone)}</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <div class="btns" style="flex-direction:column;align-items:stretch">
+   <a class="btn" href="tel:+${ph}" ${st}>📞 Zavolat</a>
+   <a class="btn sec" href="sms:+${ph}" ${st}>✉ Napsat zprávu (SMS)</a>
+   <a class="btn sec" href="https://wa.me/${ph}" target="_blank" rel="noopener" ${st}>WhatsApp</a>
+  </div>`);
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const payNow=n=>(f.svj||[]).filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
@@ -843,16 +855,15 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="sumH">Aktuální nájemník</div>
     <div class="sumMain"><button class="link" onclick="tenantEdit(${f.id},'name')">${esc(f.tenant.name)||'+ doplnit nájemníka'}</button> ${status}${looksLandlord(f.tenant.name)?' <span class="warnTxt small">⚠ vypadá jako údaj pronajímatele, opravte</span>':''}</div>
     <div class="sumLine">Další osoby <button class="link" onclick="tenantEdit(${f.id},'others')"><b>${esc(others)||'+ doplnit'}</b></button></div>
-    <div class="sumLine">E-mail <button class="link" onclick="tenantEdit(${f.id},'email')"><b>${esc(f.tenant.email)||'+ doplnit'}</b></button>${looksLandlord(f.tenant.email)?' <span class="warnTxt small">⚠</span>':''}</div>
-    <div class="sumLine">Telefon <button class="link" onclick="tenantEdit(${f.id},'phone')"><b>${esc(f.tenant.phone)||'+ doplnit'}</b></button>${looksLandlord(f.tenant.phone)?' <span class="warnTxt small">⚠</span>':''}</div>
+    <div class="sumLine">E-mail ${f.tenant.email?`<a class="link" href="mailto:${esc(f.tenant.email)}"><b>${esc(f.tenant.email)}</b></a> <button class="link small" title="Upravit e-mail" onclick="tenantEdit(${f.id},'email')">✎</button>`:`<button class="link" onclick="tenantEdit(${f.id},'email')"><b>+ doplnit</b></button>`}${looksLandlord(f.tenant.email)?' <span class="warnTxt small">⚠</span>':''}</div>
+    <div class="sumLine">Telefon ${f.tenant.phone?`<button class="link" onclick="phoneMenu(${f.id})"><b>${esc(f.tenant.phone)}</b></button> <button class="link small" title="Upravit telefon" onclick="tenantEdit(${f.id},'phone')">✎</button>`:`<button class="link" onclick="tenantEdit(${f.id},'phone')"><b>+ doplnit</b></button>`}${looksLandlord(f.tenant.phone)?' <span class="warnTxt small">⚠</span>':''}</div>
     <div class="sumLine">Účet nájemce <button class="link" onclick="tenantEdit(${f.id},'bank')"><b>${esc(f.bank.acc)||'+ doplnit'}</b></button>${looksLandlord(f.bank.acc)?' <span class="warnTxt small">⚠</span>':''}</div>
     ${lease}
-    ${contactButtons(f)}
    </div>
    <div class="sumCol sumWide">
     <div class="sumH">Zálohy: vybírám × platím</div>
     ${cmpSections(f,l)}
-    <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:`<button class="btn sm sec" onclick="leaseForm(${f.id})">+ Předpis: nájem a zálohy</button>`}<button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></div>
+    <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:`<button class="btn sm sec" onclick="leaseForm(${f.id})">+ Předpis: nájem a zálohy</button>`}</div>
     <div class="sumNet"><span>Zbývá mi měsíčně</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
     <div class="sumCorr"><span>Po korekci z vyúčtování <span class="mut small">(zaškrtnuté položky se vyrovnají vyúčtováním nájemníka)</span></span><b class="${netCorr<0?'bad':'ok'}">${kc(netCorr)}</b></div>
     <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. „Vyúčt.“: zaškrtnutá položka se v korekci nahradí skutečnou cenou (u nespárované položky SVJ nájemník doplatí podíl).</div>
