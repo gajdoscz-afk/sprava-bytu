@@ -1000,7 +1000,7 @@ function econMatrix(e){
  };
  const head=`<div></div>`+ms.map(x=>`<div class="ehead">${monthLabel(x.period)}</div>`).join('');
  const body=flats.map(f=>`<div class="etile" style="--fc:${flatColor(f)}"><b>${esc(f.addr)}</b><span>${esc(f.tenant?.name||'Bez nájemníka')}</span></div>`+ms.map(x=>cellOf(f,x)).join('')).join('');
- return `<div class="ematrix" style="grid-template-columns:210px repeat(${ms.length},minmax(124px,1fr))">${head}${body}</div>`;
+ return `<div style="overflow-x:auto"><div class="ematrix" style="grid-template-columns:210px repeat(${ms.length},minmax(124px,1fr))">${head}${body}</div></div>`;
 }
 function econHome(){
  const e=S.econ;if(!e)return '';
