@@ -236,12 +236,26 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 .tag.ok{background:rgba(34,197,94,.16);color:#4ADE80}
 .tag.warn{background:rgba(245,158,11,.16);color:#F59E0B}
 .tag.bad{background:rgba(251,113,133,.16);color:#FB7185}
+.sumGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr);gap:20px;align-items:start}
+.sumCol{min-width:0}
+.sumH{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin-bottom:8px}
+.sumMain{font-size:17px;font-weight:700;margin-bottom:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sumLine{display:flex;justify-content:space-between;gap:10px;font-size:14px;color:var(--mut);padding:3px 0;border-bottom:1px dashed var(--line)}
+.sumLine b{color:var(--ink);font-weight:600;text-align:right;overflow-wrap:anywhere}
+.cmp{width:100%;border-collapse:collapse;font-size:14px}
+.cmp th,.cmp td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left}
+.cmp th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600}
+.cmp .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cmp .sumRow td{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
+.sumNet{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.35)}
+.sumNet b{font-size:18px;font-variant-numeric:tabular-nums}
+@media (max-width:820px){.sumGrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.14</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.15</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -621,6 +635,53 @@ function flatChart(income,cost,profit,title='Měsíční přehled v grafu',note=
   <div class="mut small" style="text-align:center;margin-top:8px">${note}</div>
  </div>`;
 }
+function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
+ const norm=x=>String(x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+ const adv=l?Object.entries(l.adv||{}):[];
+ const svj=f.svj||[];
+ const advKeys=new Set(adv.map(([n])=>norm(n)));
+ const payBy={};svj.forEach(c=>{const k=norm(c.name);payBy[k]=(payBy[k]||0)+(+c.amount||0)});
+ const rows=adv.map(([n,v])=>({name:n,get:+v||0,pay:(norm(n) in payBy)?payBy[norm(n)]:null}));
+ svj.filter(c=>!advKeys.has(norm(c.name))).forEach(c=>rows.push({name:c.name,get:null,pay:+c.amount||0}));
+ const diffTotal=advTotal-svjTotal;
+ const cmp=rows.length?`<table class="cmp"><thead><tr><th>Položka</th><th class="r">Vybírám</th><th class="r">Platím</th><th class="r">Rozdíl</th></tr></thead><tbody>${rows.map(r=>{const both=r.get!=null&&r.pay!=null;const d=(r.get||0)-(r.pay||0);return `<tr><td>${esc(r.name)}</td><td class="r">${r.get==null?'—':kc(r.get)}</td><td class="r">${r.pay==null?'—':kc(r.pay)}</td><td class="r ${both?(d<0?'bad':'ok'):''}">${both?(d>=0?'+':'')+kc(d):'—'}</td></tr>`}).join('')}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(advTotal)}</td><td class="r">${kc(svjTotal)}</td><td class="r ${diffTotal<0?'bad':'ok'}">${(diffTotal>=0?'+':'')+kc(diffTotal)}</td></tr></tbody></table>`:'<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
+ const others=(f.tenant.others||[]).join(', ');
+ const missing=[f.addr,f.dispo,f.floor,f.zip,f.area_m2,f.tenant.name,others,f.tenant.email,f.tenant.phone,f.bank.acc].filter(v=>!v).length;
+ const status=l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>';
+ const lease=l?`<div class="sumLine">Nájem bez záloh <b>${kc(l.rent)}</b></div><div class="sumLine">Kauce <b>${kc(l.kauce)}</b></div><div class="sumLine">Smlouva <b>${l.to?(daysTo>=0?'do '+fd(l.to)+' (za '+daysTo+' dní)':'skončila '+fd(l.to)):'bez konce'}</b></div><div class="sumLine">Poslední vyúčtování <b>${lastSt}</b></div>`:'';
+ return `<div class="card sumCard">
+  <div class="sumGrid">
+   <div class="sumCol">
+    <div class="sumH">Byt</div>
+    <div class="sumMain">${esc(f.addr)||'—'}</div>
+    <div class="sumLine">Dispozice <b>${esc(f.dispo)||'—'}</b></div>
+    <div class="sumLine">Patro <b>${esc(f.floor)||'—'}</b></div>
+    <div class="sumLine">Plocha <b>${f.area_m2?String(f.area_m2).replace('.',',')+' m²':'—'}</b></div>
+    <div class="sumLine">PSČ a město <b>${esc(f.zip)||'—'}</b></div>
+   </div>
+   <div class="sumCol">
+    <div class="sumH">Aktuální nájemník</div>
+    <div class="sumMain">${esc(f.tenant.name)||'Bez nájemníka'} ${status}</div>
+    ${others?`<div class="sumLine">Další osoby <b>${esc(others)}</b></div>`:''}
+    <div class="sumLine">E-mail <b>${esc(f.tenant.email)||'—'}</b></div>
+    <div class="sumLine">Telefon <b>${esc(f.tenant.phone)||'—'}</b></div>
+    <div class="sumLine">Účet nájemce <b>${esc(f.bank.acc)||'—'}</b></div>
+    ${lease}
+    ${contactButtons(f)}
+   </div>
+   <div class="sumCol sumWide">
+    <div class="sumH">Zálohy: vybírám × platím</div>
+    ${cmp}
+    <div class="sumNet"><span>Zbývá mi měsíčně</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
+    <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}.</div>
+   </div>
+  </div>
+  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
+  ${missing?`<p class="small mut" style="margin-top:10px">Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.</p><div class="btns"><button class="btn sm sec" onclick="reloadFlatDocs(${f.id})">↻ Načíst znovu z dokumentů</button></div>`:''}
+  ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
+ </div>`;
+}
+
 function flatDetail(){
  const f=flat(V.flat);if(!f){go('flats');return ''}
  const l=f.leases[f.leases.length-1];
@@ -654,24 +715,7 @@ function flatDetail(){
  <button class="link" onclick="go('flats')">← Byty</button>
  <h1>${esc(f.addr)} <button class="link small" style="font-size:15px;font-weight:600" onclick="flatForm(${f.id})" title="Upravit název a údaje bytu">✎ upravit</button></h1><p class="mut" style="margin:0">${esc(f.dispo)}</p><p class="mut small" style="margin:2px 0 14px">${esc(f.tenant.name)||'Bez nájemníka'}</p>
  ${chartCard}
- <div class="card">
-  <div class="row"><div><b>${esc(f.tenant.name)}</b><div class="mut small">${f.tenant.others.length?'Další osoba v bytě: '+esc(f.tenant.others.join(', ')):''}</div></div>
-  ${l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>'}</div>
-  ${l?`<div class="mini">
-   <div><span>Nájem bez záloh</span><b>${kc(l.rent)}</b></div>
-   <div><span>Zálohy od nájemníka</span><b>${kc(advTotal)}</b></div>
-   <div><span>Příjem od nájemníka měsíčně</span><b>${kc(incomeM)}</b></div>
-   <div><span>Platím SVJ měsíčně</span><b>${kc(svjTotal)}</b></div>
-   <div><span>Čistý měsíční příjem</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
-   <div><span>Smlouva</span><b>${l.to?(daysTo>=0?'do '+fd(l.to)+' (za '+daysTo+' dní)':'skončila '+fd(l.to)):'bez konce'}</b></div>
-   <div><span>Poslední vyúčtování</span><b>${lastSt}</b></div>
-   <div><span>Kauce</span><b>${kc(l.kauce)}</b></div>
-   <div><span>Účet nájemce</span><b>${esc(f.bank.acc)||'—'}</b></div>
-  </div>`:''}
-  <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button></div>
-  ${expired?`<p class="note warnTxt">Poslední známá smlouva skončila ${fd(l.to)}. Pokud nájem běží dál, nahrajte novou smlouvu nebo dodatek.</p>`:''}
- </div>
-${detailsCard(f)}
+ ${flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt)}
 ${tenantCard}
  ${svjCard}
  ${netCard}
