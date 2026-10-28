@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.39</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.40</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -370,7 +370,7 @@ function render(){
  const nv=$('#navVal'); if(nv)nv.innerHTML=PORT?`<small>Hodnota portfolia</small><b>${kc(PORT.total)}</b>`:'';
  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(V.tab==='flat'&&b.dataset.t==='flats')));
  const m=$('#main');
- m.innerHTML=(V.tab==='flat'&&V.flat?flatBar(V.flat)+flatTiles(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
+ m.innerHTML=(V.tab==='flat'&&V.flat?flatBar(V.flat):'')+(V.tab==='home'?home():V.tab==='flats'?flatsList():V.tab==='econ'?econHome():V.tab==='docs'?docsTab():V.tab==='flat'?flatDetail():V.tab==='bench'?benchTab():V.tab==='value'?valueTab():V.tab==='mail'?mailTab():historyTab());
 }
 
 // ---------- přehled ----------
@@ -632,19 +632,6 @@ function flatUpload(fid){
  i.type='file';i.multiple=true;i.accept='image/*,application/pdf,.docx';
  i.onchange=()=>uploadFiles([...i.files],fid);
  i.click();
-}
-function flatTiles(fid){
- const docs=S.docs.filter(d=>String(d.flat_id)===String(fid)&&d.status==='zarazeno');
- const cnt=t=>docs.filter(d=>t.includes(d.doc_type)).length;
- const T=[
-  ['Všechny dokumenty',null,docs.length,'Vše, co patří k bytu'],
-  ['Smlouvy a dodatky',['smlouva','dodatek'],cnt(['smlouva','dodatek']),'Nájemní smlouvy'],
-  ['Předávací protokoly',['protokol'],cnt(['protokol']),'Stavy měřidel při předání'],
-  ['Fotky měřidel',['foto_meridla'],cnt(['foto_meridla']),'Archiv podle data a místnosti'],
-  ['Vyúčtování SVJ',['vyuctovani_svj','vyuctovani_spravy'],cnt(['vyuctovani_svj','vyuctovani_spravy']),'Od SVJ a správy'],
-  ['Vyúčtování nájemníkovi',['vyuctovani_najemnikovi'],cnt(['vyuctovani_najemnikovi']),'Pro nájemce'],
-  ['Doklady nájemníků',['doklad_najemnika'],cnt(['doklad_najemnika']),'Fotky dokladů']];
- return `<div class="tiles" style="margin:0 0 14px">${T.map(([n,types,c,hint])=>`<button class="tile" onclick="openReports(${JSON.stringify({flat:fid,types,label:n}).replace(/"/g,'&quot;')})"><span>${n}</span><b>${c}</b><small>${hint}</small></button>`).join('')}</div>`;
 }
 let CH_N=0;
 function flatChart(income,cost,profit,title='Měsíční přehled v grafu',note='Podle aktuálního nájemníka a posledního předpisu. Modře výnosy, červeně náklady SVJ, zeleně zisk.',tile=''){
