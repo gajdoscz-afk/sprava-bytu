@@ -288,3 +288,13 @@ class MarketNews(Base):
     title: Mapped[str] = mapped_column(String(300))
     summary: Mapped[str] = mapped_column(Text, default="")
     url: Mapped[str] = mapped_column(String(500), default="")
+
+
+class Setting(Base):
+    """Jednotlivé nastavení v databázi, např. podpis pronajímatele jako obrázek."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    mime: Mapped[str] = mapped_column(String(100), default="image/png")
+    data: Mapped[bytes] = mapped_column(LargeBinary)

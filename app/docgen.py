@@ -68,7 +68,7 @@ def _cz_date(d) -> str:
     return f"{d.day}. {d.month}. {d.year}"
 
 
-def settlement_tenant_docx(flat, res: dict, doc_date=None) -> bytes:
+def settlement_tenant_docx(flat, res: dict, doc_date=None, signature: bytes | None = None) -> bytes:
     """Vyúčtování služeb pro nájemce: smluvní strany, položky, výpočet a výsledek."""
     from datetime import date as _date
     from . import landlord as _landlord
@@ -109,8 +109,17 @@ def settlement_tenant_docx(flat, res: dict, doc_date=None) -> bytes:
     d.add_paragraph()
     d.add_paragraph(f"V Praze dne {_cz_date(doc_date)}")
     d.add_paragraph()
-    d.add_paragraph("______________________          ______________________")
-    d.add_paragraph("Pronajímatel                     Nájemce")
+    import io
+    from docx.shared import Cm
+    sig_tbl = d.add_table(rows=1, cols=2)
+    left, right = sig_tbl.rows[0].cells
+    if signature:
+        left.paragraphs[0].add_run().add_picture(io.BytesIO(signature), width=Cm(4.5))
+    left.add_paragraph("______________________")
+    right.paragraphs[0].add_run("")
+    right.add_paragraph("______________________")
+    left.add_paragraph(f"Pronajímatel: {land['name']}")
+    right.add_paragraph(f"Nájemce: {tenant_txt}")
     return _save(d)
 
 

@@ -1288,15 +1288,42 @@ def settlement_preview(flat_id: int, year: int | None = None, db: Session = Depe
     return stl.to_json(stl.compute(db, f, y))
 
 
+@app.put("/settings/podpis")
+async def put_signature(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Podpis pronajímatele (PNG nebo JPEG), vloží se do vyúčtování nájemníka."""
+    data = await file.read()
+    mime = file.content_type or ""
+    if mime not in ("image/png", "image/jpeg"):
+        raise HTTPException(400, "Podpis nahrajte jako PNG nebo JPEG (nejlépe PNG bez pozadí)")
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(413, "Obrázek podpisu je větší než 2 MB")
+    row = db.get(m.Setting, "podpis")
+    if row is None:
+        row = m.Setting(key="podpis")
+        db.add(row)
+    row.data, row.mime = data, mime
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/settings/podpis")
+def get_signature(db: Session = Depends(get_db)):
+    row = db.get(m.Setting, "podpis")
+    if row is None:
+        raise HTTPException(404, "Podpis není nahraný")
+    return Response(content=row.data, media_type=row.mime)
+
+
 @app.post("/flats/{flat_id}/settlement", status_code=201)
 def settlement_save(flat_id: int, year: int | None = None, doc_date: str | None = None, db: Session = Depends(get_db)):
     """Vygeneruje Word vyúčtování pro nájemníka a přehled pro pronajímatele a uloží je ke kartě bytu."""
     f = get_flat(db, flat_id)
     y = year or date.today().year - 1
     res = stl.compute(db, f, y)
+    sig = db.get(m.Setting, "podpis")
     out = []
     for doc_type, label, data in (
-        ("vyuctovani_najemnikovi", "Vyúčtování nájemník", docgen.settlement_tenant_docx(f, res, _parse_day(doc_date))),
+        ("vyuctovani_najemnikovi", "Vyúčtování nájemník", docgen.settlement_tenant_docx(f, res, _parse_day(doc_date), signature=sig.data if sig else None)),
         ("jine", "Přehled pro pronajímatele", docgen.settlement_landlord_docx(f, res)),
     ):
         d = m.Document(flat_id=f.id, status="zarazeno", doc_type=doc_type,

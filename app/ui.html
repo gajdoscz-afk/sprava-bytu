@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.38</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.39</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1664,6 +1664,21 @@ async function wzSave(){
   ctSavedModal(doc);
  }catch(e){progress('');toast(e.message)}
 }
+function sigBox(){
+ return `<div class="card" style="margin:10px 0;padding:12px 14px"><div class="small mut" style="margin-bottom:8px">Podpis pronajímatele (vloží se do vyúčtování)</div>
+  <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap"><img id="sigImg" src="/settings/podpis" alt="" style="max-height:64px;background:#fff;border-radius:8px;padding:4px" onerror="this.style.display='none';document.getElementById('sigNone').style.display=''">
+  <span id="sigNone" class="small mut" style="display:none">Zatím nahraný není.</span>
+  <label class="btn sec sm" style="cursor:pointer">Nahrát podpis (PNG)<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="uploadSignature(this)"></label></div></div>`;
+}
+async function uploadSignature(input){
+ const f=input.files[0];input.value='';if(!f)return;
+ const fd=new FormData();fd.append('file',f);
+ const res=await fetch('/settings/podpis',{method:'PUT',body:fd});
+ if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}toast(d);return}
+ toast('Podpis uložen');
+ const img=document.getElementById('sigImg');if(img){img.style.display='';img.src='/settings/podpis?'+Date.now()}
+ const none=document.getElementById('sigNone');if(none)none.style.display='none';
+}
 function ctSavedModal(doc){
  modal(`<div class="sheetHead"><h2>Uloženo</h2><button class="btn sec sm" onclick="closeModal();render()">Zavřít</button></div>
   <p class="small mut">${esc(doc.summary||doc.filename)}</p>
@@ -1792,7 +1807,7 @@ async function prSave(){
 // ---------- vyúčtování služeb za kalendářní rok ----------
 function openSettlement(fid){
  const y=new Date().getFullYear()-1;
- modal(`<div class="sheetHead"><h2>Vyúčtování služeb</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+ modal(`<div class="sheetHead"><h2>Vyúčtování služeb</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>${sigBox()}
  <p class="small mut">Přeúčtují se jen teplo, voda, osvětlení, společná elektřina a výtah. Správa vodoměrů, účetnictví a odměna SVJ se nepřeúčtují. Vyúčtování se dělá za kalendářní rok, např. v roce 2027 za 2026.</p>
  <div class="grid2"><div><label>Rok</label><input type="number" id="sy" value="${y}" min="2000" max="2100"></div>
  <div><label>Datum na vyúčtování</label><input type="date" id="sd" value="${TODAY_ISO()}"><div class="mut small">Můžete změnit, nebo nechat dnešní.</div></div></div>
@@ -2611,8 +2626,9 @@ async function shareDoc(id){
  try{ f=await docFile(id) }catch(e){ toast(e.message); return }
  if(navigator.canShare&&navigator.canShare({files:[f]})){
   try{ await navigator.share({files:[f],title:f.name,text:(d&&d.summary)||f.name}); return }
-  catch(e){ if(e.name==='AbortError')return; toast('Klepněte na Sdílet ještě jednou'); return }
+  catch(e){ if(e.name==='AbortError')return }
  }
+ // Sdílení nejde (počítač nebo prohlížeč): soubor se uloží do stažených
  // Telefon neumí sdílet soubory přímo: uložíme ho do souborů
  const url=URL.createObjectURL(f);
  const a=document.createElement('a');a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();
