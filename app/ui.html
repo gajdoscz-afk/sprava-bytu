@@ -212,10 +212,10 @@ nav button:not(.brand):hover{color:#FDBA74;transform:translateY(-1px);box-shadow
 nav button.on{background:linear-gradient(160deg,rgba(34,197,94,.28),rgba(34,197,94,.08)),#0F2A1C;color:#FDBA74;border-color:#22C55E;box-shadow:0 0 34px -2px rgba(34,197,94,1),0 0 0 1px rgba(34,197,94,.7)}
 nav button.theme{background:transparent;color:#FB923C;box-shadow:none;border-color:rgba(34,197,94,.3)}
 /* levý panel: moderní skleněné dlaždice, popisky na střed, aktivní položka se svítícím pruhem */
-nav{width:150px;gap:12px}
+nav{width:150px;gap:8px;overflow-y:auto}
 body{padding-left:150px}
 .toast{left:calc(50% + 75px)}
-nav button,nav button:not(.brand){position:relative;display:flex;align-items:center;justify-content:center;text-align:center;min-height:56px;padding:14px 10px;border-radius:16px;background:linear-gradient(180deg,rgba(34,197,94,.14),rgba(34,197,94,.03)),#0B1024;color:#FB923C;border:1px solid rgba(34,197,94,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 8px 24px -10px rgba(34,197,94,.55);font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease,color .2s ease}
+nav button,nav button:not(.brand){position:relative;display:flex;align-items:center;justify-content:center;text-align:center;min-height:46px;padding:10px 10px;border-radius:16px;background:linear-gradient(180deg,rgba(34,197,94,.14),rgba(34,197,94,.03)),#0B1024;color:#FB923C;border:1px solid rgba(34,197,94,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 8px 24px -10px rgba(34,197,94,.55);font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease,color .2s ease}
 nav button:not(.brand):hover{color:#FDBA74;transform:translateY(-2px);border-color:rgba(34,197,94,.6);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 12px 28px -8px rgba(34,197,94,.75)}
 nav button.on{color:#FFEDD5;background:linear-gradient(180deg,rgba(34,197,94,.30),rgba(34,197,94,.08)),#0F2A1C;border-color:#22C55E;box-shadow:inset 0 1px 0 rgba(255,255,255,.10),0 0 30px -4px rgba(34,197,94,.95)}
 nav button.on::before{content:"";position:absolute;left:-1px;top:20%;bottom:20%;width:3px;border-radius:3px;background:#4ADE80;box-shadow:0 0 12px #4ADE80}
@@ -254,7 +254,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
 <div id="navVal" class="navVal"></div>
-<div class="appVer">verze 1.12</div>
+<div class="appVer">verze 1.13</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
