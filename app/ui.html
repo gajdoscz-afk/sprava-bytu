@@ -280,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.27</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.28</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -708,14 +708,23 @@ function periodBounds(f,Y){
  raw.forEach(p=>{const last=merged[merged.length-1];if(last&&sig(last)===sig(p))last.to=p.to;else merged.push({...p})});
  return merged;
 }
+function svjOnlyBill(f,name){const e=(f.cmp_links||[]).find(k=>k.svj_only===name);return !!(e&&e.bill)}
 async function cmpSave(fid,rows){
  const f=flat(fid);
+ const paired=new Set(rows.flatMap(r=>r.svj||[]));
  const links=rows.filter(r=>r.adv).map(r=>({adv:r.adv,svj:r.svj,bill:r.bill}));
- if(f)f.cmp_links=links;
+ const only=(f?(f.cmp_links||[]):[]).filter(k=>k.svj_only&&!paired.has(k.svj_only));
+ const all=[...links,...only];
+ if(f)f.cmp_links=all;
  window.CMP_SEL=null;
  render();
- try{await api(`/flats/${fid}/cmp-links`,'PUT',{links});await reload();render()}
+ try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:all});await reload();render()}
  catch(e){toast(e.message);await reload();render()}
+}
+function cmpSvjBill(fid,name,val){
+ const f=flat(fid);if(!f)return;
+ f.cmp_links=[...(f.cmp_links||[]).filter(k=>k.svj_only!==name),{adv:null,svj_only:name,bill:!!val}];
+ cmpSave(fid,cmpRows(f,leaseAt(f,TODAY_ISO())||f.leases[f.leases.length-1]));
 }
 function cmpChange(fid,mutate){
  const f=flat(fid);if(!f)return;
@@ -735,43 +744,49 @@ function cmpDrop(ev,fid,adv){ev.preventDefault();const name=ev.dataTransfer.getD
 function cmpTap(fid,adv){if(window.CMP_SEL)cmpPairName(fid,adv,window.CMP_SEL)}
 function cmpSelect(name){window.CMP_SEL=window.CMP_SEL===name?null:name;render()}
 function cmpSections(f,l){
- const today=TODAY_ISO();
- const lease=leaseAt(f,today)||l;
- const rows=cmpRows(f,lease);
- const costs=costsAt(f,today);
- const sel=window.CMP_SEL||null;
- if(!rows.length&&!costs.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
- const payOf=n=>{const c=costs.find(c=>c.name===n);return c?(+c.amount||0):0};
- const has=n=>costs.some(c=>c.name===n);
- const pay=costs.reduce((x,c)=>x+(+c.amount||0),0);
+ const rows=cmpRows(f,l);
+ const items=f.svj||[];
+ if(!rows.length&&!items.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
+ const payOf=n=>items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
+ const has=n=>items.some(c=>c.name===n);
+ const pay=items.reduce((x,c)=>x+(+c.amount||0),0);
  const paired=new Set(rows.flatMap(r=>r.svj));
- const names=[...new Set(costs.map(c=>c.name))].filter(n=>!paired.has(n));
+ const unpaired=[...new Set(items.map(c=>c.name))].filter(n=>!paired.has(n));
+ const sel=window.CMP_SEL||null;
  let vyb=0;
- const body=rows.map(r=>{
-  const get=(lease&&lease.adv)?(+lease.adv[r.adv]||0):0;
+ const tRows=rows.map(r=>{
+  const get=(l&&l.adv)?(+l.adv[r.adv]||0):0;
   vyb+=get;
   const inP=r.svj.filter(has);
-  const hasAny=inP.length>0;
-  const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
+  const pv=inP.length?inP.reduce((x,n)=>x+payOf(n),0):null;
   const d=get-(pv||0);
   const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-adv="${esc(r.adv)}" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpairName(${f.id},this.dataset.adv,this.dataset.name)">×</button></span>`).join('');
-  const cell=`<div class="pairs">${pills}${r.svj.length?'':`<span class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`}</div>`;
+  const cell=`<div class="pairs">${pills}</div>${r.svj.length?'':`<div class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</div>`}`;
   return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
    `<td class="dropCell" data-adv="${esc(r.adv)}" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},this.dataset.adv)" onclick="cmpTap(${f.id},this.dataset.adv)">${cell}</td>`+
-   `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
+   `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${d<0?'bad':'ok'}">${(d>=0?'+':'')+kc(d)}</td>`+
    `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" data-adv="${esc(r.adv)}" ${r.bill?'checked':''} onchange="cmpBillName(${f.id},this.dataset.adv,this.checked)"></td></tr>`;
- }).join('');
- const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo klikněte na položku a pak na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
+ });
+ const sRows=unpaired.map(n=>{
+  const amt=payOf(n);
+  return `<tr class="svjOnly" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">`+
+   `<td class="mut">—</td><td class="r mut">—</td>`+
+   `<td><span class="chip2${sel===n?' on':''}">${esc(n)}</span> <span class="mut small">nespárováno</span></td>`+
+   `<td class="r">${kc(amt)}</td><td class="r bad">${kc(-amt)}</td>`+
+   `<td class="c"><input type="checkbox" title="Počítat do vyúčtování: nájemník doplatí podíl na skutečné ceně" data-name="${esc(n)}" ${svjOnlyBill(f,n)?'checked':''} onclick="event.stopPropagation()" onchange="cmpSvjBill(${f.id},this.dataset.name,this.checked)"></td></tr>`;
+ });
  const diff=vyb-pay;
- return `<div class="cmpPeriod"><div class="cmpHead">Platný předpis dnes <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
- <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
- <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
- ${pool}</div>`;
+ const hint=unpaired.length?`<div class="mut small" style="margin:6px 0">Nespárované položky SVJ jsou dole. Přetáhněte je na řádek nájemníka, nebo na ně klikněte a pak klikněte na řádek.</div>`:'';
+ return `<div class="cmpPeriod"><div class="cmpHead">Platný předpis dnes <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>${hint}
+ <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování">Vyúčt.</th></tr></thead>
+ <tbody>${tRows.join('')}${sRows.join('')}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table></div>`;
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const payNow=n=>(f.svj||[]).filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
  let corr=0;
  cmpRows(f,l).forEach(r=>{if(!r.bill)return;const get=(l&&l.adv&&r.adv)?(+l.adv[r.adv]||0):0;const pv=r.svj.reduce((a,n)=>a+payNow(n),0);corr+=pv-get});
+ const pairedNow=new Set(cmpRows(f,l).flatMap(r=>r.svj));
+ [...new Set((f.svj||[]).map(c=>c.name))].filter(n=>!pairedNow.has(n)&&svjOnlyBill(f,n)).forEach(n=>{corr+=payNow(n)});
  const netCorr=net+corr;
  const others=(f.tenant.others||[]).join(', ');
  const missing=[f.addr,f.dispo,f.floor,f.zip,f.area_m2,f.tenant.name,others,f.tenant.email,f.tenant.phone,f.bank.acc].filter(v=>!v).length;
@@ -803,7 +818,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:''}<button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></div>
     <div class="sumNet"><span>Zbývá mi měsíčně</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
     <div class="sumCorr"><span>Po korekci z vyúčtování <span class="mut small">(zaškrtnuté položky se vyrovnají vyúčtováním nájemníka)</span></span><b class="${netCorr<0?'bad':'ok'}">${kc(netCorr)}</b></div>
-    <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. Zaškrtnutím „Vyúčt.“ položku vyloučíte z vyúčtování nájemníka.</div>
+    <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. „Vyúčt.“: zaškrtnutá položka se v korekci nahradí skutečnou cenou (u nespárované položky SVJ nájemník doplatí podíl).</div>
    </div>
   </div>
   <div class="btns"><button class="btn sec sm" onclick="flatForm(${f.id})">Upravit údaje</button><button class="btn sec sm" onclick="leaseForm(${f.id})">Nový předpis</button><button class="btn sec sm" onclick="setVs(${f.id})">Variabilní symbol</button><button class="btn sec sm" onclick="mergeForm(${f.id})">Sloučit s jiným bytem</button><button class="btn sm" onclick="openSettlement(${f.id})">Vyúčtování nájemníka</button></div>
