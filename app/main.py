@@ -2146,13 +2146,17 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     aliases = db.scalars(select(m.FlatAlias)).all()
     seen = set(db.scalars(select(m.BankTx.key)))
     counts: dict[str, int] = {}
+    lcounts: dict[str, int] = {}
     added = skipped = 0
     for r in rows:
         base = bank.tx_key(r)
         n = counts.get(base, 0)
         counts[base] = n + 1
         key = f"{base}#{n}"  # stejná platba dvakrát v jednom výpisu zůstane dvakrát
-        if key in seen:
+        lbase = bank.tx_key_legacy(r)
+        ln = lcounts.get(lbase, 0)
+        lcounts[lbase] = ln + 1
+        if key in seen or f"{lbase}#{ln}" in seen:
             skipped += 1
             continue
         seen.add(key)
@@ -2166,6 +2170,42 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         added += 1
     db.commit()
     return {"added": added, "skipped": skipped}
+
+
+def _dup_groups(db: Session) -> list[list[m.BankTx]]:
+    by: dict[tuple, list[m.BankTx]] = defaultdict(list)
+    for t in db.scalars(select(m.BankTx).order_by(m.BankTx.id)).all():
+        by[dup_identity_tx(t)].append(t)
+    return [sorted(g, key=lambda t: (t.flat_id is None, t.kind == "vyrazeno", t.id)) for g in by.values() if len(g) > 1]
+
+
+def dup_identity_tx(t: m.BankTx) -> tuple:
+    return bank.dup_identity(t.date, t.amount, t.vs or "", t.counterparty or "")
+
+
+@app.get("/bank/duplicates")
+def bank_duplicates(db: Session = Depends(get_db)):
+    """Platby, které jsou v přehledu dvakrát (stejné datum, částka, VS). První v řádku se nechá."""
+    addr_of = {f.id: f.addr for f in db.scalars(select(m.Flat)).all()}
+    groups = []
+    for g in _dup_groups(db):
+        t = g[0]
+        groups.append({"date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs, "counterparty": t.counterparty,
+                       "rows": [{"id": x.id, "flat_addr": addr_of.get(x.flat_id), "kind": x.kind} for x in g]})
+    return {"groups": groups}
+
+
+@app.post("/bank/duplicates/cleanup")
+def bank_duplicates_cleanup(db: Session = Depends(get_db)):
+    deleted = 0
+    for g in _dup_groups(db):
+        for x in g[1:]:
+            for e in db.scalars(select(m.FlatExpense).where(m.FlatExpense.bank_tx_id == x.id)).all():
+                db.delete(e)
+            db.delete(x)
+            deleted += 1
+    db.commit()
+    return {"deleted": deleted}
 
 
 def _forget_payer(db: Session, t: m.BankTx, flat_id: int) -> None:

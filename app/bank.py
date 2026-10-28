@@ -127,7 +127,24 @@ def parse_pdf(data: bytes) -> list[dict]:
     return out
 
 
+def canon_amount(a) -> str:
+    return str(Decimal(str(a)).quantize(Decimal("0.01")))
+
+
+def dup_identity(d: date, amount, vs: str, counterparty: str) -> tuple:
+    """Podle čeho poznáme stejnou platbu. Částka vždy se dvěma desetinnými místy, poznámka se nepočítá
+    (CSV a PDF výpis ji píšou jinak). Bez VS rozhoduje i plátce."""
+    cp = "" if vs else normalize(counterparty)
+    return (d.isoformat(), canon_amount(amount), vs or "", cp)
+
+
 def tx_key(r: dict) -> str:
+    base = "|".join(dup_identity(r["date"], r["amount"], r["vs"], r["counterparty"]))
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def tx_key_legacy(r: dict) -> str:
+    """Klíč z dřívějších importů. Kvůli němu se opakovaný import staré platby nezdvojí."""
     base = f"{r['date'].isoformat()}|{r['amount']}|{r['vs']}|{normalize(r['counterparty'])}|{normalize(r['note'])}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 

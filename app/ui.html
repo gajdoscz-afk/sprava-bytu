@@ -285,7 +285,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.45</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.46</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1031,10 +1031,24 @@ function econHome(){
   ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
  </tbody></table></div>
  <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
+ <div class="btns" style="margin:6px 0 12px"><button class="btn sec sm" onclick="dupCheck()">Zkontrolovat duplicity plateb</button></div>
  <h2>Platby z výpisu k přiřazení</h2>${unm}
  <h2>Přiřazené platby (lze opravit)</h2>
  <p class="mut small">Špatně přiřazenou platbu změňte na správný byt, nebo ji „Odpojit“ a vrátí se mezi nepřiřazené.</p>
  ${asg||'<div class="card mut">Za zobrazené měsíce nejsou žádné přiřazené platby.</div>'}`;
+}
+async function dupCheck(){
+ try{
+  const g=await api('/bank/duplicates');
+  if(!g.groups.length){toast('Žádné duplicitní platby');return}
+  const rows=g.groups.map(gr=>`<div class="card"><b>${kc(gr.amount)}</b> · ${fd(gr.date)} · ${esc(gr.counterparty||'neznámý plátce')}${gr.vs?' · VS '+esc(gr.vs):''}<div class="small mut">${gr.rows.map(r=>`#${r.id} ${r.flat_addr?esc(r.flat_addr):'nepřiřazeno'}`).join(' · ')}</div></div>`).join('');
+  modal(`<h2>Možné duplicity: ${g.groups.length}</h2><p class="small mut">Tyto platby jsou v přehledu dvakrát. Při úklidu zůstane jedna, přednost má ta přiřazená k bytu. Pokud jde ve skutečnosti o dvě platby se stejnou částkou a datem, nemažte.</p>${rows}<div class="btns" style="margin-top:12px"><button class="btn" onclick="dupCleanup()">Odstranit přebytečné</button><button class="btn sec" onclick="closeModal()">Zavřít</button></div>`);
+ }catch(e){toast(e.message)}
+}
+async function dupCleanup(){
+ if(!confirm('Odstranit přebytečné duplicitní platby?'))return;
+ try{const r=await api('/bank/duplicates/cleanup','POST');closeModal();toast(`Odstraněno: ${r.deleted}`);await reload();render()}
+ catch(e){toast(e.message)}
 }
 async function uploadBank(input){
  const f=input.files[0];input.value='';if(!f)return;
