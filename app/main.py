@@ -100,6 +100,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION"))
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS cmp_links JSON NOT NULL DEFAULT '[]'"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -512,6 +513,7 @@ def flat_out(f: m.Flat) -> dict:
         "id": f.id,
         "addr": f.addr,
         "color": f.color,
+        "cmp_links": f.cmp_links or [],
         "dispo": f.dispo,
         "floor": f.floor,
         "zip": f.zip,
@@ -968,6 +970,24 @@ def change_predpis(flat_id: int, body: dict = Body(...), db: Session = Depends(g
                              old=old or None, new=new or None))
     db.commit()
     return flat_out(get_flat(db, flat_id))
+
+
+@app.put("/flats/{flat_id}/cmp-links")
+def put_cmp_links(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Ruční párování položek nájemníka a SVJ a příznak, zda se položka počítá do vyúčtování nájemníka."""
+    f = get_flat(db, flat_id)
+    out = []
+    for r in body.get("links") or []:
+        if not isinstance(r, dict):
+            continue
+        adv = str(r.get("adv") or "").strip()[:200] or None
+        svj = str(r.get("svj") or "").strip()[:200] or None
+        if not adv and not svj:
+            continue
+        out.append({"adv": adv, "svj": svj, "bill": r.get("bill") is not False})
+    f.cmp_links = out
+    db.commit()
+    return {"ok": True, "links": out}
 
 
 @app.patch("/flats/{flat_id}/costs/{cost_id}")

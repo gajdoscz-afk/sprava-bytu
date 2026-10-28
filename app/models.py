@@ -27,6 +27,7 @@ class Flat(Base):
     tenant_phone: Mapped[str] = mapped_column(String(60), default="")
     tenant_others: Mapped[str] = mapped_column(Text, default="")  # jména oddělená čárkou
     area_m2: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)  # podlahová plocha, z dokumentů nebo ručně
+    cmp_links: Mapped[list] = mapped_column(JSON, default=list)  # ruční párování položek nájemníka a SVJ: [{"adv","svj","bill"}]
     field_dates: Mapped[dict] = mapped_column(JSON, default=dict)  # datum dokumentu (nebo úpravy), ze kterého je údaj: {"dispo": "2025-03-01"}
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)  # souřadnice adresy bytu
     lon: Mapped[float | None] = mapped_column(Float, nullable=True)

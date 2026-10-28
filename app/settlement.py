@@ -56,6 +56,7 @@ def svj_items(db: Session, flat_id: int, year: int) -> list[dict]:
 def tenant_advances(flat: m.Flat, year: int) -> dict[str, Decimal]:
     """Zálohy na přeúčtovatelné služby předepsané nájemníkovi za každý měsíc roku podle platného předpisu."""
     out: dict[str, Decimal] = {}
+    excluded = {str(k.get("adv")) for k in (flat.cmp_links or []) if k.get("adv") and k.get("bill") is False}
     for mo in range(1, 13):
         _, last = bank.month_bounds(f"{year}-{mo:02d}")
         first = date(year, mo, 1)
@@ -67,7 +68,7 @@ def tenant_advances(flat: m.Flat, year: int) -> dict[str, Decimal]:
         if lease is None:
             continue
         for a in lease.advances:
-            if is_billable(a.name):
+            if is_billable(a.name) and a.name not in excluded:
                 out[a.name] = out.get(a.name, Decimal("0")) + Decimal(a.amount)
     return out
 
