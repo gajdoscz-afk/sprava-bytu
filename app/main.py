@@ -2241,18 +2241,33 @@ def overview(year: int | None = None, db: Session = Depends(get_db)):
 
 
 @app.get("/economics")
-def economics(months: int = 6, db: Session = Depends(get_db)):
-    """Očekávané a přijaté platby po měsících, za každý byt zvlášť, a platby, které zatím nejsou přiřazené."""
-    months = max(1, min(months, 24))
-    today = date.today()
+def economics(months: int = 6, frm: str | None = None, to: str | None = None, db: Session = Depends(get_db)):
+    """Očekávané a přijaté platby po měsících, za každý byt zvlášť, a platby, které zatím nejsou přiřazené.
+    Výchozí je posledních `months` měsíců. Vlastní období: frm a to ve tvaru RRRR-MM (nejvýš 36 měsíců)."""
     periods = []
-    y, mo = today.year, today.month
-    for _ in range(months):
-        periods.append(f"{y:04d}-{mo:02d}")
-        mo -= 1
-        if mo == 0:
-            mo, y = 12, y - 1
-    periods.reverse()
+    if frm and to:
+        try:
+            y, mo = int(frm[:4]), int(frm[5:7])
+            ey, em = int(to[:4]), int(to[5:7])
+        except ValueError:
+            raise HTTPException(400, "Období musí být ve tvaru RRRR-MM")
+        while (y, mo) <= (ey, em) and len(periods) < 36:
+            periods.append(f"{y:04d}-{mo:02d}")
+            mo += 1
+            if mo == 13:
+                mo, y = 1, y + 1
+        if not periods:
+            raise HTTPException(400, "Prázdné období")
+    else:
+        months = max(1, min(months, 24))
+        today = date.today()
+        y, mo = today.year, today.month
+        for _ in range(months):
+            periods.append(f"{y:04d}-{mo:02d}")
+            mo -= 1
+            if mo == 0:
+                mo, y = 12, y - 1
+        periods.reverse()
 
     flats = db.scalars(select(m.Flat).order_by(m.Flat.addr)).all()
     txs = db.scalars(select(m.BankTx)).all()

@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.43</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.44</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -348,8 +348,20 @@ function toFlat(f){
   area_m2:f.area_m2,
   years:Object.fromEntries(f.statements.map(st=>[st.year,{doc:st.doc_label,items:st.items.map(i=>[i.name,i.cost,i.paid])}]))};
 }
+let EC={from:null,to:null};
+function econUrl(){return EC.from&&EC.to?`/economics?frm=${EC.from}&to=${EC.to}`:'/economics?months=6'}
+async function econRange(f,t,reset){
+ if(reset)EC={from:null,to:null};
+ else{const ms=S.econ.months;EC.from=f||EC.from||ms[0].period;EC.to=t||EC.to||ms[ms.length-1].period}
+ await reload();render();
+}
+async function econYear(){
+ const now=new Date();
+ EC={from:`${now.getFullYear()}-01`,to:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`};
+ await reload();render();
+}
 async function reload(){
- const [flats,versions,docs,econ]=await Promise.all([api('/flats'),api('/versions'),api('/documents'),api('/economics?months=6')]);
+ const [flats,versions,docs,econ]=await Promise.all([api('/flats'),api('/versions'),api('/documents'),api(econUrl())]);
  S.econ=econ;S.ov=null;
  S.flats=flats.map(toFlat);
  S.docs=docs;
@@ -1004,6 +1016,7 @@ function econHome(){
  return `<div class="row"><h1>Ekonomika</h1>
   <label style="margin:0;cursor:pointer"><span class="btn sec sm">+ Nahrát výpis (CSV / PDF)</span><input type="file" accept=".csv,.pdf,text/csv,application/pdf" style="display:none" onchange="uploadBank(this)"></label></div>
  <div id="bk" class="small mut"></div>
+ <div class="btns" style="margin:6px 0 12px;align-items:center"><span class="small mut">Období od</span><input type="month" value="${ms[0].period}" onchange="econRange(this.value,null)" style="width:auto"><span class="small mut">do</span><input type="month" value="${ms[ms.length-1].period}" onchange="econRange(null,this.value)" style="width:auto"><button class="btn sec sm" onclick="econYear()">Od ledna</button><button class="btn sec sm" onclick="econRange(null,null,true)">Posledních 6 měsíců</button></div>
  <p class="mut small">Očekáváno = předpisy (nájem + zálohy) podle smluv. Přišlo = platby z výpisů přiřazené k bytům.</p>
  ${econMatrix(e)}
  <h2>Souhrn za měsíce</h2>
