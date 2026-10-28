@@ -257,7 +257,9 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 .cmpSel{width:100%;margin:0;padding:4px 6px;font-size:13px;min-width:120px}
 .pair{font-size:12px !important;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;max-width:100%;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.5);font-size:13px}
 .pair .x{border:0;background:none;color:var(--bad);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
-.pairs{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:4px}
+.pairs{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:24px}
+.cmpOld{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.cmpOld summary{cursor:pointer;color:var(--mut);font-size:13px}
 .dropHint{font-size:11.5px;color:var(--mut)}
 .dropCell{cursor:pointer;min-width:150px}
 .dropCell:hover .dropHint{color:var(--ink)}
@@ -278,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.22</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.23</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -721,7 +723,12 @@ function cmpSections(f,l){
  const periods=svjPeriods(f,Y);
  const list=periods.length?periods:[{from:null,to:null,items:[]}];
  const sel=window.CMP_SEL||null;
- return list.map(p=>{
+ const today=TODAY_ISO();
+ const isCur=p=>(!p.from||p.from<=today)&&(!p.to||p.to>=today);
+ let cur=list.filter(isCur);
+ let old=list.filter(p=>!isCur(p));
+ if(!cur.length&&old.length)cur=[old.pop()];
+ const sec=p=>{
   const payOf=n=>p.items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
   const has=n=>p.items.some(c=>c.name===n);
   const pay=p.items.reduce((x,c)=>x+(+c.amount||0),0);
@@ -737,20 +744,23 @@ function cmpSections(f,l){
    const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
    const d=get-(pv||0);
    const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpair(${f.id},${i},this.dataset.name)">×</button></span>`).join('');
-   const cell=`<div class="pairs">${pills}</div><div class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</div>`;
+   const cell=`<div class="pairs">${pills}${r.svj.length?'':`<span class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`}</div>`;
    return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
     `<td class="dropCell" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${cell}</td>`+
     `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
     `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
   }).join('');
-  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo kliknutím vyberte a pak klikněte na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
+  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo klikněte na položku a pak na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
   const diff=vyb-pay;
   const head=p.from||p.to?`Předpis ${p.from?fd(p.from):'odjakživa'} – ${p.to?fd(p.to):'dosud'}`:'Předpis SVJ';
   return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
   <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
   <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
   ${pool}</div>`;
- }).join('');
+ };
+ let out=cur.map(sec).join('');
+ if(old.length)out+=`<details class="cmpOld"><summary>Předchozí předpisy v roce (${old.length})</summary>${old.map(sec).join('')}</details>`;
+ return out;
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const payNow=n=>(f.svj||[]).filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
