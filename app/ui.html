@@ -55,6 +55,9 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
 input,select,textarea{font:inherit;width:100%;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:4px}
 .modal{position:fixed;inset:0;background:rgba(20,30,28,.45);display:none;align-items:flex-end;justify-content:center;z-index:9}
 .modal.show{display:flex}
+.sheet.wide{max-width:min(1500px,97vw);max-height:96vh}
+.docViewer{height:68vh}
+.sheet.wide .docViewer{height:calc(96vh - 190px)}
 .sheet{background:var(--paper);width:100%;max-width:760px;max-height:90vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom,0px))}
 .sheetHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .doc{white-space:pre-wrap;font:14px/1.6 Georgia,"Times New Roman",serif;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
@@ -281,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.30</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.31</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -356,7 +359,7 @@ async function reload(){
 }
 
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),3000)}
-function modal(h){$('#sheet').innerHTML=h;$('#modal').classList.add('show')}
+function modal(h){$('#sheet').classList.remove('wide');$('#sheet').innerHTML=h;$('#modal').classList.add('show')}
 function closeModal(){$('#modal').classList.remove('show')}
 
 // ---------- navigace ----------
@@ -1830,11 +1833,12 @@ function docView(id,pdf){
  const isImg=/\.(jpe?g|png|webp|gif)$/i.test(d.filename)&&!pdf;
  const src=(pdf||isWord)?`/documents/${id}/pdf`:`/documents/${id}/file`;
  const body=isImg
-  ?`<div style="margin-top:10px;background:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;height:68vh;overflow:hidden"><img src="${src}" alt="${esc(d.filename)}" style="max-width:100%;max-height:100%;object-fit:contain;display:block"></div>`
-  :`<iframe src="${src}" style="width:100%;height:68vh;border:0;border-radius:12px;background:#fff;margin-top:10px"></iframe>`;
+  ?`<div class="docViewer" style="margin-top:10px;background:#000;border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="${src}" alt="${esc(d.filename)}" style="max-width:100%;max-height:100%;object-fit:contain;display:block"></div>`
+  :`<iframe class="docViewer" src="${src}" style="width:100%;border:0;border-radius:12px;background:#fff;margin-top:10px"></iframe>`;
  modal(`<div class="sheetHead"><div style="min-width:0"><h2 style="font-size:16px;margin:0;overflow:hidden;text-overflow:ellipsis">${esc(d.filename)}</h2><div class="small mut">${docWhen(d)}</div></div><button class="btn sec sm" onclick="closeModal()">← Zpět</button></div>
   ${body}
   <div class="btns"><button class="btn sec sm" onclick="rereadOne(${id})">Přečíst znovu</button>${d.mime&&d.mime.startsWith('image/')?`<button class="btn sec sm" onclick="mergeBatch(${id})">Sloučit stránky z téhož nahrání</button>`:''}<button class="btn sec sm" onclick="saveDocFile(${id})">${isWord?'Uložit Word':'Uložit'}</button><button class="btn sec sm" onclick="shareDoc(${id})">Sdílet</button><button class="btn sec sm warnTxt" onclick="docDelete(${id})">Smazat</button></div>`);
+ $('#sheet').classList.add('wide');
 }
 // Přečte znovu jen tento dokument (ne všechny)
 async function rereadOne(id){
