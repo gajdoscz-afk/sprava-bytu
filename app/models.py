@@ -301,6 +301,18 @@ class Setting(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
+class ManualPayment(Base):
+    """Platba zapsaná ručně (složenka, hotovost, plátce bez VS). Každá platba zvlášť se dnem připsání; v měsíci se sčítají."""
+
+    __tablename__ = "manual_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    note: Mapped[str] = mapped_column(String(200), default="")
+
+
 class FlatExpense(Base):
     """Náklad nebo faktura bytu: ručně zadaná, nebo platba z výpisu označená jako náklad. Základ pro daňové přiznání."""
 

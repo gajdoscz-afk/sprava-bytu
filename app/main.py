@@ -2175,6 +2175,8 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
 def _dup_groups(db: Session) -> list[list[m.BankTx]]:
     by: dict[tuple, list[m.BankTx]] = defaultdict(list)
     for t in db.scalars(select(m.BankTx).order_by(m.BankTx.id)).all():
+        if not t.vs:
+            continue  # platby bez VS (složenky, hotovost) se nezdvojují, jsou to samostatné vklady
         by[dup_identity_tx(t)].append(t)
     return [sorted(g, key=lambda t: (t.flat_id is None, t.kind == "vyrazeno", t.id)) for g in by.values() if len(g) > 1]
 
@@ -2283,6 +2285,32 @@ def add_expense(flat_id: int, body: dict = Body(...), db: Session = Depends(get_
     return {"ok": True}
 
 
+@app.post("/flats/{flat_id}/manual-payments", status_code=201)
+def add_manual_payment(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Platba zapsaná ručně, s dnem připsání a částkou. Měsíc se sečte do přijaté částky."""
+    f = get_flat(db, flat_id)
+    try:
+        on = date.fromisoformat(str(body.get("on_date"))[:10])
+        amt = Decimal(str(body.get("amount")))
+    except (ValueError, ArithmeticError, TypeError):
+        raise HTTPException(400, "Datum nebo částka nejsou platné")
+    if amt <= 0:
+        raise HTTPException(400, "Částka musí být kladná")
+    db.add(m.ManualPayment(flat_id=f.id, on_date=on, amount=money(amt), note=str(body.get("note") or "").strip()[:200]))
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/manual-payments/{payment_id}")
+def delete_manual_payment(payment_id: int, db: Session = Depends(get_db)):
+    p = db.get(m.ManualPayment, payment_id)
+    if p is None:
+        raise HTTPException(404, "Platba nenalezena")
+    db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
 @app.delete("/expenses/{expense_id}")
 def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     e = db.get(m.FlatExpense, expense_id)
@@ -2387,6 +2415,9 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
         else:
             received[(t.flat_id, t.period)] += t.amount
 
+    for mp in db.scalars(select(m.ManualPayment)).all():
+        received[(mp.flat_id, mp.on_date.strftime("%Y-%m"))] += mp.amount
+
     out = []
     for p in periods:
         first, last = bank.month_bounds(p)
@@ -2420,6 +2451,8 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos"), key=lambda t: t.date, reverse=True)
     addr_of = {f.id: f.addr for f in flats}
     shown = set(periods)
+    manual = sorted((mp for mp in db.scalars(select(m.ManualPayment)).all()
+                     if mp.on_date.strftime("%Y-%m") in shown), key=lambda mp: mp.on_date, reverse=True)
     assigned = sorted((t for t in txs if t.flat_id is not None and t.period in shown),
                       key=lambda t: t.date, reverse=True)
     return {
@@ -2428,6 +2461,11 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
              "counterparty": t.counterparty, "note": t.note, "period": t.period}
             for t in unmatched[:200]
+        ],
+        "manual": [
+            {"id": mp.id, "flat_id": mp.flat_id, "addr": addr_of.get(mp.flat_id, "?"), "on_date": mp.on_date.isoformat(),
+             "amount": float(mp.amount), "note": mp.note}
+            for mp in manual
         ],
         "assigned": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,

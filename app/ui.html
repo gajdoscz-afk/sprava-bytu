@@ -285,7 +285,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.46</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.47</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1031,11 +1031,27 @@ function econHome(){
   ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
  </tbody></table></div>
  <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
+ <h2>Ruční zápis plateb</h2>
+ <p class="mut small">Pro platby bez VS (složenky, hotovost, jiní plátci). Každou platbu zapište zvlášť se dnem připsání na účet; v měsíci se sečte do přijaté částky. Odpovídající řádek z výpisu v seznamu níže vyřaďte tlačítkem „Vyřadit“, aby se nepočítal dvakrát.</p>
+ <div class="card"><div class="grid2"><div><label>Byt</label><select id="mpF">${flatOpts(null)}</select></div><div><label>Den připsání</label><input type="date" id="mpD" value="${TODAY_ISO()}"></div></div>
+  <div class="grid2"><div><label>Částka (Kč)</label><input type="number" id="mpA" min="0" step="1"></div><div style="align-self:end"><button class="btn sm" onclick="manualAdd()">Přidat platbu</button></div></div>
+  ${(e.manual||[]).map(p=>`<div class="row small" style="margin-top:6px"><span>${fd(p.on_date)} · <b>${kc(p.amount)}</b> · ${esc(p.addr)}${p.note?' · '+esc(p.note):''}</span><button class="btn sec sm" onclick="manualDel(${p.id})">×</button></div>`).join('')||'<div class="small mut">Za zobrazené měsíce žádné ruční platby.</div>'}</div>
  <div class="btns" style="margin:6px 0 12px"><button class="btn sec sm" onclick="dupCheck()">Zkontrolovat duplicity plateb</button></div>
  <h2>Platby z výpisu k přiřazení</h2>${unm}
  <h2>Přiřazené platby (lze opravit)</h2>
  <p class="mut small">Špatně přiřazenou platbu změňte na správný byt, nebo ji „Odpojit“ a vrátí se mezi nepřiřazené.</p>
  ${asg||'<div class="card mut">Za zobrazené měsíce nejsou žádné přiřazené platby.</div>'}`;
+}
+async function manualAdd(){
+ const fid=$('#mpF').value,d=$('#mpD').value,a=$('#mpA').value;
+ if(!fid||!d||!a){toast('Vyberte byt, den a částku');return}
+ try{await api(`/flats/${fid}/manual-payments`,'POST',{on_date:d,amount:+a});toast('Platba zapsána');await reload();render()}
+ catch(e){toast(e.message)}
+}
+async function manualDel(id){
+ if(!confirm('Smazat tuto ruční platbu?'))return;
+ try{await api(`/manual-payments/${id}`,'DELETE');await reload();render()}
+ catch(e){toast(e.message)}
 }
 async function dupCheck(){
  try{

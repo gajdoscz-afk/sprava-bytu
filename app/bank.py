@@ -177,6 +177,8 @@ def auto_match(tx: dict, period: str, flats, aliases) -> tuple[int | None, str]:
     """Najde byt pro platbu. Pořadí: variabilní symbol, dřív potvrzený plátce, jednoznačná částka, příjmení."""
     vs = tx["vs"]
     cp = normalize(tx["counterparty"])
+    if not vs:
+        return None, "none"  # bez VS (složenka, hotovost) se přiřazuje ručně, aby se nic nespárovalo špatně
     if vs:
         for al in aliases:
             if al.alias == f"vs:{vs}":
