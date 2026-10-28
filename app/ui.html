@@ -280,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.23</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.24</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -684,82 +684,86 @@ function svjPeriods(f,Y){
  (f.svj_all||[]).forEach(c=>{if(c.valid_from&&c.valid_from>to)return;if(c.valid_to&&c.valid_to<from)return;const k=`${c.valid_from||''}|${c.valid_to||''}`;(map[k]=map[k]||{from:c.valid_from,to:c.valid_to,items:[]}).items.push(c)});
  return Object.values(map).sort((x,y)=>String(x.from||'').localeCompare(String(y.from||'')));
 }
-async function cmpEdit(fid,i,field,val){
- const f=flat(fid);if(!f)return;
- const l=f.leases[f.leases.length-1];
- const rows=cmpRows(f,l);
- rows[i][field]=val;
- try{await api(`/flats/${fid}/cmp-links`,'PUT',{links:rows});await reload()}catch(e){toast(e.message)}
+const cmpNorm=x=>String(x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+function leaseAt(f,d){let best=null;(f.leases||[]).forEach(l=>{if((!l.from||l.from<=d)&&(!l.to||l.to>=d)){if(!best||(l.from||'')>(best.from||''))best=l}});return best}
+function costsAt(f,d){const by={};(f.svj_all||[]).forEach(c=>{if(c.valid_from&&c.valid_from>d)return;if(c.valid_to&&c.valid_to<d)return;const k=cmpNorm(c.name);if(!by[k]||String(c.valid_from||'')>=String(by[k].valid_from||''))by[k]=c});return Object.values(by)}
+function periodBounds(f,Y){
+ const y0=`${Y}-01-01`,y1=`${Y}-12-31`;const set=new Set([y0]);
+ const add=d=>{if(d&&d>=y0&&d<=y1)set.add(d)};
+ (f.leases||[]).forEach(l=>add(l.from));
+ (f.svj_all||[]).forEach(c=>{add(c.valid_from);if(c.valid_to){const n=new Date(c.valid_to);n.setDate(n.getDate()+1);add(n.toISOString().slice(0,10))}});
+ const arr=[...set].sort();
+ return arr.map((st,i)=>({from:st,to:i+1<arr.length?new Date(new Date(arr[i+1]).getTime()-86400000).toISOString().slice(0,10):y1}));
 }
 async function cmpSave(fid,rows){
  const f=flat(fid);
  const links=rows.filter(r=>r.adv).map(r=>({adv:r.adv,svj:r.svj,bill:r.bill}));
- if(f)f.cmp_links=links;   // okamžitě se zobrazí, bez čekání na server
+ if(f)f.cmp_links=links;
  window.CMP_SEL=null;
  render();
  try{await api(`/flats/${fid}/cmp-links`,'PUT',{links});await reload();render()}
  catch(e){toast(e.message);await reload();render()}
 }
-function cmpPair(fid,i,name){
- const f=flat(fid);if(!f||!name)return;
- const rows=cmpRows(f,f.leases[f.leases.length-1]);
- rows.forEach(r=>{r.svj=r.svj.filter(x=>x!==name)});   // položka patří jen k jednomu řádku
- if(rows[i])rows[i].svj=[...rows[i].svj,name];
- cmpSave(fid,rows);
-}
-function cmpUnpair(fid,i,name){
+function cmpChange(fid,mutate){
  const f=flat(fid);if(!f)return;
- const rows=cmpRows(f,f.leases[f.leases.length-1]);
- if(rows[i])rows[i].svj=rows[i].svj.filter(x=>x!==name);
- cmpSave(fid,rows);
+ const rows=cmpRows(f,leaseAt(f,TODAY_ISO())||f.leases[f.leases.length-1]);
+ mutate(rows);cmpSave(fid,rows);
 }
-function cmpDrop(ev,fid,i){ev.preventDefault();const name=ev.dataTransfer.getData('text/plain');if(name)cmpPair(fid,i,name)}
-function cmpTap(fid,i){if(window.CMP_SEL)cmpPair(fid,i,window.CMP_SEL)}
+function cmpPairName(fid,adv,name){
+ cmpChange(fid,rows=>{
+  rows.forEach(r=>{r.svj=r.svj.filter(x=>x!==name)});
+  let r=rows.find(x=>x.adv===adv);if(!r){r={adv,svj:[],bill:true};rows.push(r)}
+  r.svj=[...r.svj,name];
+ });
+}
+function cmpUnpairName(fid,adv,name){cmpChange(fid,rows=>{const r=rows.find(x=>x.adv===adv);if(r)r.svj=r.svj.filter(x=>x!==name)})}
+function cmpBillName(fid,adv,val){cmpChange(fid,rows=>{const r=rows.find(x=>x.adv===adv);if(r)r.bill=val;else rows.push({adv,svj:[],bill:val})})}
+function cmpDrop(ev,fid,adv){ev.preventDefault();const name=ev.dataTransfer.getData('text/plain');if(name)cmpPairName(fid,adv,name)}
+function cmpTap(fid,adv){if(window.CMP_SEL)cmpPairName(fid,adv,window.CMP_SEL)}
 function cmpSelect(name){window.CMP_SEL=window.CMP_SEL===name?null:name;render()}
 function cmpSections(f,l){
  const Y=V.year||TODAY.getFullYear();
- const rows=cmpRows(f,l);
- if(!rows.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
- const periods=svjPeriods(f,Y);
- const list=periods.length?periods:[{from:null,to:null,items:[]}];
- const sel=window.CMP_SEL||null;
  const today=TODAY_ISO();
- const isCur=p=>(!p.from||p.from<=today)&&(!p.to||p.to>=today);
- let cur=list.filter(isCur);
- let old=list.filter(p=>!isCur(p));
+ const sel=window.CMP_SEL||null;
+ const periods=periodBounds(f,Y).filter(p=>leaseAt(f,p.from)||costsAt(f,p.from).length);
+ if(!periods.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
+ const isCur=p=>p.from<=today&&p.to>=today;
+ let cur=periods.filter(isCur), old=periods.filter(p=>!isCur(p));
  if(!cur.length&&old.length)cur=[old.pop()];
  const sec=p=>{
-  const payOf=n=>p.items.filter(c=>c.name===n).reduce((x,c)=>x+(+c.amount||0),0);
-  const has=n=>p.items.some(c=>c.name===n);
-  const pay=p.items.reduce((x,c)=>x+(+c.amount||0),0);
-  const advRows=rows.map((r,i)=>({r,i}));
-  const paired=new Set(advRows.flatMap(x=>x.r.svj));
-  const names=[...new Set(p.items.map(c=>c.name))].filter(n=>!paired.has(n));
+  const lease=leaseAt(f,p.from);
+  const rows=cmpRows(f,lease);
+  const costs=costsAt(f,p.from);
+  const payOf=n=>{const c=costs.find(c=>c.name===n);return c?(+c.amount||0):0};
+  const has=n=>costs.some(c=>c.name===n);
+  const pay=costs.reduce((x,c)=>x+(+c.amount||0),0);
+  const paired=new Set(rows.flatMap(r=>r.svj));
+  const names=[...new Set(costs.map(c=>c.name))].filter(n=>!paired.has(n));
   let vyb=0;
-  const body=advRows.map(({r,i})=>{
-   const get=(l&&l.adv)?(+l.adv[r.adv]||0):0;
+  const body=rows.map(r=>{
+   const get=(lease&&lease.adv)?(+lease.adv[r.adv]||0):0;
    vyb+=get;
    const inP=r.svj.filter(has);
    const hasAny=inP.length>0;
    const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
    const d=get-(pv||0);
-   const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpair(${f.id},${i},this.dataset.name)">×</button></span>`).join('');
+   const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-adv="${esc(r.adv)}" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpairName(${f.id},this.dataset.adv,this.dataset.name)">×</button></span>`).join('');
    const cell=`<div class="pairs">${pills}${r.svj.length?'':`<span class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`}</div>`;
    return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
-    `<td class="dropCell" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${cell}</td>`+
+    `<td class="dropCell" data-adv="${esc(r.adv)}" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},this.dataset.adv)" onclick="cmpTap(${f.id},this.dataset.adv)">${cell}</td>`+
     `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
-    `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
+    `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" data-adv="${esc(r.adv)}" ${r.bill?'checked':''} onchange="cmpBillName(${f.id},this.dataset.adv,this.checked)"></td></tr>`;
   }).join('');
   const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo klikněte na položku a pak na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
   const diff=vyb-pay;
-  const head=p.from||p.to?`Předpis ${p.from?fd(p.from):'odjakživa'} – ${p.to?fd(p.to):'dosud'}`:'Předpis SVJ';
-  return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
+  const head=`Období ${fd(p.from)} – ${fd(p.to)}`;
+  return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně${lease?'':' · bez nájmu'}</span></div>
   <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
   <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
   ${pool}</div>`;
  };
  let out=cur.map(sec).join('');
- if(old.length)out+=`<details class="cmpOld"><summary>Předchozí předpisy v roce (${old.length})</summary>${old.map(sec).join('')}</details>`;
+ if(old.length)out+=`<details class="cmpOld"><summary>Předchozí období v roce (${old.length})</summary>${old.map(sec).join('')}</details>`;
  return out;
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){

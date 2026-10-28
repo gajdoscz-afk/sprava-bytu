@@ -74,13 +74,19 @@ def tenant_advances(flat: m.Flat, year: int) -> dict[str, Decimal]:
 
 
 def svj_predpis_months(flat: m.Flat, year: int) -> dict[int, Decimal]:
-    """Měsíční zálohy na SVJ, které jste platil podle předpisů platných v daném měsíci (může jich být víc v roce)."""
+    """Měsíční zálohy na SVJ podle předpisů platných v daném měsíci. Při překryvu se počítá jen nejnovější
+    platný řádek pro každou položku, takže se nic nezdvojí."""
     out: dict[int, Decimal] = {}
     for mo in range(1, 13):
         d = date(year, mo, 15)
-        out[mo] = sum((Decimal(c.amount) for c in flat.costs
-                       if (c.valid_from is None or c.valid_from <= d) and (c.valid_to is None or c.valid_to >= d)),
-                      Decimal("0"))
+        best: dict[str, m.FlatCost] = {}
+        for c in flat.costs:
+            if (c.valid_from is None or c.valid_from <= d) and (c.valid_to is None or c.valid_to >= d):
+                k = "".join(c.name.split()).upper()
+                prev = best.get(k)
+                if prev is None or (c.valid_from or date.min) > (prev.valid_from or date.min):
+                    best[k] = c
+        out[mo] = sum((Decimal(c.amount) for c in best.values()), Decimal("0"))
     return out
 
 
