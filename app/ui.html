@@ -254,7 +254,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
 <div id="navVal" class="navVal"></div>
-<div class="appVer">verze 1.11</div>
+<div class="appVer">verze 1.12</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -873,7 +873,7 @@ function detailsCard(f){
  return `<h2>Údaje o bytu</h2><div class="card">
   <div class="mini">${rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?'':'mut'}">${v?esc(v):'—'}</b></div>`).join('')}</div>
   ${contactButtons(f)}
-  <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p></div>`;
+  <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p><div class="btns"><button class="btn sm sec" onclick="reloadFlatDocs(${f.id})">↻ Načíst znovu z dokumentů</button></div></div>`;
 }
 function acqCard(f){
  const a=f.acq;
