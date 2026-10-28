@@ -222,6 +222,8 @@ Odpověz POUZE jedním JSON objektem bez dalšího textu s klíči:
 - address: trvalé bydliště přesně jak je napsané (ulice a číslo, PSČ, obec), nebo null
 - id_number: číslo dokladu, nebo null
 - doc_kind: "občanský průkaz", "pas", "řidičský průkaz" nebo "jiné"
+Pokud fotka NENÍ doklad totožnosti nájemce (je to smlouva, dopis, výpis nebo jiný dokument), vrať všechna pole null a doc_kind "jiné".
+Pronajímatel (vlastník bytu) a jeho adresa nikdy nejsou nájemce; takové údaje vrať jako null.
 Nic nevymýšlej. Co na fotce není čitelné nebo není, dej null."""
 
 
@@ -238,8 +240,21 @@ def read_id(images: list[tuple[bytes, str]]) -> dict:
         res = {}
     if not res:
         raise ClassifyError("Doklad se nepodařilo přečíst. Zkuste ostřejší fotku.")
-    return {k: (str(res.get(k)).strip() or None) if res.get(k) else None
-            for k in ("name", "birth_date", "address", "id_number", "doc_kind")}
+    out = {k: (str(res.get(k)).strip() or None) if res.get(k) else None
+           for k in ("name", "birth_date", "address", "id_number", "doc_kind")}
+    # Pojistka: údaje pronajímatele se nikdy nepřenesou do údajů nájemníka
+    L = landlord_profile.LANDLORD
+    if out["name"] and normalize(out["name"]) == normalize(L["name"]):
+        out["name"] = None
+    if out["address"] and _contains_landlord_address(out["address"]):
+        out["address"] = None
+    return out
+
+
+def _contains_landlord_address(addr: str) -> bool:
+    """Adresa pronajímatele (Západní stráň 346, Předboj) nesmí být adresou nájemníka."""
+    text = normalize(addr)
+    return "346" in text and ("zapadni" in text or "predboj" in text)
 
 
 METER_PROMPT = """Na fotce je měřidlo (vodoměr, měřič tepla, elektroměr nebo plynoměr). Odečti aktuální stav.
