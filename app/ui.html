@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.40</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.41</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -825,6 +825,8 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  [...new Set((f.svj||[]).map(c=>c.name))].filter(n=>!pairedNow.has(n)&&svjOnlyBill(f,n)).forEach(n=>{corr+=payNow(n)});
  const netCorr=net+corr;
  const others=(f.tenant.others||[]).join(', ');
+ const acqWhen=f.acq&&f.acq.acquired_on?fd(f.acq.acquired_on):'neznámé';
+ const acqPrice=f.acq&&f.acq.price!=null?kc(f.acq.price):'neznámá';
  const missing=[f.addr,f.dispo,f.floor,f.zip,f.area_m2,f.tenant.name,others,f.tenant.email,f.tenant.phone,f.bank.acc].filter(v=>!v).length;
  const status=l?`<span class="tag ${expired?'warn':'ok'}">${expired?'Smlouva skončila '+fd(l.to):(l.to?'Platná do '+fd(l.to):'Bez konce')}</span>`:'<span class="tag warn">Bez předpisu</span>';
  const lease=l?`<div class="sumLine">Nájem bez záloh <b>${kc(l.rent)}</b></div><div class="sumLine">Kauce <b>${kc(l.kauce)}</b></div><div class="sumLine">Smlouva <b>${l.to?(daysTo>=0?'do '+fd(l.to)+' (za '+daysTo+' dní)':'skončila '+fd(l.to)):'bez konce'}</b></div><div class="sumLine">Poslední vyúčtování <b>${lastSt}</b></div>`:'';
@@ -837,6 +839,8 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="sumLine">Patro <b>${esc(f.floor)||'—'}</b></div>
     <div class="sumLine">Plocha <b>${f.area_m2?String(f.area_m2).replace('.',',')+' m²':'—'}</b></div>
     <div class="sumLine">PSČ a město <b>${esc(f.zip)||'—'}</b></div>
+    <div class="sumLine">Koupeno <button class="link" onclick="acqForm(${f.id})"><b>${acqWhen}</b></button></div>
+    <div class="sumLine">Kupní cena <button class="link" onclick="acqForm(${f.id})"><b>${acqPrice}</b></button></div>
    </div>
    <div class="sumCol">
     <div class="sumH">Aktuální nájemník</div>
@@ -887,8 +891,7 @@ function flatDetail(){
  ${chartCard}
  ${flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt)}
 ${svjDocBox(f)}
- ${acqCard(f)}
- ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
+  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  ${ph.html?`<details class="histBox" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">Historie změn předpisu (rozbalit)</summary>${ph.html}</details>`:''}
  <div class="btns"><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec" onclick="protStart(${f.id})">Předávací protokol</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
@@ -1086,19 +1089,6 @@ function detailsCard(f){
   <div class="mini">${rows.map(([k,v])=>`<div><span>${k}</span><b class="${v?'':'mut'}">${v?esc(v):'—'}</b></div>`).join('')}</div>
   ${contactButtons(f)}
   <p class="small mut">${missing?`Chybí ${missing} údajů. Doplní se z nahraných dokumentů, nebo je upravte přes „✎ upravit“.`:'Všechny údaje jsou vyplněné.'}</p><div class="btns"><button class="btn sm sec" onclick="reloadFlatDocs(${f.id})">↻ Načíst znovu z dokumentů</button></div></div>`;
-}
-function acqCard(f){
- const a=f.acq;
- const when=a&&a.acquired_on?fd(a.acquired_on):'neznámé';
- const price=a&&a.price!=null?kc(a.price):'neznámá';
- const src=a?(a.source==='kupní smlouva'?'z kupní smlouvy':'zadáno ručně'):'zatím nevyplněno';
- return `<h2>Pořízení bytu</h2><div class="card">
-  <div class="mini">
-   <div><span>Datum koupě</span><b>${when}</b></div>
-   <div><span>Kupní cena</span><b>${price}</b></div>
-  </div>
-  <p class="small mut">Zdroj: ${src}. Pokud nahrajete kupní smlouvu a aplikace přiřadí byt, údaje se doplní samy.</p>
-  <div class="btns"><button class="btn sec sm" onclick="acqForm(${f.id})">Upravit pořízení</button></div></div>`;
 }
 function acqForm(fid){
  const f=flat(fid);const a=f&&f.acq;
