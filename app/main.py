@@ -1777,6 +1777,7 @@ async def upload_documents(
     files: list[UploadFile] = File(...),
     flat_id: int | None = Form(None),
     group_key: str | None = Form(None),
+    year: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
     # flat_id posílá karta bytu: dokumenty jdou rovnou k tomuto bytu, bez dotazu
@@ -1808,6 +1809,13 @@ async def upload_documents(
         db.add(d)
         db.flush()
         await run_in_threadpool(run_classification, d, db)
+        if year is not None and d.flat_id is not None and 2000 <= year <= 2100:
+            d.year = year  # rok zadaný při nahrávání má přednost před čtením
+            if d.doc_type == "vyuctovani_svj":
+                try:
+                    _assign_statement_year(db, d, year)
+                except HTTPException as e:
+                    d.note = str(e.detail)
         db.commit()
         out.append(doc_out(d))
     return out
@@ -1888,10 +1896,28 @@ def reload_docs_all(db: Session = Depends(get_db)):
     return {"ok": True, "bytů": len(flats)}
 
 
+def _assign_statement_year(db: Session, d: m.Document, year: int) -> None:
+    """Vyúčtování SVJ zapíše do roku year. Změněné hodnoty se přepíšou, starší zůstanou v historii."""
+    items = []
+    for it in (d.extracted or {}).get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()[:200]
+        cost = _dec(it.get("cost"))
+        if name and cost is not None:
+            items.append(s.ItemIn(name=name, cost=cost, paid=_dec(it.get("paid")) or Decimal("0")))
+    if not items:
+        raise HTTPException(400, "V dokumentu není rozpis položek")
+    probe = s.ResolveIn(items=items, doc_label=d.filename)
+    diffs = compare_statement(d.flat_id, year, probe, db)["diffs"]
+    decisions = {x["name"]: "replace" for x in diffs if x["status"] == "changed"}
+    resolve_statement(d.flat_id, year, s.ResolveIn(items=items, doc_label=d.filename, decisions=decisions), db)
+    d.status = "zarazeno"
+
+
 @app.post("/documents/{doc_id}/zaradit-rok")
 def assign_document_year(doc_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
-    """Zařadí vyúčtování SVJ k zadanému roku. Položky se zapíšou do toho roku, změněné hodnoty se přepíšou
-    a starší zůstanou v historii. Ostatní roky se nemění."""
+    """Zařadí vyúčtování SVJ k zadanému roku (ostatní roky se nemění)."""
     d = get_document(db, doc_id)
     try:
         year = int(body.get("year"))
@@ -1903,21 +1929,7 @@ def assign_document_year(doc_id: int, body: dict = Body(...), db: Session = Depe
         raise HTTPException(400, "Dokument ještě není přiřazen k bytu")
     d.year = year
     if d.doc_type == "vyuctovani_svj":
-        items = []
-        for it in (d.extracted or {}).get("items") or []:
-            if not isinstance(it, dict):
-                continue
-            name = str(it.get("name") or "").strip()[:200]
-            cost = _dec(it.get("cost"))
-            if name and cost is not None:
-                items.append(s.ItemIn(name=name, cost=cost, paid=_dec(it.get("paid")) or Decimal("0")))
-        if not items:
-            raise HTTPException(400, "V dokumentu není rozpis položek")
-        probe = s.ResolveIn(items=items, doc_label=d.filename)
-        diffs = compare_statement(d.flat_id, year, probe, db)["diffs"]
-        decisions = {x["name"]: "replace" for x in diffs if x["status"] == "changed"}
-        resolve_statement(d.flat_id, year, s.ResolveIn(items=items, doc_label=d.filename, decisions=decisions), db)
-        d.status = "zarazeno"
+        _assign_statement_year(db, d, year)
     db.commit()
     return doc_out(d)
 

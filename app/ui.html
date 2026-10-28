@@ -284,7 +284,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.36</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.37</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -792,7 +792,7 @@ function cmpSections(f,l){
  const hint=`<div class="mut small" style="margin:6px 0">Do vyúčtování jdou jen zaškrtnuté řádky; přeškrtnuté šedé hodnoty se nepočítají. Záporné = přeplatek, který vracíte nájemníkovi. Kladné = doplatek nájemníka. Celkem odpovídá korekci „Po korekci“ na kartě.</div>`+(unpaired.length?`<div class="mut small" style="margin:0 0 6px">Nespárované položky SVJ jsou dole. Přetáhněte je na řádek nájemníka, nebo na ně klikněte a pak klikněte na řádek.</div>`:'');
  return `<div class="cmpPeriod"><div class="cmpHead">Platný předpis dnes <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>${hint}
  <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r" title="Záporné = přeplatek vracíte, kladné = doplatek nájemníka">Rozdíl</th><th class="c" title="Počítat do vyúčtování">Vyúčt.</th></tr></thead>
- <tbody>${tRows.join('')}${rentRow}${sRows.join('')}<tr class="addRow"><td></td><td></td><td><button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></td><td></td><td></td><td></td></tr><tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${corr<0?'bad':'ok'}">${money(corr)}</td><td></td></tr></tbody></table></div>`;
+ <tbody>${tRows.join('')}${rentRow}${sRows.join('')}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td><button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></td><td class="r">${kc(pay)}</td><td class="r ${corr<0?'bad':'ok'}">${money(corr)}</td><td></td></tr></tbody></table></div>`;
 }
 // Údaje nájemníka na kartě bytu: proklik na úpravu a varování, když vypadají jako údaje pronajímatele
 function looksLandlord(v){return /gajdos|predboj|zapadni|280136040|724\s?116\s?856/i.test(String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,''))}
@@ -2475,10 +2475,21 @@ function progress(t){
 async function uploadDocs(input,flatId){
  const all=[...input.files];
  input.value='';
- return uploadFiles(all,flatId);
+ if(!all.length)return;
+ const y=V.year||new Date().getFullYear()-1;
+ window.PENDING_UP=all;
+ modal(`<div class="sheetHead"><h2>K jakému roku patří dokument?</h2><button class="btn sec sm" onclick="closeModal()">Zrušit</button></div>
+  <p class="small mut">${all.length>1?all.length+' souborů':esc(all[0].name)}. Podle roku se vyúčtování SVJ zařadí rovnou.</p>
+  <label>Rok</label><input type="number" id="uyr" value="${y}">
+  <div class="btns"><button class="btn" onclick="uploadWithYear(${flatId})">Nahrát</button></div>`);
+}
+async function uploadWithYear(flatId){
+ const y=+$('#uyr').value;const all=window.PENDING_UP||[];window.PENDING_UP=null;
+ closeModal();
+ return uploadFiles(all,flatId,null,y>=2000&&y<=2100?y:null);
 }
 // Společné nahrávání pro tlačítka, přetažení i Ctrl+V. flatId vyplněné = dokumenty rovnou patří k bytu
-async function uploadFiles(all,flatId,groupKey){
+async function uploadFiles(all,flatId,groupKey,year){
  const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif|docx)$/i.test(f.name));
  // Víc fotek najednou je jeden vícestránkový dokument: spojí se do jednoho PDF
  const imgs=files.filter(f=>f.type.startsWith('image/')||/\.(jpe?g|png|webp|gif)$/i.test(f.name));
@@ -2493,7 +2504,7 @@ async function uploadFiles(all,flatId,groupKey){
   }catch(e){toast(e.message)}
   progress('');
   const rest=files.filter(f=>!imgs.includes(f));
-  if(rest.length)return uploadFiles(rest,flatId);
+  if(rest.length)return uploadFiles(rest,flatId,null,year);
   await reload();render();return;
  }
  const skipped=all.length-files.length;
@@ -2507,6 +2518,7 @@ async function uploadFiles(all,flatId,groupKey){
    fd.append('files',await shrink(files[i]).catch(()=>files[i]));
    if(flatId)fd.append('flat_id',flatId);
    if(groupKey)fd.append('group_key',groupKey);
+   if(year)fd.append('year',year);
    const res=await fetch('/documents',{method:'POST',body:fd});
    if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
    const got=await res.json().catch(()=>[]);if(Array.isArray(got))created.push(...got);
@@ -2517,7 +2529,7 @@ async function uploadFiles(all,flatId,groupKey){
  toast(`Nahráno ${ok}${fail?', chyb '+fail:''}${skipped?', přeskočeno '+skipped:''}`);
  await reload();render();
  const yr=created.filter(d=>d.doc_type==='vyuctovani_svj');
- if(yr.length)yearAsk(yr);
+ if(yr.length&&!year)yearAsk(yr);
 }
 // Vyúčtování SVJ: systém se zeptá, k jakému roku patří, a zařadí ho a přepíše změněné hodnoty
 let YQ=[];
