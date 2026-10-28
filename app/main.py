@@ -1443,6 +1443,21 @@ def doc_date(d: m.Document) -> date:
     return (d.created_at or datetime.now(timezone.utc)).date()
 
 
+def _is_landlord_value(key: str, raw: str) -> bool:
+    """Údaje pronajímatele (smlouva má dvě strany) se nesmí zapsat jako údaje nájemníka."""
+    L = landlord_profile.LANDLORD
+    digits = lambda v: "".join(ch for ch in v if ch.isdigit())
+    if key == "tenant_email":
+        return raw.lower() == L["email"].lower()
+    if key == "tenant_phone":
+        return digits(raw)[-9:] == digits(L["phone"])[-9:]
+    if key == "tenant_bank_account":
+        return raw.replace(" ", "") == landlord_profile.ACCOUNT
+    if key == "tenant_name":
+        return raw.strip().lower() == L["name"].lower()
+    return False
+
+
 def enrich_flat(db: Session, d: m.Document) -> None:
     """Údaje bytu z dokumentu. Novější dokument přepíše starší údaj, starší dokument nepřepíše novější.
     Přepsaná hodnota zůstane v historii a starší údaje zůstávají uložené v dokumentech."""
@@ -1457,6 +1472,8 @@ def enrich_flat(db: Session, d: m.Document) -> None:
     for key, attr in FLAT_FIELDS.items():
         raw = str(ex.get(key) or "").strip()
         if not raw or raw.lower() in ("null", "none"):
+            continue
+        if _is_landlord_value(key, raw):
             continue
         if attr == "area_m2":
             try:

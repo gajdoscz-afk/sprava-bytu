@@ -254,7 +254,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <button data-t="hist" onclick="go('hist')">Historie</button>
 <button class="theme" id="themeBtn" onclick="toggleTheme()">☾ Noční režim</button>
 <div id="navVal" class="navVal"></div>
-<div class="appVer">verze 1.9</div>
+<div class="appVer">verze 1.10</div>
 </nav>
 <div class="modal" id="modal" onclick="if(event.target===this)closeModal()"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
@@ -572,7 +572,7 @@ function flatBar(fid){
 // Nahrání přímo k bytu z karty (tlačítko je v horní liště, takže je vidět i po sjetí)
 function flatUpload(fid){
  const i=document.createElement('input');
- i.type='file';i.multiple=true;i.accept='image/*,application/pdf';
+ i.type='file';i.multiple=true;i.accept='image/*,application/pdf,.docx';
  i.onchange=()=>uploadFiles([...i.files],fid);
  i.click();
 }
@@ -679,7 +679,7 @@ ${tenantCard}
  ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  ${ph.html?`<details class="histBox" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">Historie změn předpisu (rozbalit)</summary>${ph.html}</details>`:''}
- <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec" onclick="protStart(${f.id})">Předávací protokol</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
+ <div class="btns"><label class="btn" style="cursor:pointer">+ Nahrát k tomuto bytu<input type="file" multiple accept="image/*,application/pdf,.docx" style="display:none" onchange="uploadDocs(this,${f.id})"></label><button class="btn sec" onclick="wzStart(${f.id})">Smlouva nebo dodatek</button><button class="btn sec" onclick="protStart(${f.id})">Předávací protokol</button><button class="btn sec sm" onclick="openSettlement(${f.id})">Vyúčtování</button></div>
  ${pendingBanner(pendingGroups(f.id))}
  <div class="row"><h2 style="margin:0">Dokumenty</h2><div class="btns" style="margin:0">${pageLabel(f.id,pendKey(f.id),'📷 Vyfotit dokument po stránkách','btn sm')}<button class="btn sm sec" onclick="rereadFlat(f.id)">↻ Přečíst znovu</button></div></div>
  ${docGroups(S.docs.filter(d=>d.flat_id==f.id&&d.status!=='rozpracováno'),'Zatím žádné dokumenty.')}
@@ -967,7 +967,7 @@ async function restore(id){
 function openUpload(fid){
  modal(`<div class="sheetHead"><h2>Nahrát dokument</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
  <p class="mut small">Čtení z fotky nebo PDF je zatím simulované. Porovnání a uložení už běží na serveru.</p>
- <label>Soubor</label><input type="file" id="uf" accept="image/*,application/pdf">
+ <label>Soubor</label><input type="file" id="uf" accept="image/*,application/pdf,.docx">
  <label>Rok, ke kterému dokument patří</label><input type="number" id="uy" value="${V.year||new Date().getFullYear()-1}">
  <label>Ukázkový výsledek čtení</label>
  <select id="um"><option value="same">Stejný dokument (bez rozdílů)</option><option value="changed">Upravený dokument (jiná Správa domu)</option></select>
@@ -2164,7 +2164,7 @@ function docsTab(){
   <div style="display:flex;gap:22px;justify-content:center;flex-wrap:wrap">
   ${pageLabel(null,pendKey(null),'<b>📷 Vyfotit dokument po stránkách</b>','btn','margin:0')}
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Nahrát hotové soubory</b>
-  <input type="file" multiple accept="image/*,application/pdf" style="display:none" onchange="uploadDocs(this)"></label>
+  <input type="file" multiple accept="image/*,application/pdf,.docx" style="display:none" onchange="uploadDocs(this)"></label>
   <label style="margin:0;color:var(--ink);font-size:16px;cursor:pointer"><b>+ Celá složka</b>
   <input type="file" multiple webkitdirectory style="display:none" onchange="uploadDocs(this)"></label>
   </div>
@@ -2260,7 +2260,7 @@ async function uploadDocs(input,flatId){
 }
 // Společné nahrávání pro tlačítka, přetažení i Ctrl+V. flatId vyplněné = dokumenty rovnou patří k bytu
 async function uploadFiles(all,flatId,groupKey){
- const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif)$/i.test(f.name));
+ const files=all.filter(f=>/^(image\/(jpeg|png|gif|webp)|application\/pdf|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/.test(f.type)||/\.(pdf|jpe?g|png|webp|gif|docx)$/i.test(f.name));
  // Víc fotek najednou je jeden vícestránkový dokument: spojí se do jednoho PDF
  const imgs=files.filter(f=>f.type.startsWith('image/')||/\.(jpe?g|png|webp|gif)$/i.test(f.name));
  if(imgs.length>1&&!groupKey){

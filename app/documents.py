@@ -3,12 +3,15 @@
 Hledání bytu je jen na straně aplikace (deterministicky), model nerozhoduje o přiřazení sám.
 """
 import base64
+import io
 import json
 import os
 import re
 import unicodedata
 
 import httpx
+
+from . import landlord as landlord_profile
 
 DOC_TYPES = {
     "smlouva": "Smlouva",
@@ -28,7 +31,16 @@ DOC_TYPES = {
     "jine": "Jiné",
 }
 
-SUPPORTED = {"application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"}
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+SUPPORTED = {"application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp", DOCX_MIME}
+LANDLORD_NOTE = (
+    "Pronajímatel v dokumentech je " + landlord_profile.LANDLORD["name"] + ". "
+    "Smlouva má dvě strany: pronajímatele a nájemce. "
+    "Údaje tenant_* ber VÝHRADNĚ z bloku nájemce. Jméno, adresu, telefon, e-mail ani účet pronajímatele "
+    "nikdy nepřenášej do tenant_*. "
+    "Účet nájemce vyplň jen tehdy, když je v dokumentu skutečné číslo účtu (ne tečky ani prázdné pole). "
+    "Adresa je místo pronájmu (byt), ne trvalé bydliště nájemce."
+)
 AUTO_FILE_CONFIDENCE = 0.8
 
 PROMPT = """Jsi asistentka správce bytů v ČR. Z přiloženého dokumentu urči typ a vytáhni údaje.
@@ -83,23 +95,44 @@ def normalize(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", text))
 
 
+def docx_text(data: bytes) -> str:
+    """Text Word dokumentu: odstavce a řádky tabulek (smlouvy mají strany v tabulce)."""
+    from docx import Document as DocxReader
+    doc = DocxReader(io.BytesIO(data))
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            parts.append(" | ".join(c.text.strip() for c in row.cells))
+    return "\n".join(p for p in parts if p.strip())[:60000]
+
+
 def classify(data: bytes, mime: str) -> dict:
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         raise ClassifyError("Čtení dokumentů zatím není zapnuté (chybí ANTHROPIC_API_KEY). Zařaďte ručně.")
     if mime not in SUPPORTED:
-        raise ClassifyError("Nepodporovaný formát. Nahrajte JPG, PNG nebo PDF.")
+        raise ClassifyError("Nepodporovaný formát. Nahrajte JPG, PNG, PDF nebo Word (.docx).")
 
-    b64 = base64.standard_b64encode(data).decode("ascii")
-    if mime == "application/pdf":
-        block = {"type": "document", "source": {"type": "base64", "media_type": mime, "data": b64}}
+    if mime == DOCX_MIME:
+        try:
+            text = docx_text(data)
+        except Exception:
+            raise ClassifyError("Word dokument nešel přečíst.")
+        if not text.strip():
+            raise ClassifyError("Word dokument je prázdný nebo obsahuje jen obrázky.")
+        content = [{"type": "text", "text": "Text dokumentu (Word):\n" + text}]
     else:
-        block = {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}
+        b64 = base64.standard_b64encode(data).decode("ascii")
+        if mime == "application/pdf":
+            block = {"type": "document", "source": {"type": "base64", "media_type": mime, "data": b64}}
+        else:
+            block = {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}}
+        content = [block]
 
     body = {
         "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
         "max_tokens": 4000,
-        "messages": [{"role": "user", "content": [block, {"type": "text", "text": PROMPT}]}],
+        "messages": [{"role": "user", "content": content + [{"type": "text", "text": PROMPT + "\n" + LANDLORD_NOTE}]}],
     }
     headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
     try:

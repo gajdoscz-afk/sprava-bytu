@@ -7,6 +7,9 @@ LANDLORD = {
     "email": "michal.gajdos@seznam.cz",
 }
 
+# Účet pronajímatele: nesmí se objevit jako účet nájemníka
+ACCOUNT = "280136040/0300"
+
 
 def merged(given: dict | None) -> dict:
     """Vyplněné údaje z formuláře mají přednost, prázdné se doplní z profilu."""
