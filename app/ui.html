@@ -280,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.25</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.26</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -701,7 +701,12 @@ function periodBounds(f,Y){
  (f.leases||[]).forEach(l=>add(l.from));
  (f.svj_all||[]).forEach(c=>{add(c.valid_from);if(c.valid_to){const n=new Date(c.valid_to);n.setDate(n.getDate()+1);add(n.toISOString().slice(0,10))}});
  const arr=[...set].sort();
- return arr.map((st,i)=>({from:st,to:i+1<arr.length?new Date(new Date(arr[i+1]).getTime()-86400000).toISOString().slice(0,10):y1}));
+ const raw=arr.map((st,i)=>({from:st,to:i+1<arr.length?new Date(new Date(arr[i+1]).getTime()-86400000).toISOString().slice(0,10):y1}));
+ // Období se stejnými údaji (nájem, zálohy, položky SVJ a jejich částky) se spojí, aby nebyla zbytečná opakování
+ const sig=p=>{const l=leaseAt(f,p.from);const c=costsAt(f,p.from).map(x=>cmpNorm(x.name)+'='+(+x.amount||0)).sort().join('|');return JSON.stringify([l?{r:l.rent,a:l.adv}:null,c])};
+ const merged=[];
+ raw.forEach(p=>{const last=merged[merged.length-1];if(last&&sig(last)===sig(p))last.to=p.to;else merged.push({...p})});
+ return merged;
 }
 async function cmpSave(fid,rows){
  const f=flat(fid);
