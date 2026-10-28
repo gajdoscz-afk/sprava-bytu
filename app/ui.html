@@ -250,8 +250,9 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 .cmpPeriod{margin-bottom:14px}
 .cmpHead{font-weight:700;margin:4px 0 6px}
 .cmp .c{text-align:center}
+.cmp th:nth-child(3),.cmp td:nth-child(3),.cmp th:nth-child(5),.cmp td:nth-child(5){border-left:1px solid rgba(139,124,255,.45)}
 .cmpSel{width:100%;margin:0;padding:4px 6px;font-size:13px;min-width:120px}
-.pair{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.5);font-size:13px}
+.pair{font-size:12px !important;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.5);font-size:13px}
 .pair .x{border:0;background:none;color:var(--bad);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
 .dropZone{display:block;padding:6px 10px;border:1px dashed rgba(139,124,255,.5);border-radius:10px;color:var(--mut);font-size:12.5px;cursor:pointer;min-width:150px}
 .dropZone:hover{border-color:#22C55E;color:var(--ink)}
@@ -268,7 +269,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.18</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.19</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -707,7 +708,7 @@ function cmpSections(f,l){
    const pv=(r.svj&&has(r.svj))?payOf(r.svj):null;
    const d=get-(pv||0);
    const cell=r.svj
-    ?`<span class="pair">${esc(r.svj)}${pv!=null?' · '+kc(pv):''} <button class="x" title="Odpárovat" onclick="cmpPair(${f.id},${i},null)">×</button></span>`
+    ?`<span class="pair">${esc(r.svj)} <button class="x" title="Odpárovat" onclick="cmpPair(${f.id},${i},null)">×</button></span>`
     :`<span class="dropZone" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},${i})" onclick="cmpTap(${f.id},${i})">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`;
    return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td><td>${cell}</td><td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${pv!=null?(d<0?'bad':'ok'):''}">${pv!=null?(d>=0?'+':'')+kc(d):'—'}</td><td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" ${r.bill?'checked':''} onchange="cmpEdit(${f.id},${i},'bill',this.checked)"></td></tr>`;
   }).join('');
@@ -748,6 +749,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
    <div class="sumCol sumWide">
     <div class="sumH">Zálohy: vybírám × platím</div>
     ${cmpSections(f,l)}
+    <div class="btns" style="margin:8px 0 4px">${l?`<button class="btn sm sec" onclick="tenantAdvAdd(${l.id})">+ Položka nájemníka</button>`:''}<button class="btn sm sec" onclick="costForm(${f.id})">+ Položka SVJ</button></div>
     <div class="sumNet"><span>Zbývá mi měsíčně</span><b class="${net<0?'bad':'ok'}">${kc(net)}</b></div>
     <div class="mut small">Vybírám celkem ${kc(incomeM)} (nájem + zálohy), platím SVJ ${kc(svjTotal)}. Zaškrtnutím „Vyúčt.“ položku vyloučíte z vyúčtování nájemníka.</div>
    </div>
