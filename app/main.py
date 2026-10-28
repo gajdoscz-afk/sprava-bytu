@@ -101,6 +101,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS group_key VARCHAR(40)"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS cmp_links JSON NOT NULL DEFAULT '[]'"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'vynos'"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -533,9 +534,21 @@ def _market_value(f: m.Flat):
     return (float(best.amount), best.on_date.isoformat(), best.source) if best else (None, None, None)
 
 
+def _expenses_out(f: m.Flat) -> list:
+    from sqlalchemy.orm import object_session
+    sess = object_session(f)
+    if sess is None:
+        return []
+    rows = sess.scalars(select(m.FlatExpense).where(m.FlatExpense.flat_id == f.id)
+                        .order_by(m.FlatExpense.on_date, m.FlatExpense.id)).all()
+    return [{"id": e.id, "on_date": e.on_date.isoformat(), "name": e.name, "amount": float(e.amount),
+             "kind": e.kind, "bank": e.bank_tx_id is not None} for e in rows]
+
+
 def flat_out(f: m.Flat) -> dict:
     mv = _market_value(f)
     return {
+        "expenses": _expenses_out(f),
         "id": f.id,
         "market_value": mv[0],
         "market_value_on": mv[1],
@@ -2185,6 +2198,59 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
                     db.add(m.FlatAlias(flat_id=f.id, alias=alias))
         t.flat_id = body.flat_id
         t.match = "ručně" if body.flat_id is not None else "none"
+    if body.kind is not None:
+        if body.kind not in ("vynos", "naklad", "vyrazeno"):
+            raise HTTPException(400, "Neznámý druh platby")
+        t.kind = body.kind
+        if body.kind == "vyrazeno":
+            t.flat_id = None
+            t.match = "vyřazeno"
+        if body.kind == "naklad" and t.flat_id is None:
+            raise HTTPException(400, "Náklad přiřaďte nejdřív k bytu")
+    if t.kind == "vyrazeno" and t.flat_id is not None:
+        t.kind = "vynos"
+    if t.flat_id is None and t.kind == "naklad":
+        t.kind = "vynos"
+    _sync_tx_expense(db, t)
+    db.commit()
+    return {"ok": True}
+
+
+def _sync_tx_expense(db: Session, t: m.BankTx) -> None:
+    """Platba z výpisu označená jako náklad je v nákladech bytu; jinak tam není."""
+    for e in db.scalars(select(m.FlatExpense).where(m.FlatExpense.bank_tx_id == t.id)).all():
+        db.delete(e)
+    if t.kind == "naklad" and t.flat_id is not None:
+        db.add(m.FlatExpense(flat_id=t.flat_id, on_date=t.date, name=(t.counterparty or "Platba z účtu")[:200],
+                             amount=abs(t.amount), kind="naklad", bank_tx_id=t.id))
+
+
+@app.post("/flats/{flat_id}/expenses", status_code=201)
+def add_expense(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Náklad nebo faktura bytu zadaná ručně. Počítá se do ročních nákladů pro daňové přiznání."""
+    f = get_flat(db, flat_id)
+    try:
+        on = date.fromisoformat(str(body.get("on_date"))[:10])
+        amt = Decimal(str(body.get("amount")))
+    except (ValueError, ArithmeticError, TypeError):
+        raise HTTPException(400, "Datum nebo částka nejsou platné")
+    name = str(body.get("name") or "").strip()[:200]
+    if not name or amt <= 0:
+        raise HTTPException(400, "Vyplňte název a kladnou částku")
+    kind = "faktura" if body.get("kind") == "faktura" else "naklad"
+    db.add(m.FlatExpense(flat_id=f.id, on_date=on, name=name, amount=money(amt), kind=kind))
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/expenses/{expense_id}")
+def delete_expense(expense_id: int, db: Session = Depends(get_db)):
+    e = db.get(m.FlatExpense, expense_id)
+    if e is None:
+        raise HTTPException(404, "Položka nenalezena")
+    if e.bank_tx_id is not None:
+        raise HTTPException(400, "Náklad vznikl z platby z výpisu. Odpojte ji v Ekonomice.")
+    db.delete(e)
     db.commit()
     return {"ok": True}
 
@@ -2274,6 +2340,8 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     received: dict[tuple[int, str], Decimal] = defaultdict(lambda: Decimal("0"))
     unmatched_by: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for t in txs:
+        if t.kind in ("vyrazeno", "naklad"):
+            continue  # vyřazené z přehledu a náklady nejsou příjem
         if t.flat_id is None:
             unmatched_by[t.period] += t.amount
         else:
@@ -2309,7 +2377,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             "unmatched": float(unmatched_by.get(p, Decimal("0"))), "rows": rows,
         })
 
-    unmatched = sorted((t for t in txs if t.flat_id is None), key=lambda t: t.date, reverse=True)
+    unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos"), key=lambda t: t.date, reverse=True)
     addr_of = {f.id: f.addr for f in flats}
     shown = set(periods)
     assigned = sorted((t for t in txs if t.flat_id is not None and t.period in shown),

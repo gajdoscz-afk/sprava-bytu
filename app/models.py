@@ -184,6 +184,7 @@ class BankTx(Base):
     period: Mapped[str] = mapped_column(String(7), index=True)  # YYYY-MM, za který měsíc platba je
     flat_id: Mapped[int | None] = mapped_column(ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True)
     match: Mapped[str] = mapped_column(String(20), default="none")  # auto-vs, auto-částka, auto-jméno, ručně, none
+    kind: Mapped[str] = mapped_column(String(20), default="vynos")  # vynos | naklad | vyrazeno (z přehledu)
 
 
 class Listing(Base):
@@ -298,3 +299,17 @@ class Setting(Base):
     key: Mapped[str] = mapped_column(String(60), primary_key=True)
     mime: Mapped[str] = mapped_column(String(100), default="image/png")
     data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class FlatExpense(Base):
+    """Náklad nebo faktura bytu: ručně zadaná, nebo platba z výpisu označená jako náklad. Základ pro daňové přiznání."""
+
+    __tablename__ = "flat_expenses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    kind: Mapped[str] = mapped_column(String(20), default="naklad")  # naklad | faktura
+    bank_tx_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

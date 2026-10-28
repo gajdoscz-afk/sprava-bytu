@@ -53,6 +53,7 @@ class ResolveIn(ExtractedIn):
 
 class BankAssignIn(BaseModel):
     flat_id: int | None = None
+    kind: str | None = None  # vynos | naklad | vyrazeno
 
 
 class ListingIn(BaseModel):
