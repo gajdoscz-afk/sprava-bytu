@@ -280,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.26</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.27</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -735,49 +735,38 @@ function cmpDrop(ev,fid,adv){ev.preventDefault();const name=ev.dataTransfer.getD
 function cmpTap(fid,adv){if(window.CMP_SEL)cmpPairName(fid,adv,window.CMP_SEL)}
 function cmpSelect(name){window.CMP_SEL=window.CMP_SEL===name?null:name;render()}
 function cmpSections(f,l){
- const Y=V.year||TODAY.getFullYear();
  const today=TODAY_ISO();
+ const lease=leaseAt(f,today)||l;
+ const rows=cmpRows(f,lease);
+ const costs=costsAt(f,today);
  const sel=window.CMP_SEL||null;
- const periods=periodBounds(f,Y).filter(p=>leaseAt(f,p.from)||costsAt(f,p.from).length);
- if(!periods.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
- const isCur=p=>p.from<=today&&p.to>=today;
- let cur=periods.filter(isCur), old=periods.filter(p=>!isCur(p));
- if(!cur.length&&old.length)cur=[old.pop()];
- const sec=p=>{
-  const lease=leaseAt(f,p.from);
-  const rows=cmpRows(f,lease);
-  const costs=costsAt(f,p.from);
-  const payOf=n=>{const c=costs.find(c=>c.name===n);return c?(+c.amount||0):0};
-  const has=n=>costs.some(c=>c.name===n);
-  const pay=costs.reduce((x,c)=>x+(+c.amount||0),0);
-  const paired=new Set(rows.flatMap(r=>r.svj));
-  const names=[...new Set(costs.map(c=>c.name))].filter(n=>!paired.has(n));
-  let vyb=0;
-  const body=rows.map(r=>{
-   const get=(lease&&lease.adv)?(+lease.adv[r.adv]||0):0;
-   vyb+=get;
-   const inP=r.svj.filter(has);
-   const hasAny=inP.length>0;
-   const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
-   const d=get-(pv||0);
-   const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-adv="${esc(r.adv)}" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpairName(${f.id},this.dataset.adv,this.dataset.name)">×</button></span>`).join('');
-   const cell=`<div class="pairs">${pills}${r.svj.length?'':`<span class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`}</div>`;
-   return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
-    `<td class="dropCell" data-adv="${esc(r.adv)}" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},this.dataset.adv)" onclick="cmpTap(${f.id},this.dataset.adv)">${cell}</td>`+
-    `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
-    `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" data-adv="${esc(r.adv)}" ${r.bill?'checked':''} onchange="cmpBillName(${f.id},this.dataset.adv,this.checked)"></td></tr>`;
-  }).join('');
-  const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo klikněte na položku a pak na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
-  const diff=vyb-pay;
-  const head=`Období ${fd(p.from)} – ${fd(p.to)}`;
-  return `<div class="cmpPeriod"><div class="cmpHead">${head} <span class="mut small">· SVJ ${kc(pay)} měsíčně${lease?'':' · bez nájmu'}</span></div>
-  <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
-  <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
-  ${pool}</div>`;
- };
- let out=cur.map(sec).join('');
- if(old.length)out+=`<details class="cmpOld"><summary>Předchozí období v roce (${old.length})</summary>${old.map(sec).join('')}</details>`;
- return out;
+ if(!rows.length&&!costs.length)return '<div class="mut small">Zatím žádné zálohy ani platby SVJ.</div>';
+ const payOf=n=>{const c=costs.find(c=>c.name===n);return c?(+c.amount||0):0};
+ const has=n=>costs.some(c=>c.name===n);
+ const pay=costs.reduce((x,c)=>x+(+c.amount||0),0);
+ const paired=new Set(rows.flatMap(r=>r.svj));
+ const names=[...new Set(costs.map(c=>c.name))].filter(n=>!paired.has(n));
+ let vyb=0;
+ const body=rows.map(r=>{
+  const get=(lease&&lease.adv)?(+lease.adv[r.adv]||0):0;
+  vyb+=get;
+  const inP=r.svj.filter(has);
+  const hasAny=inP.length>0;
+  const pv=hasAny?inP.reduce((x,n)=>x+payOf(n),0):null;
+  const d=get-(pv||0);
+  const pills=r.svj.map(n=>`<span class="pair">${esc(n)} <button class="x" title="Odpárovat" data-adv="${esc(r.adv)}" data-name="${esc(n)}" onclick="event.stopPropagation();cmpUnpairName(${f.id},this.dataset.adv,this.dataset.name)">×</button></span>`).join('');
+  const cell=`<div class="pairs">${pills}${r.svj.length?'':`<span class="dropHint">${sel?'Klikněte sem: '+esc(sel):'Přetáhněte sem položku SVJ'}</span>`}</div>`;
+  return `<tr><td>${esc(r.adv)}</td><td class="r">${kc(get)}</td>`+
+   `<td class="dropCell" data-adv="${esc(r.adv)}" ondragover="event.preventDefault()" ondrop="cmpDrop(event,${f.id},this.dataset.adv)" onclick="cmpTap(${f.id},this.dataset.adv)">${cell}</td>`+
+   `<td class="r">${pv==null?'—':kc(pv)}</td><td class="r ${hasAny?(d<0?'bad':'ok'):''}">${hasAny?(d>=0?'+':'')+kc(d):'—'}</td>`+
+   `<td class="c"><input type="checkbox" title="Počítat do vyúčtování nájemníka" data-adv="${esc(r.adv)}" ${r.bill?'checked':''} onchange="cmpBillName(${f.id},this.dataset.adv,this.checked)"></td></tr>`;
+ }).join('');
+ const pool=names.length?`<div class="poolH">Nespárované položky SVJ: přetáhněte na řádek nájemníka, nebo klikněte na položku a pak na řádek.</div><div class="pool">${names.map(n=>`<span class="chip2${sel===n?' on':''}" draggable="true" data-name="${esc(n)}" ondragstart="event.dataTransfer.setData('text/plain',this.dataset.name)" onclick="cmpSelect(this.dataset.name)">${esc(n)} <b>${kc(payOf(n))}</b></span>`).join('')}</div>`:'';
+ const diff=vyb-pay;
+ return `<div class="cmpPeriod"><div class="cmpHead">Platný předpis dnes <span class="mut small">· SVJ ${kc(pay)} měsíčně</span></div>
+ <table class="cmp"><thead><tr><th>Nájemník platí</th><th class="r">Vybírám</th><th>Já platím (SVJ)</th><th class="r">Platím</th><th class="r">Rozdíl</th><th class="c" title="Počítat do vyúčtování nájemníka">Vyúčt.</th></tr></thead>
+ <tbody>${body}<tr class="sumRow"><td>Celkem</td><td class="r">${kc(vyb)}</td><td></td><td class="r">${kc(pay)}</td><td class="r ${diff<0?'bad':'ok'}">${(diff>=0?'+':'')+kc(diff)}</td><td></td></tr></tbody></table>
+ ${pool}</div>`;
 }
 function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
  const payNow=n=>(f.svj||[]).filter(c=>c.name===n).reduce((a,c)=>a+(+c.amount||0),0);
