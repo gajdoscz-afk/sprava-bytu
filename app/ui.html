@@ -280,7 +280,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.24</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.25</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -487,22 +487,30 @@ function costEdit(fid,cid){
 }
 // Položky SVJ pro zvolený rok, seskupené podle předpisu (období platnosti). Platné nahoře, ukončené šedě.
 function svjRows(f){
- const Y=V.year||TODAY.getFullYear(), today=TODAY_ISO();
- const rows=(f.svj_all||[]).filter(c=>{const a=c.valid_from||'0000',b=c.valid_to||'9999';return (a<=`${Y}-12-31`&&b>=`${Y}-01-01`)||b>=today});
- if(!rows.length)return '<div class="mut small">Zatím nic. Přidejte zálohy, které platíte, nebo načtěte předpis z dokumentu.</div>';
- const groups={};
- rows.forEach(c=>{const k=`${c.valid_from||''}|${c.valid_to||''}`;(groups[k]=groups[k]||{from:c.valid_from,to:c.valid_to,items:[]}).items.push(c)});
- const gs=Object.values(groups).sort((x,y)=>String(y.from||'').localeCompare(String(x.from||'')));
- return `<div class="mut small" style="margin-bottom:6px">Rok ${Y}. Podrobný rozpis podle předpisů. Kliknutím na položku upravíte částku a data.</div>`+
-  gs.map(g=>{
-   const running=!g.to||g.to>=today;
-   const sum=g.items.reduce((t,c)=>t+(+c.amount||0),0);
-   const docId=g.items.find(c=>c.source_doc_id)?.source_doc_id;
-   const doc=docId?(S.docs.find(d=>d.id===docId)||{}).filename:'';
-   const head=`<div class="row" style="margin:12px 0 4px"><b>Předpis ${g.from?'od '+dmy(g.from):'odjakživa'} ${g.to?'do '+dmy(g.to):'· neurčitě'}${running?'':' · už neplatí'}</b><span>${kc(sum)} měsíčně</span></div>${doc?`<div class="small mut" style="margin-bottom:4px">z dokumentu ${esc(doc)}</div>`:''}`;
-   const lines=g.items.sort((x,y)=>String(x.name).localeCompare(String(y.name),'cs')).map(c=>`<div class="line" style="cursor:pointer" onclick="costRowEdit(${f.id},${c.id})"><span>${esc(c.name)}</span><span>${kc(c.amount)}</span></div>`).join('');
-   return `<div style="${running?'':'opacity:.5;color:var(--mut)'}">${head}${lines}</div>`;
-  }).join('');
+ const today=TODAY_ISO(), Y=V.year||TODAY.getFullYear();
+ const key=c=>String(c.name||'').replace(/\s+/g,'').toUpperCase();
+ const act={};
+ (f.svj_all||[]).forEach(c=>{
+  if(c.valid_from&&c.valid_from>today)return;
+  if(c.valid_to&&c.valid_to<today)return;
+  const k=key(c);
+  if(!act[k]||String(c.valid_from||'')>=String(act[k].valid_from||''))act[k]=c;
+ });
+ const cur=Object.values(act).sort((x,y)=>String(x.name).localeCompare(String(y.name),'cs'));
+ const curIds=new Set(cur.map(c=>c.id));
+ const hist=(f.svj_all||[]).filter(c=>!curIds.has(c.id)&&(c.valid_from||'0000')<=`${Y}-12-31`&&(c.valid_to||'9999')>=`${Y}-01-01`);
+ const line=c=>`<div class="line" style="cursor:pointer" onclick="costRowEdit(${f.id},${c.id})"><span>${esc(c.name)}</span><span>${kc(c.amount)}</span></div>`;
+ if(!cur.length&&!hist.length)return '<div class="mut small">Zatím nic. Přidejte zálohy, které platíte, nebo načtěte předpis z dokumentu.</div>';
+ const total=cur.reduce((t,c)=>t+(+c.amount||0),0);
+ let html=cur.length?`<div class="row" style="margin:4px 0 6px"><span class="mut small">Platí se dnes</span><b>${kc(total)} měsíčně</b></div>${cur.map(line).join('')}`:'<div class="mut small">Dnes neplatí žádný předpis.</div>';
+ if(hist.length){
+  const groups={};
+  hist.forEach(c=>{const k=`${c.valid_from||''}|${c.valid_to||''}`;(groups[k]=groups[k]||{from:c.valid_from,to:c.valid_to,items:[]}).items.push(c)});
+  const gs=Object.values(groups).sort((x,y)=>String(y.from||'').localeCompare(String(x.from||'')));
+  const histHtml=gs.map(g=>`<div style="margin-top:10px"><div class="small mut"><b>Od ${g.from?dmy(g.from):'odjakživa'} do ${g.to?dmy(g.to):'dosud'}</b></div>${g.items.sort((x,y)=>String(x.name).localeCompare(String(y.name),'cs')).map(line).join('')}</div>`).join('');
+  html+=`<details class="cmpOld" style="margin-top:12px"><summary>Historie předpisů v roce (${hist.length} položek)</summary>${histHtml}</details>`;
+ }
+ return html;
 }
 // Doklad s rozpisem: jen tento jeden doklad se načte nebo odstraní
 function svjDocBox(f){
