@@ -1455,6 +1455,10 @@ def _is_landlord_value(key: str, raw: str) -> bool:
         return raw.replace(" ", "") == landlord_profile.ACCOUNT
     if key == "tenant_name":
         return raw.strip().lower() == L["name"].lower()
+    if key == "zip_city":
+        # PSČ a město bytu se nesmí převzít z adresy pronajímatele (Předboj, Západní stráň 346)
+        text = "".join(ch for ch in raw.lower() if ch.isalnum() or ch == " ")
+        return "346" in text and ("predboj" in text or "zapadni" in text)
     return False
 
 
