@@ -69,36 +69,43 @@ def _cz_date(d) -> str:
 
 
 def settlement_tenant_docx(flat, res: dict, doc_date=None) -> bytes:
-    """Vyúčtování služeb pro nájemníka: služby podle vyúčtování SVJ proti zálohám předepsaným podle předpisu."""
+    """Vyúčtování služeb pro nájemce: smluvní strany, položky, výpočet a výsledek."""
     from datetime import date as _date
     from . import landlord as _landlord
     y = res["year"]
     doc_date = doc_date or _date.today()
     land = _landlord.LANDLORD
     tenants = [flat.tenant_name] + [t.strip() for t in (flat.tenant_others or "").split(",") if t.strip()]
+    tenant_txt = ", ".join(t for t in tenants if t) or "[doplňte]"
     d = _new(f"Vyúčtování služeb za rok {y}")
-    d.add_paragraph(f"Období: 1. 1. {y} až 31. 12. {y}")
-    d.add_paragraph(f"Pronajímatel: {land['name']}, {land['address']}, tel. {land['phone']}, {land['email']}")
-    d.add_paragraph(f"Nájemce: {', '.join(t for t in tenants if t) or '[doplňte]'}")
-    d.add_paragraph(f"Byt: {flat.addr}, {flat.zip or ''}, {flat.dispo or ''}".replace(", ,", ",").strip(", "))
-    d.add_heading("Služby podle vyúčtování SVJ (přeúčtovatelné)", level=2)
+    d.add_paragraph(f"Vyúčtování služeb za období 1. 1. {y} až 31. 12. {y}. Předloženo dne {_cz_date(doc_date)}.")
+    d.add_heading("Smluvní strany", level=2)
+    _table(d, ["Pronajímatel", "Nájemce"], [[
+        f"{land['name']}\n{land['address']}\ntel. {land['phone']}\n{land['email']}",
+        f"{tenant_txt}\n{flat.addr}, {flat.zip or ''}\ntel. {flat.tenant_phone or '—'}\n{flat.tenant_email or ''}",
+    ]])
+    d.add_paragraph(f"Předmět: byt {flat.addr}, {flat.zip or ''}, {flat.dispo or ''}".replace(", ,", ",").replace(", ", ", ").rstrip(", "))
+    d.add_heading("1. Náklady na přeúčtovatelné služby podle vyúčtování SVJ", level=2)
     _table(d, ["Položka", "Náklad za rok"],
            [[i["name"], money(i["cost"])] for i in res["billable"]]
-           + [["Celkem náklady na služby", money(res["billable_cost"])]], money_cols=(1,))
-    d.add_heading("Zálohy nájemníka podle předpisu", level=2)
+           + [["Celkem náklady", money(res["billable_cost"])]], money_cols=(1,))
+    d.add_heading("2. Zálohy nájemce podle předpisu", level=2)
     _table(d, ["Položka", "Za rok"],
            [[k, money(v)] for k, v in res["advances"].items()]
            + [["Celkem zálohy", money(res["advances_total"])]], money_cols=(1,))
-    bal = res["tenant_balance"]
+    cost, adv, bal = res["billable_cost"], res["advances_total"], res["tenant_balance"]
+    d.add_heading("3. Výpočet", level=2)
+    d.add_paragraph(f"Náklady celkem {money(cost)} − zálohy celkem {money(adv)} = {money(bal)}")
     if bal > 0:
-        verdict = f"Nedoplatek nájemníka: {money(bal)}"
+        verdict = f"Nedoplatek nájemce: {money(bal)}. Nájemce tuto částku doplatí pronajímateli."
     elif bal < 0:
-        verdict = f"Přeplatek nájemníka: {money(-bal)}"
+        verdict = f"Přeplatek nájemce: {money(-bal)}. Pronajímatel tuto částku vrátí nájemci."
     else:
-        verdict = "Vyúčtování vychází vyrovnané."
-    d.add_heading("Výsledek", level=2)
+        verdict = "Vyúčtování vychází vyrovnané. Nevzniká přeplatek ani nedoplatek."
+    d.add_heading("4. Výsledek", level=2)
     d.add_paragraph(verdict)
-    d.add_paragraph(f"Přeplatek se vrací, nedoplatek se hradí na účet {flat.bank_acc or '[doplňte]'}.")
+    d.add_paragraph("Přeplatky a nedoplatky si smluvní strany posílají na účty definované v nájemní smlouvě "
+                    "do 30 dnů od předložení tohoto vyúčtování.")
     d.add_paragraph()
     d.add_paragraph(f"V Praze dne {_cz_date(doc_date)}")
     d.add_paragraph()
