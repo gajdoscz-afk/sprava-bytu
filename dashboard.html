@@ -698,6 +698,9 @@ const FIELDS = [
     ["AddConfirmFromLevel", "Potvrzené přikoupení od pozice", "int", "čeká na obrat Stochasticu na M15; 0 = vypnuto"],
     ["UseFridayGuard", "Páteční ochrana", "bool", "od 18:00 bez nových košů, koš na nule zavřít"],
     ["MaxBasketHours", "Max. stáří koše (h)", "num", "pak zavřít na nule/v zisku; 0 = vypnuto"],
+    ["UseCloseHardStop", "Hard stop na zavřenou svíčku", "bool", "M5, v noci M15 – knot ho nezavře; u brokera nouzový SL dál"],
+    ["TrendFlipExit", "Odejít při otočení trendu", "bool", "pomalý trend proti koši → zavřít u nuly"],
+    ["TrendFlipMaxLossPct", "…povolená ztráta (% kapitálu)", "num", "0 = až na nule a výš"],
   ]],
 ];
 
