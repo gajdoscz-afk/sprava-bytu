@@ -630,4 +630,24 @@ setInterval(() => {
   }
 }, 30000);
 
+// denní report do logu Renderu (po–pá 20:01 Praha) – večerní hodnocení ho čte přes Render API
+// formát řádku: SGREPORT|RRRR-MM-DD|nnn|text ; v pondělí 72 h (pátek + víkend), jinak 24 h
+let lastLoggedReport = "";
+function logDailyReport(force, tag = "SGREPORT") {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Prague", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  const day = `${p.year}-${p.month}-${p.day}`;
+  const hm = `${p.hour}:${p.minute}`;
+  if (!force && (["Sat", "Sun"].includes(p.weekday) || hm < "20:01" || hm > "20:30" || lastLoggedReport === day)) return;
+  if (!force) lastLoggedReport = day;
+  let text;
+  try { text = buildReport(p.weekday === "Mon" ? 72 : 24); } catch (e) { text = "CHYBA reportu: " + (e && e.message); }
+  const lines = String(text).split("\n");
+  console.log(`${tag}|${day}|000|ZACATEK ${lines.length} radku`);
+  lines.forEach((l, i) => console.log(`${tag}|${day}|${String(i + 1).padStart(3, "0")}|${l}`));
+  console.log(`${tag}|${day}|999|KONEC`);
+}
+setInterval(() => logDailyReport(false), 30000);
+// po startu jednou (kontrola funkce; po 2 min, až EA pošle stav) – jiná značka, nepočítá se jako večerní report
+setTimeout(() => logDailyReport(true, "SGREPORT-START"), 120000);
+
 server.listen(PORT, () => console.log(`StochGrid panel běží na portu ${PORT}`));
