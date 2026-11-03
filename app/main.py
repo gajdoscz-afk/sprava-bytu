@@ -102,6 +102,8 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS field_dates JSON NOT NULL DEFAULT '{}'"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS cmp_links JSON NOT NULL DEFAULT '[]'"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'vynos'"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_flat_id INTEGER"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_level VARCHAR(12) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -2144,10 +2146,13 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
 
     flats = db.scalars(select(m.Flat)).all()
     aliases = db.scalars(select(m.FlatAlias)).all()
+    addr_of = {f.id: f.addr for f in flats}
     seen = set(db.scalars(select(m.BankTx.key)))
     counts: dict[str, int] = {}
     lcounts: dict[str, int] = {}
-    added = skipped = 0
+    added = skipped = green = orange = 0
+    changed: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))  # (byt, měsíc) -> přibylo
+    new_rows: list[m.BankTx] = []
     for r in rows:
         base = bank.tx_key(r)
         n = counts.get(base, 0)
@@ -2157,19 +2162,43 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         ln = lcounts.get(lbase, 0)
         lcounts[lbase] = ln + 1
         if key in seen or f"{lbase}#{ln}" in seen:
-            skipped += 1
+            skipped += 1  # už v systému: nic se nezdvojí
             continue
         seen.add(key)
         period = r["date"].strftime("%Y-%m")
-        fid, how = bank.auto_match(r, period, flats, aliases)
-        db.add(m.BankTx(
+        fid, level = bank.suggest(r["amount"], r["vs"], r["counterparty"], period, flats, aliases)
+        t = m.BankTx(
             key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
             counterparty=r["counterparty"][:200], note=r["note"], period=period,
-            flat_id=fid, match=how,
-        ))
+            flat_id=fid if level == "zelena" else None, match=level or "none",
+            suggest_flat_id=fid if level == "oranzova" else None,
+            suggest_level="oranzova" if level == "oranzova" else "",
+        )
+        db.add(t)
+        new_rows.append(t)
+        if level == "zelena":
+            green += 1
+            changed[(addr_of[fid], period)] += money(r["amount"])
+        elif level == "oranzova":
+            orange += 1
         added += 1
+    db.flush()
+    new_ids = {t.id for t in new_rows}
+    # dříve nepřiřazené platby znovu zvážíme (přibyl byt nebo se změnil předpis)
+    for t in db.scalars(select(m.BankTx).where(m.BankTx.flat_id.is_(None), m.BankTx.kind == "vynos")).all():
+        if t.id in new_ids:
+            continue
+        fid, level = bank.suggest(t.amount, t.vs, t.counterparty, t.period, flats, aliases)
+        if level == "zelena":
+            t.flat_id, t.match = fid, "zelena"
+            t.suggest_flat_id, t.suggest_level = None, ""
+            changed[(addr_of[fid], t.period)] += t.amount
+        else:
+            t.suggest_flat_id = fid if level == "oranzova" else None
+            t.suggest_level = "oranzova" if level == "oranzova" else ""
     db.commit()
-    return {"added": added, "skipped": skipped}
+    return {"added": added, "skipped": skipped, "green": green, "orange": orange,
+            "changed": [{"addr": a_, "period": p_, "amount": float(v)} for (a_, p_), v in sorted(changed.items())]}
 
 
 def _dup_groups(db: Session) -> list[list[m.BankTx]]:
@@ -2240,6 +2269,7 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
                     db.add(m.FlatAlias(flat_id=f.id, alias=alias))
         t.flat_id = body.flat_id
         t.match = "ručně" if body.flat_id is not None else "none"
+        t.suggest_flat_id, t.suggest_level = None, ""
     if body.kind is not None:
         if body.kind not in ("vynos", "naklad", "vyrazeno"):
             raise HTTPException(400, "Neznámý druh platby")
@@ -2407,6 +2437,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     txs = db.scalars(select(m.BankTx)).all()
     received: dict[tuple[int, str], Decimal] = defaultdict(lambda: Decimal("0"))
     unmatched_by: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    pay: dict[tuple[int, str], list] = defaultdict(list)
     for t in txs:
         if t.kind in ("vyrazeno", "naklad"):
             continue  # vyřazené z přehledu a náklady nejsou příjem
@@ -2414,9 +2445,11 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             unmatched_by[t.period] += t.amount
         else:
             received[(t.flat_id, t.period)] += t.amount
-
+            pay[(t.flat_id, t.period)].append({"amount": float(t.amount), "date": t.date.isoformat(), "src": "výpis"})
     for mp in db.scalars(select(m.ManualPayment)).all():
-        received[(mp.flat_id, mp.on_date.strftime("%Y-%m"))] += mp.amount
+        per = mp.on_date.strftime("%Y-%m")
+        received[(mp.flat_id, per)] += mp.amount
+        pay[(mp.flat_id, per)].append({"amount": float(mp.amount), "date": mp.on_date.isoformat(), "src": "ručně"})
 
     out = []
     for p in periods:
@@ -2439,6 +2472,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             rows.append({
                 "flat_id": f.id, "addr": f.addr, "tenant": f.tenant_name, "email": f.tenant_email,
                 "expected": float(e), "received": float(r),
+                "payments": sorted(pay.get((f.id, p), []), key=lambda x: x["date"]),
                 "missing": float(max(e - r, Decimal("0"))), "status": st,
             })
             exp_total += e
@@ -2448,7 +2482,10 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             "unmatched": float(unmatched_by.get(p, Decimal("0"))), "rows": rows,
         })
 
-    unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos"), key=lambda t: t.date, reverse=True)
+    unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level != "oranzova"),
+                       key=lambda t: t.date, reverse=True)
+    suggested = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level == "oranzova"),
+                       key=lambda t: t.date, reverse=True)
     addr_of = {f.id: f.addr for f in flats}
     shown = set(periods)
     manual = sorted((mp for mp in db.scalars(select(m.ManualPayment)).all()
@@ -2457,6 +2494,12 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
                       key=lambda t: t.date, reverse=True)
     return {
         "months": out,
+        "suggested": [
+            {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
+             "counterparty": t.counterparty, "note": t.note, "period": t.period,
+             "suggest_flat_id": t.suggest_flat_id, "suggest_addr": addr_of.get(t.suggest_flat_id, "?")}
+            for t in suggested[:200]
+        ],
         "unmatched": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
              "counterparty": t.counterparty, "note": t.note, "period": t.period}

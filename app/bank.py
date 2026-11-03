@@ -173,25 +173,33 @@ def _surname(flat) -> str:
     return parts[-1] if parts and len(parts[-1]) >= 4 else ""
 
 
-def auto_match(tx: dict, period: str, flats, aliases) -> tuple[int | None, str]:
-    """Najde byt pro platbu. Pořadí: variabilní symbol, dřív potvrzený plátce, jednoznačná částka, příjmení."""
-    vs = tx["vs"]
-    cp = normalize(tx["counterparty"])
-    if not vs:
-        return None, "none"  # bez VS (složenka, hotovost) se přiřazuje ručně, aby se nic nespárovalo špatně
+def suggest(amount, vs: str, counterparty: str, period: str, flats, aliases) -> tuple[int | None, str]:
+    """Návrh bytu pro platbu. 'zelena' = sedí VS nebo částka i jméno (přiřadí se), 'oranzova' = jen částka
+    nebo známý plátce (čeká na potvrzení), '' = ručně."""
+    vs = vs or ""
+    cp = normalize(counterparty)
     if vs:
         for al in aliases:
             if al.alias == f"vs:{vs}":
-                return al.flat_id, "auto-vs"
+                return al.flat_id, "zelena"
+    first, last = month_bounds(period)
+    amt = Decimal(str(amount))
+    named = None
     if cp:
         for al in aliases:
             if al.alias == f"cp:{cp}"[:200]:
-                return al.flat_id, "auto-plátce"
-    first, last = month_bounds(period)
-    cands = [f.id for f in flats if (e := expected_for(f, first, last)) > 0 and e == tx["amount"]]
-    if len(cands) == 1:
-        return cands[0], "auto-částka"
-    hits = [f.id for f in flats if _surname(f) and _contains(_surname(f), cp)]
-    if len(hits) == 1:
-        return hits[0], "auto-jméno"
-    return None, "none"
+                named = al.flat_id
+                break
+        if named is None:
+            hits = [f.id for f in flats if _surname(f) and _contains(_surname(f), cp)]
+            if len(hits) == 1:
+                named = hits[0]
+    if named is not None:
+        f = next((x for x in flats if x.id == named), None)
+        if f is not None and expected_for(f, first, last) == amt:
+            return named, "zelena"
+        return named, "oranzova"
+    same = [f.id for f in flats if (e := expected_for(f, first, last)) > 0 and e == amt]
+    if len(same) == 1:
+        return same[0], "oranzova"
+    return None, ""

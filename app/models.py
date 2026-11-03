@@ -185,6 +185,8 @@ class BankTx(Base):
     flat_id: Mapped[int | None] = mapped_column(ForeignKey("flats.id", ondelete="SET NULL"), nullable=True, index=True)
     match: Mapped[str] = mapped_column(String(20), default="none")  # auto-vs, auto-částka, auto-jméno, ručně, none
     kind: Mapped[str] = mapped_column(String(20), default="vynos")  # vynos | naklad | vyrazeno (z přehledu)
+    suggest_flat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # navržený byt (oranžová)
+    suggest_level: Mapped[str] = mapped_column(String(12), default="")  # oranzova | ''
 
 
 class Listing(Base):
