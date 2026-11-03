@@ -213,8 +213,7 @@ def suggest(amount, vs: str, counterparty: str, note: str, period: str, flats, a
         return any(al.flat_id == f.id and ((vs and al.alias == f"vs:{vs}") or (cp and al.alias == f"cp:{cp}"[:200]))
                    for al in aliases)
 
-    cands = same if len(same) == 1 else [f for f in same if named(f) or known(f)]
-    if len(cands) != 1:
+    if len(same) != 1:  # víc bytů se stejnou částkou: nerozhodujeme, nechte to na ručním přiřazení
         return None, ""
-    f = cands[0]
+    f = same[0]
     return f.id, ("zelena" if named(f) or known(f) else "oranzova")

@@ -2582,6 +2582,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             "unmatched": float(unmatched_by.get(p, Decimal("0"))), "rows": rows,
         })
 
+    addr_of = {f.id: f.addr for f in flats}
     sb: dict[int, dict] = {}
     for se in db.scalars(select(m.SettlementEntry).order_by(m.SettlementEntry.on_date)).all():
         d = sb.setdefault(se.flat_id, {"svj": Decimal("0"), "najemnik": Decimal("0"), "entries": []})
@@ -2595,7 +2596,6 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
                        key=lambda t: t.date, reverse=True)
     suggested = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level == "oranzova"),
                        key=lambda t: t.date, reverse=True)
-    addr_of = {f.id: f.addr for f in flats}
     shown = set(periods)
     manual = sorted((mp for mp in db.scalars(select(m.ManualPayment)).all()
                      if mp.on_date.strftime("%Y-%m") in shown), key=lambda mp: mp.on_date, reverse=True)
