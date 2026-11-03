@@ -242,3 +242,26 @@ def suggest(amount, vs: str, counterparty: str, note: str, period: str, flats, a
         return None, ""
     f = same[0]
     return f.id, ("zelena" if named(f) or known(f) else "oranzova")
+
+
+# Druh odchozí platby podle protistrany a poznámky (první shoda vyhrává)
+CATEGORY_WORDS = [
+    ("Internet", ("internet", "o2", "mobile", "vodafone", "starnet", "uptime")),
+    ("Elektřina", ("elektr", "cez", "eon", "distribuce")),
+    ("Plyn", ("plyn", "ppc")),
+    ("Pojištění", ("pojist", "kooperativ", "allianz", "generali", "uniqa")),
+    ("Voda", ("vodarn", "vodne", "stocne", "vodovod", "vak")),
+    ("Správa", ("sprava",)),
+]
+
+
+def categorize(counterparty: str, note: str, is_svj: bool) -> str:
+    if is_svj:
+        return "SVJ"
+    toks = normalize(f"{counterparty} {note}").split()
+    if any(t.startswith(("spolecenstv", "svj")) for t in toks):
+        return "SVJ"
+    for name, words in CATEGORY_WORDS:
+        if any(t.startswith(w) for t in toks for w in words):
+            return name
+    return "Ostatní"

@@ -190,6 +190,7 @@ class BankTx(Base):
     suggest_level: Mapped[str] = mapped_column(String(12), default="")  # oranzova | ''
     party: Mapped[str] = mapped_column(String(10), default="")  # u odchozí platby: svj | najemnik
     suggest_party: Mapped[str] = mapped_column(String(10), default="")
+    category: Mapped[str] = mapped_column(String(30), default="")  # druh odchozí platby: Internet, Elektřina, SVJ...
     counter_account: Mapped[str] = mapped_column(String(40), default="")  # číslo účtu protistrany (u SVJ rozhoduje dům)
 
 

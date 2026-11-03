@@ -292,7 +292,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.62</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.63</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -929,7 +929,7 @@ function flatDetail(){
  ${chartCard}
  ${flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt)}
 ${svjDocBox(f)}
- ${expCard(f)}
+ ${expCard(f)}${ledgerCard(f)}
   ${years(f).length?`<div class="chips">${years(f).map(v=>`<button class="chip ${v===V.year?'on':''}" onclick="V.year=${v};render()">${v}</button>`).join('')}</div>`:''}
  ${y?yearCard(f,V.year,y):'<div class="card mut">Za tento rok zatím nemáte žádný dokument.</div>'}
  ${ph.html?`<details class="histBox" style="margin-top:22px"><summary style="cursor:pointer;font-weight:600;color:var(--ink)">Historie změn předpisu (rozbalit)</summary>${ph.html}</details>`:''}
@@ -1327,6 +1327,27 @@ function kauceEdit(lid){
  modal(`<div class="sheetHead"><h2>Kauce</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
   <label>Kauce (Kč)</label><input id="kv" inputmode="numeric" value="${l?l.kauce:0}">
   <div class="btns"><button class="btn" onclick="kauceSave(${lid})">Uložit</button></div>`);
+}
+function ledgerCard(f){
+ const y=new Date().getFullYear();
+ const yrs=[y,y-1,y-2].map(v=>`<option value="${v}">${v}</option>`).join('');
+ setTimeout(()=>ledgerLoad(f.id),0);
+ return `<div class="card" style="margin-top:12px"><h3>Přehled po měsících</h3><div class="btns" style="align-items:center"><span class="small mut">Rok</span><select id="ledY" onchange="ledgerLoad(${f.id})" style="width:auto">${yrs}</select></div><div id="ledBody" class="small mut">Načítám…</div></div>`;
+}
+async function ledgerLoad(fid){
+ const body=document.getElementById('ledBody');if(!body)return;
+ const y=document.getElementById('ledY')?.value||new Date().getFullYear();
+ try{
+  const L=await api(`/flats/${fid}/ledger?year=${y}`);
+  body.innerHTML=L.months.map(mo=>{
+   const inc=mo.income.map(x=>`<div class="row small"><span>${fd(x.date)} · ${x.src}${x.counterparty?' · '+esc(x.counterparty):''}</span><b>${kc(x.amount)}</b></div>`).join('')||'<div class="small mut">Nic nepřišlo.</div>';
+   const out=mo.outgoing.map(x=>`<div class="row small"><span>${fd(x.date)} · ${esc(x.category)} · ${x.party==='svj'?'SVJ':(x.party==='najemnik'?'nájemník':'bez určení')}${x.counterparty?' · '+esc(x.counterparty):''}</span><b>${kc(x.amount)}</b></div>`).join('')||'<div class="small mut">Nic nezaplaceno.</div>';
+   const cats=Object.entries(mo.by_category).map(([k,v])=>`${esc(k)} ${kc(v)}`).join(' · ');
+   return `<details class="card" style="margin-top:6px"><summary><b>${monthLabel(mo.period)}</b> · přijato ${kc(mo.received)} · zaplaceno ${kc(mo.paid)} · <span class="${mo.balance<0?'warnTxt':''}">bilance ${kc(mo.balance)}</span></summary>
+    <div class="small mut" style="margin:6px 0">Předpis nájem + zálohy ${kc(mo.expected)} · předpis SVJ ${kc(mo.svj_expected)}</div>
+    <h4>Přijato</h4>${inc}<h4>Zaplaceno</h4>${out}${cats?`<div class="small" style="margin-top:6px">Podle druhu: ${cats}</div>`:''}</details>`;
+  }).join('');
+ }catch(e){body.textContent=e.message}
 }
 function svjAccEdit(fid){
  const f=S.flats.find(q=>q.id===fid);

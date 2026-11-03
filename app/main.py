@@ -108,6 +108,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_party VARCHAR(10) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS counter_account VARCHAR(40) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS svj_account VARCHAR(40) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS category VARCHAR(30) NOT NULL DEFAULT ''"))
         for fid, faddr, facc in conn.execute(text("SELECT id, addr, svj_account FROM flats")).all():
             if facc:
                 continue
@@ -2206,6 +2207,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     aliases = db.scalars(select(m.FlatAlias)).all()
     addr_of = {f.id: f.addr for f in flats}
     saldo = _saldo_map(db)
+    svj_accounts = {f.svj_account for f in flats if f.svj_account}
     seen = set(db.scalars(select(m.BankTx.key)))
     counts: dict[str, int] = {}
     lcounts: dict[str, int] = {}
@@ -2236,6 +2238,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
             db.add(m.BankTx(
                 key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
                 counterparty=r["counterparty"][:200], note=r["note"], period=period, kind="vydaj",
+                category=bank.categorize(r["counterparty"], r["note"], r.get("account", "") in svj_accounts),
                 counter_account=r.get("account", "")[:40],
                 flat_id=ofid if olevel == "zelena" else None, party=oparty if olevel == "zelena" else "",
                 match=olevel or "none",
@@ -2535,6 +2538,37 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.delete(e)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/flats/{flat_id}/ledger")
+def flat_ledger(flat_id: int, year: int | None = None, db: Session = Depends(get_db)):
+    """Přehled bytu po měsících: co přišlo (rozepsáno po platbách) a co se zaplatilo (rozepsáno po druzích)."""
+    f = get_flat(db, flat_id)
+    y = year or date.today().year
+    txs = db.scalars(select(m.BankTx).where(m.BankTx.flat_id == f.id, m.BankTx.period.like(f"{y}-%"))).all()
+    mans = db.scalars(select(m.ManualPayment).where(m.ManualPayment.flat_id == f.id)).all()
+    svj_map = stl.svj_predpis_months(f, y)
+    months = []
+    for mo in range(1, 13):
+        per = f"{y}-{mo:02d}"
+        first, last = bank.month_bounds(per)
+        income = [{"date": t.date.isoformat(), "amount": float(t.amount), "counterparty": t.counterparty,
+                   "src": "výpis"} for t in txs if t.period == per and t.kind == "vynos"]
+        income += [{"date": p_.on_date.isoformat(), "amount": float(p_.amount), "counterparty": p_.note,
+                    "src": "ručně"} for p_ in mans if p_.on_date.strftime("%Y-%m") == per]
+        outgoing = [{"date": t.date.isoformat(), "amount": float(t.amount), "category": t.category or "Ostatní",
+                     "party": t.party, "counterparty": t.counterparty}
+                    for t in txs if t.period == per and t.kind == "vydaj"]
+        by_cat: dict[str, float] = defaultdict(float)
+        for o in outgoing:
+            by_cat[o["category"]] += o["amount"]
+        received = sum(x["amount"] for x in income)
+        paid = sum(o["amount"] for o in outgoing)
+        months.append({"period": per, "expected": float(bank.expected_for(f, first, last)),
+                       "svj_expected": float(svj_map.get(mo, Decimal("0"))), "received": received, "paid": paid,
+                       "balance": received - paid, "income": income, "outgoing": outgoing,
+                       "by_category": dict(by_cat)})
+    return {"year": y, "months": months}
 
 
 @app.put("/flats/{flat_id}/svj-account")
