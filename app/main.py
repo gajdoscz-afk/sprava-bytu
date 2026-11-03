@@ -2150,6 +2150,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     seen = set(db.scalars(select(m.BankTx.key)))
     counts: dict[str, int] = {}
     lcounts: dict[str, int] = {}
+    vcounts: dict[str, int] = {}
     added = skipped = green = orange = 0
     changed: dict[tuple[str, str], Decimal] = defaultdict(lambda: Decimal("0"))  # (byt, měsíc) -> přibylo
     new_rows: list[m.BankTx] = []
@@ -2161,7 +2162,10 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         lbase = bank.tx_key_legacy(r)
         ln = lcounts.get(lbase, 0)
         lcounts[lbase] = ln + 1
-        if key in seen or f"{lbase}#{ln}" in seen:
+        vbase = bank.tx_key_v2(r)
+        vn = vcounts.get(vbase, 0)
+        vcounts[vbase] = vn + 1
+        if key in seen or f"{lbase}#{ln}" in seen or f"{vbase}#{vn}" in seen:
             skipped += 1  # už v systému: nic se nezdvojí
             continue
         seen.add(key)

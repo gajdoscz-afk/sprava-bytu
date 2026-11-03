@@ -131,15 +131,28 @@ def canon_amount(a) -> str:
     return str(Decimal(str(a)).quantize(Decimal("0.01")))
 
 
+def canon_vs(vs: str) -> str:
+    """VS bez úvodních nul: PDF výpis píše '0000000000' tam, kde CSV píše '0' nebo nic."""
+    return (vs or "").strip().lstrip("0")
+
+
 def dup_identity(d: date, amount, vs: str, counterparty: str) -> tuple:
-    """Podle čeho poznáme stejnou platbu. Částka vždy se dvěma desetinnými místy, poznámka se nepočítá
+    """Podle čeho poznáme stejnou platbu. Částka se dvěma desetinnými místy, VS bez nul, poznámka se nepočítá
     (CSV a PDF výpis ji píšou jinak). Bez VS rozhoduje i plátce."""
-    cp = "" if vs else normalize(counterparty)
-    return (d.isoformat(), canon_amount(amount), vs or "", cp)
+    v = canon_vs(vs)
+    cp = "" if v else normalize(counterparty)
+    return (d.isoformat(), canon_amount(amount), v, cp)
 
 
 def tx_key(r: dict) -> str:
     base = "|".join(dup_identity(r["date"], r["amount"], r["vs"], r["counterparty"]))
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+
+def tx_key_v2(r: dict) -> str:
+    """Klíč z importů verze 1.46–1.50 (VS se bralo doslova). Kvůli němu se opakovaný import nezdvojí."""
+    cp = "" if r["vs"] else normalize(r["counterparty"])
+    base = "|".join((r["date"].isoformat(), canon_amount(r["amount"]), r["vs"] or "", cp))
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
@@ -181,7 +194,7 @@ def _street(flat) -> str:
 def suggest(amount, vs: str, counterparty: str, note: str, period: str, flats, aliases) -> tuple[int | None, str]:
     """Návrh bytu pro platbu. 'zelena' = sedí VS, nebo sedí částka a zároveň jméno nebo adresa,
     'oranzova' = jen částka nebo jen jméno/adresa (čeká na potvrzení), '' = ručně."""
-    vs = vs or ""
+    vs = canon_vs(vs)
     text = normalize(f"{counterparty} {note}")
     if vs:
         for al in aliases:
