@@ -292,7 +292,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.59</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.60</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -875,6 +875,7 @@ function flatSummary(f,l,advTotal,svjTotal,incomeM,net,expired,daysTo,lastSt){
     <div class="sumLine">Patro <b>${esc(f.floor)||'—'}</b></div>
     <div class="sumLine">Plocha <b>${f.area_m2?String(f.area_m2).replace('.',',')+' m²':'—'}</b></div>
     <div class="sumLine">PSČ a město <b>${esc(f.zip)||'—'}</b></div>
+    <div class="sumLine">Účet SVJ <button class="link" onclick="svjAccEdit(${f.id})"><b>${esc(f.svj_account)||'+ zadat'}</b></button></div>
     <div class="sumLine">Koupeno <button class="link" onclick="acqForm(${f.id})"><b>${acqWhen}</b></button></div>
     <div class="sumLine">Kupní cena <button class="link" onclick="acqForm(${f.id})"><b>${acqPrice}</b></button></div>
     <div class="sumLine">Tržní cena <button class="link" onclick="valueModal(${f.id})"><b title="${f.market_value_source==='ručně'?'Můj odhad':'Odhad z trhu'}">${f.market_value!=null?kc(f.market_value)+' ('+fd(f.market_value_on)+')':'+ zadat'}</b></button></div>
@@ -1326,6 +1327,17 @@ function kauceEdit(lid){
  modal(`<div class="sheetHead"><h2>Kauce</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
   <label>Kauce (Kč)</label><input id="kv" inputmode="numeric" value="${l?l.kauce:0}">
   <div class="btns"><button class="btn" onclick="kauceSave(${lid})">Uložit</button></div>`);
+}
+function svjAccEdit(fid){
+ const f=S.flats.find(q=>q.id===fid);
+ modal(`<div class="sheetHead"><h2>Účet SVJ</h2><button class="btn sec sm" onclick="closeModal()">Zavřít</button></div>
+  <p class="small mut">Účet domu, na který platíte zálohy. Změna se projeví u všech bytů se stejným účtem.</p>
+  <label>Číslo účtu / kód banky</label><input id="sva" value="${esc(f?f.svj_account:'')}" placeholder="např. 893261389/0800">
+  <div class="btns"><button class="btn" onclick="svjAccSave(${fid})">Uložit</button></div>`);
+}
+async function svjAccSave(fid){
+ try{const r=await api(`/flats/${fid}/svj-account`,'PUT',{account:$('#sva').value.trim()});closeModal();toast(`Účet uložen (bytů: ${r.updated})`);await reload();render()}
+ catch(e){toast(e.message)}
 }
 async function kauceSave(lid){
  const v=+(($('#kv').value||'0').replace(/\s/g,'').replace(',','.'))||0;

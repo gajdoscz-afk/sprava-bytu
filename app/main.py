@@ -107,6 +107,14 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS party VARCHAR(10) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_party VARCHAR(10) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS counter_account VARCHAR(40) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE flats ADD COLUMN IF NOT EXISTS svj_account VARCHAR(40) NOT NULL DEFAULT ''"))
+        for fid, faddr, facc in conn.execute(text("SELECT id, addr, svj_account FROM flats")).all():
+            if facc:
+                continue
+            for kw, acc in bank.SVJ_BUILDINGS.items():
+                if kw in bank.normalize(faddr or ""):
+                    conn.execute(text("UPDATE flats SET svj_account = :a WHERE id = :i"), {"a": acc, "i": fid})
+                    break
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -561,6 +569,7 @@ def flat_out(f: m.Flat) -> dict:
         "addr": f.addr,
         "color": f.color,
         "cmp_links": f.cmp_links or [],
+        "svj_account": f.svj_account or "",
         "dispo": f.dispo,
         "floor": f.floor,
         "zip": f.zip,
@@ -2154,15 +2163,14 @@ def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, fla
     text = bank.normalize(f"{counterparty} {note}")
     vs = bank.canon_vs(vs)
     vs_flats = {al.flat_id for al in aliases if vs and al.alias == f"svj:{vs}"}  # VS platby SVJ už znám
-    kw = bank.SVJ_BUILDINGS.get(account, "")
-    in_bld = {f.id for f in flats if kw and kw in bank.normalize(f.addr)}  # účet SVJ určuje dům
+    in_bld = {f.id for f in flats if account and f.svj_account == account}  # účet SVJ určuje dům
     for f in flats:
         key = bank.svj_vs_key(f.addr)
         if key and vs[:6] == key:
             vs_flats.add(f.id)  # Rozcestí: VS 721 + číslo bytu
     cands = []
     for f in flats:
-        if kw and f.id not in in_bld:
+        if in_bld and f.id not in in_bld:
             continue
         if amt > 0 and stl.svj_predpis_months(f, yr).get(mo, Decimal("0")) == amt:
             cands.append((f, "svj"))
@@ -2361,6 +2369,10 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
     if t.kind == "vydaj":
         if body.party is not None or "party" in body.model_fields_set:
             t.party = body.party if body.party in ("svj", "najemnik") else ""
+        if t.party == "svj" and t.flat_id is not None and t.counter_account:
+            fl = db.get(m.Flat, t.flat_id)
+            if fl is not None and not fl.svj_account:  # první platba na nový účet SVJ ho uloží na kartu bytu
+                fl.svj_account = t.counter_account
         if t.flat_id is None:
             t.party = ""
         elif t.party not in ("svj", "najemnik"):
@@ -2522,6 +2534,24 @@ def delete_expense(expense_id: int, db: Session = Depends(get_db)):
     db.delete(e)
     db.commit()
     return {"ok": True}
+
+
+@app.put("/flats/{flat_id}/svj-account")
+def set_svj_account(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Účet SVJ na kartě bytu. Změní se i u všech bytů, které měly stejný účet (stejný dům)."""
+    f = get_flat(db, flat_id)
+    acc = str(body.get("account") or "").strip()
+    if acc and not re.fullmatch(r"[\d-]{1,20}/\d{4}", acc):
+        raise HTTPException(400, "Účet zadejte ve tvaru číslo/kód banky, např. 893261389/0800")
+    old = f.svj_account
+    n = 0
+    if old and acc != old:
+        for o in db.scalars(select(m.Flat).where(m.Flat.svj_account == old)).all():
+            o.svj_account = acc
+            n += 1
+    f.svj_account = acc
+    db.commit()
+    return {"ok": True, "updated": max(n, 1)}
 
 
 @app.put("/flats/{flat_id}/vs")

@@ -52,12 +52,13 @@ def _parse_amount(s) -> Decimal | None:
         return None
 
 
-# Účty SVJ podle domu (protiúčet v CSV). Byty se pozná podle názvu ulice v adrese.
+# Výchozí účty SVJ podle názvu ulice (naplní se jen u bytů, kde účet ještě není; pak se řídí kartou bytu)
 SVJ_BUILDINGS = {
-    "893261389/0800": "masarykova",
-    "243441142/0300": "revolucni",
-    "224383995/0300": "seifertova",
-    "2819095369/0800": "skolni",
+    "masarykova": "893261389/0800",
+    "revolucni": "243441142/0300",
+    "seifertova": "224383995/0300",
+    "skolni": "2819095369/0800",
+    "rozcesti": "268258846/0600",
 }
 
 
