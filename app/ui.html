@@ -55,6 +55,13 @@ label{display:block;font-size:13px;color:var(--mut);margin-top:10px}
 input,select,textarea{font:inherit;width:100%;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:4px}
 .modal{position:fixed;inset:0;background:rgba(20,30,28,.45);display:none;align-items:flex-end;justify-content:center;z-index:9}
 .modal.show{display:flex}
+.busy{position:fixed;inset:0;background:rgba(10,14,20,.5);display:none;align-items:center;justify-content:center;z-index:60}
+.busy.show{display:flex}
+.busyBox{background:var(--card,#1b2330);color:var(--text,#e8edf3);border-radius:16px;padding:28px 34px;text-align:center;min-width:260px;max-width:86vw;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.spin{width:46px;height:46px;border:4px solid rgba(127,140,160,.3);border-top-color:var(--accent,#4cc38a);border-radius:50%;animation:busySpin .85s linear infinite;margin:0 auto 14px}
+@keyframes busySpin{to{transform:rotate(360deg)}}
+.busyBox b{display:block;font-size:16px;margin-bottom:4px}
+.busyBox span{display:block;font-size:12px}
 .sheet.wide{max-width:min(1500px,97vw);max-height:96vh}
 .docViewer{height:68vh}
 .sheet.wide .docViewer{height:calc(96vh - 190px)}
@@ -285,7 +292,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.51</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.52</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -323,10 +330,25 @@ let V={tab:'home',flat:null,year:null};
 let pending=null;
 
 // ---------- komunikace se serverem ----------
+let _busyN=0;
+function busy(txt,sub){_busyN++;const t=document.getElementById('busyTxt'),u=document.getElementById('busySub');if(t)t.textContent=txt||'Pracuji…';if(u)u.textContent=sub||'To může chvíli trvat, prosím nezavírejte stránku.';document.getElementById('busy').classList.add('show')}
+function busyEnd(){_busyN=Math.max(0,_busyN-1);if(!_busyN)document.getElementById('busy').classList.remove('show')}
+function busyFetch(url,opt,txt){busy(txt);return fetch(url,opt).finally(busyEnd)}
+function busyTxt(path,method){
+ if(/classify/.test(path))return 'Čtu dokument…';
+ if(/settlement/.test(path))return 'Sestavuji vyúčtování…';
+ if(/valuation/.test(path))return 'Počítám odhad hodnoty…';
+ if(/benchmark\/search/.test(path))return 'Hledám nabídky…';
+ if(/benchmark\/refresh|news\/refresh/.test(path))return 'Aktualizuji data z trhu…';
+ if(/zaradit|finish/.test(path))return 'Ukládám dokument…';
+ if(/report/.test(path))return 'Sestavuji report…';
+ return '';
+}
 async function api(path,method='GET',body){
  const opt={method,headers:{}};
  if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
- const r=await fetch(path,opt);
+ const hv=busyTxt(path,method);
+ const r=hv?await busyFetch(path,opt,hv):await fetch(path,opt);
  if(r.status===401)throw new Error('Nejste přihlášen. Obnovte stránku a zadejte jméno a heslo.');
  if(!r.ok){
   let d='Chyba '+r.status;
@@ -1103,7 +1125,7 @@ async function uploadBank(input){
  const box=$('#bk');box.textContent='Čtu výpis…';
  const fd=new FormData();fd.append('file',f);
  try{
-  const r=await fetch('/bank/import',{method:'POST',body:fd});
+  const r=await busyFetch('/bank/import',{method:'POST',body:fd},'Čtu výpis z banky…');
   if(!r.ok){let d='Chyba '+r.status;try{d=(await r.json()).detail||d}catch(e){}throw new Error(d)}
   const j=await r.json();
   const ch=(j.changed||[]).map(c=>`<div class="small">${esc(c.addr)} · ${monthLabel(c.period)}: +${kc(c.amount)}</div>`).join('')||'<div class="small mut">Žádná změna u bytů.</div>';
@@ -1582,7 +1604,7 @@ async function wzReadDoc(input){
  const fd=new FormData();files.forEach(f=>fd.append('files',f));fd.append('flat_id',W.fid);
  progress('Čtu doklad…');
  try{
-  const r=await fetch('/tenants/read-id',{method:'POST',body:fd});
+  const r=await busyFetch('/tenants/read-id',{method:'POST',body:fd},'Čtu doklad…');
   let j=null;try{j=await r.json()}catch(e){}
   if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
   progress('');
@@ -1778,7 +1800,7 @@ function sigBox(){
 async function uploadSignature(input){
  const f=input.files[0];input.value='';if(!f)return;
  const fd=new FormData();fd.append('file',f);
- const res=await fetch('/settings/podpis',{method:'PUT',body:fd});
+ const res=await busyFetch('/settings/podpis',{method:'PUT',body:fd},'Nahrávám podpis…');
  if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}toast(d);return}
  toast('Podpis uložen');
  const img=document.getElementById('sigImg');if(img){img.style.display='';img.src='/settings/podpis?'+Date.now()}
@@ -1849,7 +1871,7 @@ async function prPhoto(input){
  fd.append('file',file);fd.append('meter',c.type);fd.append('room',c.room);fd.append('date_str',P.date);
  progress('Čtu stav měřidla…');
  try{
-  const r=await fetch(`/flats/${P.fid}/meter-photo`,{method:'POST',body:fd});
+  const r=await busyFetch(`/flats/${P.fid}/meter-photo`,{method:'POST',body:fd},'Zpracovávám fotku…');
   let j=null;try{j=await r.json()}catch(e){}
   if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
   progress('');
@@ -2047,7 +2069,7 @@ async function tenantRead(input){
  const fd=new FormData();files.forEach(f=>fd.append('files',f));
  progress('Čtu doklad…');
  try{
-  const r=await fetch('/tenants/read-id',{method:'POST',body:fd});
+  const r=await busyFetch('/tenants/read-id',{method:'POST',body:fd},'Čtu doklad…');
   let j=null;try{j=await r.json()}catch(e){}
   if(!r.ok)throw new Error((j&&j.detail)||('Chyba '+r.status));
   progress('');
@@ -2619,7 +2641,7 @@ async function uploadFiles(all,flatId,groupKey,year){
   progress(`Nahrávám ${imgs.length} stránek jako jeden dokument…`);
   try{
    for(const f of imgs){const fd=new FormData();fd.append('files',await shrink(f).catch(()=>f));if(flatId)fd.append('flat_id',flatId);fd.append('group_key',key);
-    const res=await fetch('/documents',{method:'POST',body:fd});if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}}
+    const res=await busyFetch('/documents',{method:'POST',body:fd},'Nahrávám a čtu dokumenty…');if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}}
    await api(`/document-groups/${key}/finish`,'POST');
    toast(`Dokument vytvořen z ${imgs.length} stránek`);
   }catch(e){toast(e.message)}
@@ -2640,7 +2662,7 @@ async function uploadFiles(all,flatId,groupKey,year){
    if(flatId)fd.append('flat_id',flatId);
    if(groupKey)fd.append('group_key',groupKey);
    if(year)fd.append('year',year);
-   const res=await fetch('/documents',{method:'POST',body:fd});
+   const res=await busyFetch('/documents',{method:'POST',body:fd},'Nahrávám a čtu dokumenty…');
    if(!res.ok){let d='Chyba '+res.status;try{d=(await res.json()).detail||d}catch(e){}throw new Error(d)}
    const got=await res.json().catch(()=>[]);if(Array.isArray(got))created.push(...got);
    ok++;
@@ -2873,5 +2895,6 @@ function toggleTheme(){
  render();
 })();
 </script>
+<div id="busy" class="busy" role="status" aria-live="polite"><div class="busyBox"><div class="spin"></div><b id="busyTxt">Pracuji…</b><span id="busySub" class="mut"></span></div></div>
 </body>
 </html>
