@@ -315,6 +315,23 @@ class ManualPayment(Base):
     note: Mapped[str] = mapped_column(String(200), default="")
 
 
+class SettlementEntry(Base):
+    """Vyúčtování a úhrady SVJ a nájemníků. Samostatně od nájmu: nepočítá se do přijaté částky.
+    amount je se znaménkem: + = dluží nám, − = dlužíme."""
+
+    __tablename__ = "settlement_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flat_id: Mapped[int] = mapped_column(ForeignKey("flats.id", ondelete="CASCADE"), index=True)
+    party: Mapped[str] = mapped_column(String(10))  # svj | najemnik
+    kind: Mapped[str] = mapped_column(String(12))  # vyuctovani | uhrada
+    on_date: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bank_tx_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+
 class FlatExpense(Base):
     """Náklad nebo faktura bytu: ručně zadaná, nebo platba z výpisu označená jako náklad. Základ pro daňové přiznání."""
 

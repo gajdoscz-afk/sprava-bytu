@@ -2259,6 +2259,8 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
     t = db.get(m.BankTx, tx_id)
     if t is None:
         raise HTTPException(404, "Platba nenalezena")
+    if t.kind == "vyuctovani" and "flat_id" in body.model_fields_set and body.flat_id is None:
+        raise HTTPException(400, "Platba je zapsaná ve vyúčtování. Smažte zápis v Ekonomice.")
     if "flat_id" in body.model_fields_set:
         if t.flat_id is not None and t.flat_id != body.flat_id:
             _forget_payer(db, t, t.flat_id)  # oprava: původní byt si už plátce nepamatuje
@@ -2339,6 +2341,56 @@ def delete_manual_payment(payment_id: int, db: Session = Depends(get_db)):
     if p is None:
         raise HTTPException(404, "Platba nenalezena")
     db.delete(p)
+    db.commit()
+    return {"ok": True}
+
+
+SETTLE_PARTIES = ("svj", "najemnik")
+SETTLE_KINDS = ("vyuctovani", "uhrada")
+
+
+@app.post("/flats/{flat_id}/settlement-entries", status_code=201)
+def add_settlement_entry(flat_id: int, body: dict = Body(...), db: Session = Depends(get_db)):
+    """Zápis vyúčtování nebo úhrady SVJ či nájemníka. Částka je se znaménkem (+ dluží nám, − dlužíme)."""
+    f = get_flat(db, flat_id)
+    party, kind = body.get("party"), body.get("kind")
+    if party not in SETTLE_PARTIES or kind not in SETTLE_KINDS:
+        raise HTTPException(400, "Neznámá strana nebo druh zápisu")
+    try:
+        amt = Decimal(str(body.get("amount")))
+        on = date.fromisoformat(str(body.get("on_date") or date.today().isoformat())[:10])
+    except (ValueError, ArithmeticError, TypeError):
+        raise HTTPException(400, "Datum nebo částka nejsou platné")
+    if amt == 0:
+        raise HTTPException(400, "Částka nesmí být nula")
+    year = body.get("year")
+    year = int(year) if str(year or "").isdigit() else None
+    tx = None
+    if body.get("bank_tx_id") is not None:
+        tx = db.get(m.BankTx, int(body["bank_tx_id"]))
+        if tx is None:
+            raise HTTPException(404, "Platba nenalezena")
+        if tx.flat_id is not None or tx.kind != "vynos":
+            raise HTTPException(400, "Platba je už zařazená jinde")
+        tx.flat_id, tx.kind, tx.match = f.id, "vyuctovani", "ručně"
+        tx.suggest_flat_id, tx.suggest_level = None, ""
+    db.add(m.SettlementEntry(flat_id=f.id, party=party, kind=kind, on_date=on, amount=money(amt),
+                             note=str(body.get("note") or "").strip()[:200], year=year,
+                             bank_tx_id=tx.id if tx else None))
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/settlement-entries/{entry_id}")
+def delete_settlement_entry(entry_id: int, db: Session = Depends(get_db)):
+    e = db.get(m.SettlementEntry, entry_id)
+    if e is None:
+        raise HTTPException(404, "Zápis nenalezen")
+    if e.bank_tx_id is not None:
+        tx = db.get(m.BankTx, e.bank_tx_id)
+        if tx is not None:  # platba se vrátí mezi nepřiřazené
+            tx.flat_id, tx.kind, tx.match = None, "vynos", "none"
+    db.delete(e)
     db.commit()
     return {"ok": True}
 
@@ -2442,8 +2494,8 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     pay: dict[tuple[int, str], list] = defaultdict(list)
     sug_by: dict[tuple[int, str], list] = defaultdict(list)  # oranžové návrhy přímo v buňce bytu
     for t in txs:
-        if t.kind in ("vyrazeno", "naklad"):
-            continue  # vyřazené z přehledu a náklady nejsou příjem
+        if t.kind in ("vyrazeno", "naklad", "vyuctovani"):
+            continue  # vyřazené z přehledu, náklady a vyúčtování nejsou nájemné
         if t.flat_id is None:
             unmatched_by[t.period] += t.amount
             if t.kind == "vynos" and t.suggest_level == "oranzova" and t.suggest_flat_id is not None:
@@ -2493,6 +2545,15 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             "unmatched": float(unmatched_by.get(p, Decimal("0"))), "rows": rows,
         })
 
+    sb: dict[int, dict] = {}
+    for se in db.scalars(select(m.SettlementEntry).order_by(m.SettlementEntry.on_date)).all():
+        d = sb.setdefault(se.flat_id, {"svj": Decimal("0"), "najemnik": Decimal("0"), "entries": []})
+        d[se.party] += se.amount
+        d["entries"].append({"id": se.id, "party": se.party, "kind": se.kind, "on_date": se.on_date.isoformat(),
+                             "amount": float(se.amount), "note": se.note, "bank": se.bank_tx_id is not None})
+    settlements = sorted(({"flat_id": fid, "addr": addr_of.get(fid, "?"), "svj": float(d["svj"]),
+                           "najemnik": float(d["najemnik"]), "entries": list(reversed(d["entries"]))}
+                          for fid, d in sb.items()), key=lambda x: x["addr"])
     unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level != "oranzova"),
                        key=lambda t: t.date, reverse=True)
     suggested = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level == "oranzova"),
@@ -2505,6 +2566,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
                       key=lambda t: t.date, reverse=True)
     return {
         "months": out,
+        "settlements": settlements,
         "suggested": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
              "counterparty": t.counterparty, "note": t.note, "period": t.period,

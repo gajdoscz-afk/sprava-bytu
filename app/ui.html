@@ -292,7 +292,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.52</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.53</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1039,7 +1039,10 @@ function econHome(){
   return `<div class="card"><h3>${monthLabel(x.period)}</h3>${rs.map(r=>`<div class="resRow"><div><b>${esc(r.tenant||r.addr)}</b><div class="small mut">${esc(r.addr)} · ${STAT[r.status]}: chybí ${kc(r.missing)}</div></div><button class="btn sm" onclick="reminderDraft(${r.flat_id},'${x.period}',${r.missing})">Připravit upomínku</button></div>`).join('')}</div>`;
  }).join('');
  const unm=e.unmatched.length?e.unmatched.map(t=>`<div class="card txMiss"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}${t.note?' · '+esc(t.note):''}</div></div></div>
-  <div class="grid2"><div><label>Byt</label><select id="ut${t.id}">${flatOpts(null)}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="assignTx(${t.id},false,'vynos')">Jako výnos</button><button class="btn sm sec" onclick="assignTx(${t.id},false,'naklad')">Jako náklad</button><button class="btn sec sm warnTxt" onclick="txDismiss(${t.id})">✕ Vyřadit</button></div></div></div>`).join(''):'<div class="card mut">Všechny platby z výpisů jsou přiřazené.</div>';
+  <div class="grid2"><div><label>Byt</label><select id="ut${t.id}">${flatOpts(null)}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="assignTx(${t.id},false,'vynos')">Jako výnos</button><button class="btn sec sm" onclick="settleBank(${t.id},'svj')">Od SVJ (vyúčtování)</button><button class="btn sec sm" onclick="settleBank(${t.id},'najemnik')">Od nájemníka (doplatek)</button><button class="btn sm sec" onclick="assignTx(${t.id},false,'naklad')">Jako náklad</button><button class="btn sec sm warnTxt" onclick="txDismiss(${t.id})">✕ Vyřadit</button></div></div></div>`).join(''):'<div class="card mut">Všechny platby z výpisů jsou přiřazené.</div>';
+ const setB=(e.settlements||[]).map(s=>`<div class="card"><div class="row"><div><b>${esc(s.addr)}</b></div><button class="btn sec sm" onclick="settleForm(${s.flat_id})">+ Zapsat</button></div>
+  <div class="grid2"><div>SVJ: ${balTxt(s.svj,'SVJ')}</div><div>Nájemník: ${balTxt(s.najemnik,'nájemník')}</div></div>
+  ${s.entries.map(q=>`<div class="row small" style="margin-top:4px"><span>${fd(q.on_date)} · ${q.party==='svj'?'SVJ':'nájemník'} · ${q.kind==='vyuctovani'?'vyúčtování':'úhrada'} · <b>${q.amount>0?'+':''}${kc(q.amount)}</b>${q.note?' · '+esc(q.note):''}${q.bank?' · z výpisu':''}</span><button class="btn sec sm" onclick="settleDel(${q.id})">×</button></div>`).join('')}</div>`).join('')||'<div class="card mut">Zatím žádná vyúčtování ani úhrady.</div>';
  const asg=(e.assigned||[]).map(t=>`<div class="card txOk"><div class="row"><div><b>${kc(t.amount)}</b> · ${fd(t.date)}<div class="small mut">${esc(t.counterparty||'neznámý plátce')}${t.vs?' · VS '+esc(t.vs):''}</div><div class="small">Přiřazeno: <b>${esc(t.flat_addr)}</b></div></div></div>
   <div class="grid2"><div><label>Opravit byt</label><select id="ut${t.id}">${flatOpts(t.flat_id)}</select></div><div style="align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="assignTx(${t.id})">Uložit</button><button class="btn sec sm" onclick="assignTx(${t.id},true)">Odpojit</button></div></div></div>`).join('');
  return `<div class="row"><h1>Ekonomika</h1>
@@ -1057,6 +1060,9 @@ function econHome(){
   ${line('Nepřiřazeno z výpisu',x=>kc(x.unmatched))}
  </tbody></table></div>
  <h2>Kdo za který měsíc nezaplatil</h2>${debts||'<div class="card mut">Za předchozí měsíce nic nechybí.</div>'}
+ <h2>Vyúčtování: přeplatky a nedoplatky</h2>
+ <p class="mut small">Odděleno od nájmu. Kladné saldo = SVJ nebo nájemník nám dluží, záporné = dlužíme my. Do přijatého nájmu se nepočítá.</p>
+ ${setB}
  <h2>Ruční zápis plateb</h2>
  <p class="mut small">Pro platby bez VS (složenky, hotovost, jiní plátci). Každou platbu zapište zvlášť se dnem připsání na účet; v měsíci se sečte do přijaté částky. Odpovídající řádek z výpisu v seznamu níže vyřaďte tlačítkem „Vyřadit“, aby se nepočítal dvakrát.</p>
  <div class="card"><div class="grid2"><div><label>Byt</label><select id="mpF">${flatOpts(null)}</select></div><div><label>Den připsání</label><input type="date" id="mpD" value="${TODAY_ISO()}"></div></div>
@@ -1095,6 +1101,45 @@ async function sugMove(id,fid,p){
 }
 async function sugDrop(id,fid,p){
  try{await api(`/bank/${id}`,'PATCH',{kind:'vyrazeno'});await payReopen(fid,p)}catch(e){toast(e.message)}
+}
+const SETOPTS={
+ svj_pre:{p:'svj',k:'vyuctovani',s:1,t:'SVJ – přeplatek z vyúčtování (SVJ nám vrací)'},
+ svj_ned:{p:'svj',k:'vyuctovani',s:-1,t:'SVJ – nedoplatek z vyúčtování (doplácíme SVJ)'},
+ naj_ned:{p:'najemnik',k:'vyuctovani',s:1,t:'Nájemník – nedoplatek z vyúčtování (doplácí nám)'},
+ naj_pre:{p:'najemnik',k:'vyuctovani',s:-1,t:'Nájemník – přeplatek z vyúčtování (vracíme)'},
+ svj_uhr:{p:'svj',k:'uhrada',s:-1,t:'Přijato od SVJ (vrátila přeplatek)'},
+ svj_zapl:{p:'svj',k:'uhrada',s:1,t:'Zaplaceno SVJ (doplatek nedoplatku)'},
+ naj_uhr:{p:'najemnik',k:'uhrada',s:-1,t:'Přijato od nájemníka (doplatek)'},
+ naj_vrac:{p:'najemnik',k:'uhrada',s:1,t:'Vráceno nájemníkovi (přeplatek)'}};
+function balTxt(v,who){
+ if(!v)return '<span class="mut">vyrovnáno</span>';
+ return v>0?`<b style="color:var(--ok,#3ecf8e)">${kc(v)}</b> <span class="small mut">${who} dluží nám</span>`:`<b style="color:var(--warn,#e0a040)">${kc(-v)}</b> <span class="small mut">dlužíme ${who}</span>`;
+}
+function settleForm(fid){
+ const f=S.flats.find(q=>q.id===fid);
+ const opts=Object.entries(SETOPTS).map(([k,o])=>`<option value="${k}">${o.t}</option>`).join('');
+ modal(`<h2>${esc(f?f.addr:'')}</h2><p class="small mut">Vyberte, co se stalo. Částka je vždy kladná, znaménko doplní systém.</p>
+  <label>Druh</label><select id="stK">${opts}</select>
+  <div class="grid2"><div><label>Datum</label><input type="date" id="stD" value="${TODAY_ISO()}"></div><div><label>Částka (Kč)</label><input type="number" id="stA" min="0" step="1"></div></div>
+  <div class="grid2"><div><label>Rok vyúčtování</label><input type="number" id="stY" placeholder="např. 2025"></div><div><label>Poznámka</label><input id="stN"></div></div>
+  <div class="btns" style="margin-top:12px"><button class="btn" onclick="settleSave(${fid})">Uložit</button><button class="btn sec" onclick="closeModal()">Zrušit</button></div>`);
+}
+async function settleSave(fid){
+ const o=SETOPTS[$('#stK').value];const a=+$('#stA').value;
+ if(!a){toast('Zadejte částku');return}
+ try{await api(`/flats/${fid}/settlement-entries`,'POST',{party:o.p,kind:o.k,amount:o.s*a,on_date:$('#stD').value,year:$('#stY').value||null,note:$('#stN').value});closeModal();toast('Zapsáno');await reload();render()}
+ catch(e){toast(e.message)}
+}
+async function settleBank(id,party){
+ const v=$('#ut'+id).value;if(!v){toast('Nejdřív vyberte byt');return}
+ const t=S.econ.unmatched.find(q=>q.id===id);if(!t){toast('Platba nenalezena');return}
+ const kind='uhrada',sign=-1;
+ try{await api(`/flats/${v}/settlement-entries`,'POST',{party,kind,amount:sign*t.amount,on_date:t.date,bank_tx_id:id});toast('Zapsáno do vyúčtování');await reload();render()}
+ catch(e){toast(e.message)}
+}
+async function settleDel(id){
+ if(!confirm('Smazat tento zápis vyúčtování?'))return;
+ try{await api(`/settlement-entries/${id}`,'DELETE');await reload();render()}catch(e){toast(e.message)}
 }
 async function manualAdd(){
  const fid=$('#mpF').value,d=$('#mpD').value,a=$('#mpA').value;
