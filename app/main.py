@@ -2144,26 +2144,30 @@ def _saldo_map(db: Session) -> dict:
     return out
 
 
-def _suggest_out(amount, counterparty: str, note: str, period: str, flats, saldo) -> tuple:
+def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, flats, saldo, aliases) -> tuple:
     """Návrh pro odchozí platbu: jen podle částky. Sedí-li přesně měsíční záloha SVJ jednoho bytu,
     nebo přesně dlužný přeplatek jednoho nájemníka. Zelená jen když sedí i text (SVJ / jméno / adresa)."""
     amt = Decimal(str(amount))
     yr, mo = int(period[:4]), int(period[5:7])
     text = bank.normalize(f"{counterparty} {note}")
+    vs = bank.canon_vs(vs)
+    vs_flats = {al.flat_id for al in aliases if vs and al.alias == f"svj:{vs}"}  # VS platby SVJ už znám
     cands = []
     for f in flats:
         if amt > 0 and stl.svj_predpis_months(f, yr).get(mo, Decimal("0")) == amt:
             cands.append((f, "svj"))
         if amt > 0 and -saldo.get(f.id, {}).get("najemnik", Decimal("0")) == amt:
             cands.append((f, "najemnik"))
-    if len(cands) != 1:
-        return None, "", ""
-    f, party = cands[0]
-    if party == "svj":
-        hint = bank._contains("svj", text) or bank._contains("spolecenstvi", text)
-    else:
-        hint = bank._contains(bank._surname(f), text) or bank._contains(bank._street(f), text)
-    return f.id, party, ("zelena" if hint else "oranzova")
+    if len(cands) == 1:
+        f, party = cands[0]
+        if party == "svj":
+            hint = f.id in vs_flats or bank._contains("svj", text) or bank._contains("spolecenstvi", text)
+        else:
+            hint = bank._contains(bank._surname(f), text) or bank._contains(bank._street(f), text)
+        return f.id, party, ("zelena" if hint else "oranzova")
+    if not cands and len(vs_flats) == 1:  # částka nesedí s předpisem, ale VS patří jednoznačně jednomu bytu
+        return next(iter(vs_flats)), "svj", "oranzova"
+    return None, "", ""
 
 
 @app.post("/bank/import", status_code=201)
@@ -2209,7 +2213,8 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         seen.add(key)
         period = r["date"].strftime("%Y-%m")
         if is_out:
-            ofid, oparty, olevel = _suggest_out(r["amount"], r["counterparty"], r["note"], period, flats, saldo)
+            ofid, oparty, olevel = _suggest_out(r["amount"], r["vs"], r["counterparty"], r["note"], period, flats,
+                                                saldo, aliases)
             db.add(m.BankTx(
                 key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
                 counterparty=r["counterparty"][:200], note=r["note"], period=period, kind="vydaj",
@@ -2349,6 +2354,10 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
             t.party = ""
         elif t.party not in ("svj", "najemnik"):
             raise HTTPException(400, "U odchozí platby zvolte, zda jde na SVJ, nebo nájemníkovi")
+        elif t.party == "svj" and t.vs:  # VS platby na SVJ si zapamatuje byt, příště se najde samo
+            alias = f"svj:{t.vs}"[:200]
+            if db.scalar(select(m.FlatAlias).where(m.FlatAlias.flat_id == t.flat_id, m.FlatAlias.alias == alias)) is None:
+                db.add(m.FlatAlias(flat_id=t.flat_id, alias=alias))
     _sync_tx_expense(db, t)
     db.commit()
     return {"ok": True}

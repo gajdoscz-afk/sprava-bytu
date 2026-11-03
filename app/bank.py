@@ -88,7 +88,8 @@ def parse_csv(data: bytes) -> list[dict]:
     ci_amt = _col(hdr, "částk", "castk", "amount")
     ci_vs = _col(hdr, "variabil", "vs")
     ci_cp = _col(hdr, "protiúčet", "protiucet", "protistrana", "název", "nazev", "jméno", "jmeno", "plátce", "platce")
-    ci_note = _col(hdr, "zpráva", "zprava", "poznámka", "poznamka", "popis")
+    ci_note = _col(hdr, "vlastní poznámka", "vlastni poznamka", "poznámka", "poznamka", "popis")
+    ci_note2 = _col(hdr, "zpráva", "zprava")  # u CSOB je zpráva pro příjemce ve vlastním sloupci
     if ci_date is None:
         raise ValueError("V souboru nenajdu sloupec s datem.")
 
@@ -101,7 +102,7 @@ def parse_csv(data: bytes) -> list[dict]:
         if d is None or a is None or a == 0:
             continue  # řádky bez data nebo bez částky nás nezajímají
         out.append({"date": d, "amount": abs(a), "dir": "out" if a < 0 else "in", "vs": digits(g(ci_vs)),
-                    "counterparty": g(ci_cp), "note": g(ci_note)})
+                    "counterparty": g(ci_cp), "note": " ".join(x for x in (g(ci_note), g(ci_note2)) if x)})
     return out
 
 
