@@ -2189,14 +2189,19 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     db.flush()
     new_ids = {t.id for t in new_rows}
     # dříve nepřiřazené platby znovu zvážíme (přibyl byt nebo se změnil předpis)
-    for t in db.scalars(select(m.BankTx).where(m.BankTx.flat_id.is_(None), m.BankTx.kind == "vynos")).all():
+    for t in db.scalars(select(m.BankTx).where(
+            (m.BankTx.flat_id.is_(None)) | (m.BankTx.match == "zelena"), m.BankTx.kind == "vynos")).all():
         if t.id in new_ids:
             continue
         fid, level = bank.suggest(t.amount, t.vs, t.counterparty, t.note, t.period, flats, aliases)
+        was = t.flat_id
+        if was is not None and (level != "zelena" or fid != was):
+            t.flat_id, t.match = None, "none"  # dřívější automatické přiřazení už částce neodpovídá
         if level == "zelena":
-            t.flat_id, t.match = fid, "zelena"
+            if t.flat_id is None:
+                t.flat_id, t.match = fid, "zelena"
+                changed[(addr_of[fid], t.period)] += t.amount
             t.suggest_flat_id, t.suggest_level = None, ""
-            changed[(addr_of[fid], t.period)] += t.amount
         else:
             t.suggest_flat_id = fid if level == "oranzova" else None
             t.suggest_level = "oranzova" if level == "oranzova" else ""
@@ -2317,6 +2322,38 @@ def add_expense(flat_id: int, body: dict = Body(...), db: Session = Depends(get_
     db.add(m.FlatExpense(flat_id=f.id, on_date=on, name=name, amount=money(amt), kind=kind))
     db.commit()
     return {"ok": True}
+
+
+@app.get("/bank/{tx_id}/context")
+def bank_context(tx_id: int, db: Session = Depends(get_db)):
+    """Náhled k platbě: byty se stejnou částkou předpisu, shody jména či adresy a předchozí platby od stejného plátce."""
+    t = db.get(m.BankTx, tx_id)
+    if t is None:
+        raise HTTPException(404, "Platba nenalezena")
+    flats = db.scalars(select(m.Flat)).all()
+    addr_of = {f.id: f.addr for f in flats}
+    first, last = bank.month_bounds(t.period)
+    text = bank.normalize(f"{t.counterparty} {t.note}")
+    same, hits = [], []
+    for f in flats:
+        e = bank.expected_for(f, first, last)
+        if e > 0 and e == t.amount:
+            same.append({"flat_id": f.id, "addr": f.addr, "tenant": f.tenant_name, "expected": float(e)})
+        sn, st = bank._surname(f), bank._street(f)
+        if (sn and bank._contains(sn, text)) or (st and bank._contains(st, text)):
+            hits.append({"flat_id": f.id, "addr": f.addr})
+    cp = bank.normalize(t.counterparty)
+    hist = []
+    if cp:
+        for o in db.scalars(select(m.BankTx).where(m.BankTx.id != t.id).order_by(m.BankTx.date.desc())).all():
+            if bank.normalize(o.counterparty) == cp:
+                hist.append({"date": o.date.isoformat(), "amount": float(o.amount), "kind": o.kind,
+                             "flat_addr": addr_of.get(o.flat_id)})
+                if len(hist) >= 12:
+                    break
+    return {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "period": t.period, "vs": t.vs,
+            "counterparty": t.counterparty, "note": t.note, "flat_id": t.flat_id, "kind": t.kind,
+            "same_amount": same, "name_hits": hits, "history": hist}
 
 
 @app.post("/flats/{flat_id}/manual-payments", status_code=201)

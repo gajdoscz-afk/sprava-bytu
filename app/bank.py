@@ -187,39 +187,34 @@ def _surname(flat) -> str:
 
 
 def _street(flat) -> str:
+    """Ulice s číslem popisným (např. 'rozcesti 90'), aby se dva byty ve stejné ulici nepletly."""
     parts = normalize(flat.addr).split()
-    return parts[0] if parts and len(parts[0]) >= 5 else ""
+    return " ".join(parts[:2]) if len(parts) >= 2 and len(parts[0]) >= 5 and parts[1].isdigit() else ""
 
 
 def suggest(amount, vs: str, counterparty: str, note: str, period: str, flats, aliases) -> tuple[int | None, str]:
-    """Návrh bytu pro platbu. 'zelena' = sedí VS, nebo sedí částka a zároveň jméno nebo adresa,
-    'oranzova' = jen částka nebo jen jméno/adresa (čeká na potvrzení), '' = ručně."""
+    """Návrh bytu. Rozhoduje částka: musí se rovnat předpisu bytu v daném měsíci. Zelená = částka sedí
+    a zároveň jméno, adresa, VS nebo známý plátce. Oranžová = sedí jen částka u jediného bytu.
+    Jinak nic (ručně)."""
     vs = canon_vs(vs)
     text = normalize(f"{counterparty} {note}")
-    if vs:
-        for al in aliases:
-            if al.alias == f"vs:{vs}":
-                return al.flat_id, "zelena"
+    cp = normalize(counterparty)
     first, last = month_bounds(period)
     amt = Decimal(str(amount))
-    named = None
-    for al in aliases:
-        if text and al.alias == f"cp:{normalize(counterparty)}"[:200] and normalize(counterparty):
-            named = al.flat_id
-            break
-    hits = set()
-    for f in flats:
+    same = [f for f in flats if (e := expected_for(f, first, last)) > 0 and e == amt]
+    if not same:
+        return None, ""
+
+    def named(f) -> bool:
         sn, st = _surname(f), _street(f)
-        if (sn and _contains(sn, text)) or (st and _contains(st, text)):
-            hits.add(f.id)
-    if named is None and len(hits) == 1:
-        named = next(iter(hits))
-    if named is not None:
-        f = next((x for x in flats if x.id == named), None)
-        if f is not None and expected_for(f, first, last) == amt and (named in hits or named is not None):
-            return named, "zelena"
-        return named, "oranzova"
-    same = [f.id for f in flats if (e := expected_for(f, first, last)) > 0 and e == amt]
-    if len(same) == 1:
-        return same[0], "oranzova"
-    return None, ""
+        return bool((sn and _contains(sn, text)) or (st and _contains(st, text)))
+
+    def known(f) -> bool:
+        return any(al.flat_id == f.id and ((vs and al.alias == f"vs:{vs}") or (cp and al.alias == f"cp:{cp}"[:200]))
+                   for al in aliases)
+
+    cands = same if len(same) == 1 else [f for f in same if named(f) or known(f)]
+    if len(cands) != 1:
+        return None, ""
+    f = cands[0]
+    return f.id, ("zelena" if named(f) or known(f) else "oranzova")
