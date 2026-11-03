@@ -104,6 +104,8 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'vynos'"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_flat_id INTEGER"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_level VARCHAR(12) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS party VARCHAR(10) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_party VARCHAR(10) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -2130,6 +2132,40 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
 
 # ---------- výpisy z účtu a ekonomika ----------
 
+def _saldo_map(db: Session) -> dict:
+    """Saldo po bytech: vyúčtování a úhrady SVJ a nájemníků (+ dluží nám, − dlužíme). Odchozí platby SVJ
+    sem nepatří, ty se kontrolují proti předpisu záloh."""
+    out: dict = defaultdict(lambda: {"svj": Decimal("0"), "najemnik": Decimal("0")})
+    for se in db.scalars(select(m.SettlementEntry)).all():
+        out[se.flat_id][se.party] += se.amount
+    for t in db.scalars(select(m.BankTx).where(m.BankTx.kind == "vydaj", m.BankTx.party == "najemnik",
+                                               m.BankTx.flat_id.is_not(None))).all():
+        out[t.flat_id]["najemnik"] += t.amount
+    return out
+
+
+def _suggest_out(amount, counterparty: str, note: str, period: str, flats, saldo) -> tuple:
+    """Návrh pro odchozí platbu: jen podle částky. Sedí-li přesně měsíční záloha SVJ jednoho bytu,
+    nebo přesně dlužný přeplatek jednoho nájemníka. Zelená jen když sedí i text (SVJ / jméno / adresa)."""
+    amt = Decimal(str(amount))
+    yr, mo = int(period[:4]), int(period[5:7])
+    text = bank.normalize(f"{counterparty} {note}")
+    cands = []
+    for f in flats:
+        if amt > 0 and stl.svj_predpis_months(f, yr).get(mo, Decimal("0")) == amt:
+            cands.append((f, "svj"))
+        if amt > 0 and -saldo.get(f.id, {}).get("najemnik", Decimal("0")) == amt:
+            cands.append((f, "najemnik"))
+    if len(cands) != 1:
+        return None, "", ""
+    f, party = cands[0]
+    if party == "svj":
+        hint = bank._contains("svj", text) or bank._contains("spolecenstvi", text)
+    else:
+        hint = bank._contains(bank._surname(f), text) or bank._contains(bank._street(f), text)
+    return f.id, party, ("zelena" if hint else "oranzova")
+
+
 @app.post("/bank/import", status_code=201)
 async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db)):
     data = await file.read()
@@ -2147,6 +2183,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     flats = db.scalars(select(m.Flat)).all()
     aliases = db.scalars(select(m.FlatAlias)).all()
     addr_of = {f.id: f.addr for f in flats}
+    saldo = _saldo_map(db)
     seen = set(db.scalars(select(m.BankTx.key)))
     counts: dict[str, int] = {}
     lcounts: dict[str, int] = {}
@@ -2165,11 +2202,24 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         vbase = bank.tx_key_v2(r)
         vn = vcounts.get(vbase, 0)
         vcounts[vbase] = vn + 1
-        if key in seen or f"{lbase}#{ln}" in seen or f"{vbase}#{vn}" in seen:
+        is_out = r.get("dir") == "out"
+        if key in seen or (not is_out and (f"{lbase}#{ln}" in seen or f"{vbase}#{vn}" in seen)):
             skipped += 1  # už v systému: nic se nezdvojí
             continue
         seen.add(key)
         period = r["date"].strftime("%Y-%m")
+        if is_out:
+            ofid, oparty, olevel = _suggest_out(r["amount"], r["counterparty"], r["note"], period, flats, saldo)
+            db.add(m.BankTx(
+                key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
+                counterparty=r["counterparty"][:200], note=r["note"], period=period, kind="vydaj",
+                flat_id=ofid if olevel == "zelena" else None, party=oparty if olevel == "zelena" else "",
+                match=olevel or "none",
+                suggest_flat_id=ofid if olevel == "oranzova" else None,
+                suggest_party=oparty if olevel == "oranzova" else "",
+                suggest_level="oranzova" if olevel == "oranzova" else ""))
+            added += 1
+            continue
         fid, level = bank.suggest(r["amount"], r["vs"], r["counterparty"], r["note"], period, flats, aliases)
         t = m.BankTx(
             key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
@@ -2218,7 +2268,7 @@ def _dup_groups(db: Session) -> list[list[m.BankTx]]:
 
 
 def dup_identity_tx(t: m.BankTx) -> tuple:
-    return bank.dup_identity(t.date, t.amount, t.vs or "", t.counterparty or "")
+    return bank.dup_identity(t.date, t.amount, t.vs or "", t.counterparty or "") + (t.kind == "vydaj",)
 
 
 @app.get("/bank/duplicates")
@@ -2292,6 +2342,13 @@ def assign_tx(tx_id: int, body: s.BankAssignIn, db: Session = Depends(get_db)):
         t.kind = "vynos"
     if t.flat_id is None and t.kind == "naklad":
         t.kind = "vynos"
+    if t.kind == "vydaj":
+        if body.party is not None or "party" in body.model_fields_set:
+            t.party = body.party if body.party in ("svj", "najemnik") else ""
+        if t.flat_id is None:
+            t.party = ""
+        elif t.party not in ("svj", "najemnik"):
+            raise HTTPException(400, "U odchozí platby zvolte, zda jde na SVJ, nebo nájemníkovi")
     _sync_tx_expense(db, t)
     db.commit()
     return {"ok": True}
@@ -2534,7 +2591,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     pay: dict[tuple[int, str], list] = defaultdict(list)
     sug_by: dict[tuple[int, str], list] = defaultdict(list)  # oranžové návrhy přímo v buňce bytu
     for t in txs:
-        if t.kind in ("vyrazeno", "naklad", "vyuctovani"):
+        if t.kind in ("vyrazeno", "naklad", "vyuctovani", "vydaj"):
             continue  # vyřazené z přehledu, náklady a vyúčtování nejsou nájemné
         if t.flat_id is None:
             unmatched_by[t.period] += t.amount
@@ -2546,6 +2603,11 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             received[(t.flat_id, t.period)] += t.amount
             pay[(t.flat_id, t.period)].append({"ref": f"b{t.id}", "amount": float(t.amount),
                                                "date": t.date.isoformat(), "src": "výpis"})
+    svj_paid: dict[tuple[int, str], Decimal] = defaultdict(lambda: Decimal("0"))
+    svj_cache: dict = {}
+    for t in txs:
+        if t.kind == "vydaj" and t.flat_id is not None and t.party == "svj":
+            svj_paid[(t.flat_id, t.period)] += t.amount
     for mp in db.scalars(select(m.ManualPayment)).all():
         per = mp.on_date.strftime("%Y-%m")
         received[(mp.flat_id, per)] += mp.amount
@@ -2561,8 +2623,21 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
             e = bank.expected_for(f, first, last)
             r = received.get((f.id, p), Decimal("0"))
             sugs = sug_by.get((f.id, p), [])
-            if e == 0 and r == 0 and not sugs:
+            mo, yr = int(p[5:7]), int(p[:4])
+            if (f.id, yr) not in svj_cache:
+                svj_cache[(f.id, yr)] = stl.svj_predpis_months(f, yr)
+            svj_exp = svj_cache[(f.id, yr)].get(mo, Decimal("0"))
+            svj_pd = svj_paid.get((f.id, p), Decimal("0"))
+            if e == 0 and r == 0 and not sugs and svj_exp == 0 and svj_pd == 0:
                 continue
+            if svj_exp == 0 and svj_pd == 0:
+                sst = ""
+            elif svj_pd == svj_exp:
+                sst = "ok"
+            elif svj_pd < svj_exp:
+                sst = "chybí" if svj_pd > 0 else "nezaplaceno"
+            else:
+                sst = "navíc"
             if e == 0:
                 st = "extra"  # platba bez smlouvy, která to pokrývá
             elif r >= e:
@@ -2576,6 +2651,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
                 "expected": float(e), "received": float(r),
                 "payments": sorted(pay.get((f.id, p), []), key=lambda x: x["date"]),
                 "suggestions": sorted(sugs, key=lambda x: x["date"]),
+                "svj_expected": float(svj_exp), "svj_paid": float(svj_pd), "svj_status": sst,
                 "missing": float(max(e - r, Decimal("0"))), "status": st,
             })
             exp_total += e
@@ -2587,11 +2663,18 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
 
     addr_of = {f.id: f.addr for f in flats}
     sb: dict[int, dict] = {}
+    outgoing = sorted((t for t in txs if t.kind == "vydaj" and t.flat_id is None), key=lambda t: t.date, reverse=True)
     for se in db.scalars(select(m.SettlementEntry).order_by(m.SettlementEntry.on_date)).all():
         d = sb.setdefault(se.flat_id, {"svj": Decimal("0"), "najemnik": Decimal("0"), "entries": []})
         d[se.party] += se.amount
         d["entries"].append({"id": se.id, "party": se.party, "kind": se.kind, "on_date": se.on_date.isoformat(),
                              "amount": float(se.amount), "note": se.note, "bank": se.bank_tx_id is not None})
+    for t in txs:
+        if t.kind == "vydaj" and t.flat_id is not None and t.party == "najemnik":
+            d = sb.setdefault(t.flat_id, {"svj": Decimal("0"), "najemnik": Decimal("0"), "entries": []})
+            d["najemnik"] += t.amount
+            d["entries"].append({"id": None, "party": "najemnik", "kind": "uhrada", "on_date": t.date.isoformat(),
+                                 "amount": float(t.amount), "note": "vyplaceno z výpisu", "bank": True})
     settlements = sorted(({"flat_id": fid, "addr": addr_of.get(fid, "?"), "svj": float(d["svj"]),
                            "najemnik": float(d["najemnik"]), "entries": list(reversed(d["entries"]))}
                           for fid, d in sb.items()), key=lambda x: x["addr"])
@@ -2607,6 +2690,13 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     return {
         "months": out,
         "settlements": settlements,
+        "outgoing": [
+            {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "counterparty": t.counterparty,
+             "note": t.note, "period": t.period, "suggest_flat_id": t.suggest_flat_id,
+             "suggest_party": t.suggest_party, "suggest_level": t.suggest_level,
+             "suggest_addr": addr_of.get(t.suggest_flat_id, "?")}
+            for t in outgoing[:300]
+        ],
         "suggested": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
              "counterparty": t.counterparty, "note": t.note, "period": t.period,

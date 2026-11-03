@@ -187,6 +187,8 @@ class BankTx(Base):
     kind: Mapped[str] = mapped_column(String(20), default="vynos")  # vynos | naklad | vyrazeno (z přehledu)
     suggest_flat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # navržený byt (oranžová)
     suggest_level: Mapped[str] = mapped_column(String(12), default="")  # oranzova | ''
+    party: Mapped[str] = mapped_column(String(10), default="")  # u odchozí platby: svj | najemnik
+    suggest_party: Mapped[str] = mapped_column(String(10), default="")
 
 
 class Listing(Base):

@@ -98,9 +98,10 @@ def parse_csv(data: bytes) -> list[dict]:
             return r[i].strip() if i is not None and i < len(r) else ""
         d = _parse_date(g(ci_date))
         a = _parse_amount(g(ci_amt))
-        if d is None or a is None or a <= 0:
-            continue  # odchozí platby a řádky bez data nás nezajímají
-        out.append({"date": d, "amount": a, "vs": digits(g(ci_vs)), "counterparty": g(ci_cp), "note": g(ci_note)})
+        if d is None or a is None or a == 0:
+            continue  # řádky bez data nebo bez částky nás nezajímají
+        out.append({"date": d, "amount": abs(a), "dir": "out" if a < 0 else "in", "vs": digits(g(ci_vs)),
+                    "counterparty": g(ci_cp), "note": g(ci_note)})
     return out
 
 
@@ -146,6 +147,8 @@ def dup_identity(d: date, amount, vs: str, counterparty: str) -> tuple:
 
 def tx_key(r: dict) -> str:
     base = "|".join(dup_identity(r["date"], r["amount"], r["vs"], r["counterparty"]))
+    if r.get("dir") == "out":
+        base = "out|" + base  # odchozí platba nikdy nesplyne s příchozí
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
