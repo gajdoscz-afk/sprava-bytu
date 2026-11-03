@@ -2247,6 +2247,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         fid, level = bank.suggest(r["amount"], r["vs"], r["counterparty"], r["note"], period, flats, aliases)
         t = m.BankTx(
             key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
+            counter_account=r.get("account", "")[:40],
             counterparty=r["counterparty"][:200], note=r["note"], period=period,
             flat_id=fid if level == "zelena" else None, match=level or "none",
             suggest_flat_id=fid if level == "oranzova" else None,
@@ -2728,6 +2729,10 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     settlements = sorted(({"flat_id": fid, "addr": addr_of.get(fid, "?"), "svj": float(d["svj"]),
                            "najemnik": float(d["najemnik"]), "entries": list(reversed(d["entries"]))}
                           for fid, d in sb.items()), key=lambda x: x["addr"])
+    acc_flats: dict[str, list[int]] = defaultdict(list)
+    for f in flats:
+        if f.svj_account:
+            acc_flats[f.svj_account].append(f.id)
     unmatched = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level != "oranzova"),
                        key=lambda t: t.date, reverse=True)
     suggested = sorted((t for t in txs if t.flat_id is None and t.kind == "vynos" and t.suggest_level == "oranzova"),
@@ -2755,7 +2760,10 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
         ],
         "unmatched": [
             {"id": t.id, "date": t.date.isoformat(), "amount": float(t.amount), "vs": t.vs,
-             "counterparty": t.counterparty, "note": t.note, "period": t.period}
+             "counterparty": t.counterparty, "note": t.note, "period": t.period,
+             "counter_account": t.counter_account,
+             "account_flat_id": acc_flats[t.counter_account][0] if len(acc_flats.get(t.counter_account, [])) == 1 else None,
+             "account_flat_addr": addr_of.get(acc_flats[t.counter_account][0]) if len(acc_flats.get(t.counter_account, [])) == 1 else None}
             for t in unmatched[:200]
         ],
         "manual": [
