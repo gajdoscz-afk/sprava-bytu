@@ -59,6 +59,7 @@ SVJ_BUILDINGS = {
     "seifertova": "224383995/0300",
     "skolni": "2819095369/0800",
     "rozcesti": "268258846/0600",
+    "sibirska": "4203464399/0800",
 }
 
 
