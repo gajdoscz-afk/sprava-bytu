@@ -10,9 +10,10 @@ from . import bank
 from . import models as m
 
 # Přeúčtovávají se jen tyto služby
-BILLABLE = ("teplo", "ohřev", "voda", "stočné", "osvětlen", "elektřin", "výtah", "úklid", "tuv", "suv")
-# Zkratky, které se musí shodovat celé slovo (TUV, SUV), aby se nechytly jiné názvy
-BILLABLE_WORDS = ("tuv", "suv")
+BILLABLE = ("teplo", "vytáp", "topen", "topení", "ohřev", "voda", "vodné", "stočné", "osvětlen", "elektřin",
+            "výtah", "úklid", "tuv", "suv", "út")
+# Zkratky, které se musí shodovat celé slovo (TUV, SUV, ÚT), aby se nechytly jiné názvy
+BILLABLE_WORDS = ("tuv", "suv", "út")
 # Tyto položky se nikdy nepřeúčtují (správa vodoměrů, účetnictví, odměna SVJ, správa)
 NOT_BILLABLE = ("vodoměr", "odečt", "účetn", "odměn", "správ")
 SOURCE_TYPES = ("vyuctovani_svj", "vyuctovani_spravy")
