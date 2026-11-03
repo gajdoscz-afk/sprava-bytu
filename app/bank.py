@@ -52,6 +52,21 @@ def _parse_amount(s) -> Decimal | None:
         return None
 
 
+# Účty SVJ podle domu (protiúčet v CSV). Byty se pozná podle názvu ulice v adrese.
+SVJ_BUILDINGS = {
+    "893261389/0800": "masarykova",
+    "243441142/0300": "revolucni",
+    "224383995/0300": "seifertova",
+    "2819095369/0800": "skolni",
+}
+
+
+def svj_vs_key(addr: str) -> str:
+    """Rozcestí má VS platby SVJ ve tvaru 721 + číslo bytu na tři místa (Rozcestí 12 -> 721012)."""
+    m = re.match(r"rozcesti (\d+)$", normalize(addr).split("  ")[0].strip())
+    return f"721{int(m.group(1)):03d}" if m else ""
+
+
 def _col(hdr: list[str], *keys: str) -> int | None:
     for i, h in enumerate(hdr):
         if any(k in h for k in keys):
@@ -88,6 +103,8 @@ def parse_csv(data: bytes) -> list[dict]:
     ci_amt = _col(hdr, "částk", "castk", "amount")
     ci_vs = _col(hdr, "variabil", "vs")
     ci_cp = _col(hdr, "protiúčet", "protiucet", "protistrana", "název", "nazev", "jméno", "jmeno", "plátce", "platce")
+    ci_acc = _col(hdr, "číslo protiúčtu", "cislo protiuctu")
+    ci_bank = _col(hdr, "kód banky protiúčtu", "kod banky protiuctu")
     ci_note = _col(hdr, "vlastní poznámka", "vlastni poznamka", "poznámka", "poznamka", "popis")
     ci_note2 = _col(hdr, "zpráva", "zprava")  # u CSOB je zpráva pro příjemce ve vlastním sloupci
     if ci_date is None:
@@ -101,8 +118,10 @@ def parse_csv(data: bytes) -> list[dict]:
         a = _parse_amount(g(ci_amt))
         if d is None or a is None or a == 0:
             continue  # řádky bez data nebo bez částky nás nezajímají
+        acc = f"{g(ci_acc)}/{g(ci_bank)}" if g(ci_acc) else ""
         out.append({"date": d, "amount": abs(a), "dir": "out" if a < 0 else "in", "vs": digits(g(ci_vs)),
-                    "counterparty": g(ci_cp), "note": " ".join(x for x in (g(ci_note), g(ci_note2)) if x)})
+                    "counterparty": g(ci_cp), "account": acc,
+                    "note": " ".join(x for x in (g(ci_note), g(ci_note2)) if x)})
     return out
 
 

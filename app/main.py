@@ -106,6 +106,7 @@ async def lifespan(_app: FastAPI):
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_level VARCHAR(12) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS party VARCHAR(10) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS suggest_party VARCHAR(10) NOT NULL DEFAULT ''"))
+        conn.execute(text("ALTER TABLE bank_txs ADD COLUMN IF NOT EXISTS counter_account VARCHAR(40) NOT NULL DEFAULT ''"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS source_date DATE"))
         conn.execute(text("ALTER TABLE leases ADD COLUMN IF NOT EXISTS persons INTEGER"))
         conn.execute(text("ALTER TABLE flat_costs ADD COLUMN IF NOT EXISTS valid_from DATE"))
@@ -2144,7 +2145,8 @@ def _saldo_map(db: Session) -> dict:
     return out
 
 
-def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, flats, saldo, aliases) -> tuple:
+def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, flats, saldo, aliases,
+                 account: str = "") -> tuple:
     """Návrh pro odchozí platbu: jen podle částky. Sedí-li přesně měsíční záloha SVJ jednoho bytu,
     nebo přesně dlužný přeplatek jednoho nájemníka. Zelená jen když sedí i text (SVJ / jméno / adresa)."""
     amt = Decimal(str(amount))
@@ -2152,8 +2154,16 @@ def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, fla
     text = bank.normalize(f"{counterparty} {note}")
     vs = bank.canon_vs(vs)
     vs_flats = {al.flat_id for al in aliases if vs and al.alias == f"svj:{vs}"}  # VS platby SVJ už znám
+    kw = bank.SVJ_BUILDINGS.get(account, "")
+    in_bld = {f.id for f in flats if kw and kw in bank.normalize(f.addr)}  # účet SVJ určuje dům
+    for f in flats:
+        key = bank.svj_vs_key(f.addr)
+        if key and vs[:6] == key:
+            vs_flats.add(f.id)  # Rozcestí: VS 721 + číslo bytu
     cands = []
     for f in flats:
+        if kw and f.id not in in_bld:
+            continue
         if amt > 0 and stl.svj_predpis_months(f, yr).get(mo, Decimal("0")) == amt:
             cands.append((f, "svj"))
         if amt > 0 and -saldo.get(f.id, {}).get("najemnik", Decimal("0")) == amt:
@@ -2161,7 +2171,7 @@ def _suggest_out(amount, vs: str, counterparty: str, note: str, period: str, fla
     if len(cands) == 1:
         f, party = cands[0]
         if party == "svj":
-            hint = f.id in vs_flats or bank._contains("svj", text) or bank._contains("spolecenstvi", text)
+            hint = f.id in vs_flats or f.id in in_bld or bank._contains("svj", text) or bank._contains("spolecenstvi", text)
         else:
             hint = bank._contains(bank._surname(f), text) or bank._contains(bank._street(f), text)
         return f.id, party, ("zelena" if hint else "oranzova")
@@ -2214,10 +2224,11 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
         period = r["date"].strftime("%Y-%m")
         if is_out:
             ofid, oparty, olevel = _suggest_out(r["amount"], r["vs"], r["counterparty"], r["note"], period, flats,
-                                                saldo, aliases)
+                                                saldo, aliases, r.get("account", ""))
             db.add(m.BankTx(
                 key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
                 counterparty=r["counterparty"][:200], note=r["note"], period=period, kind="vydaj",
+                counter_account=r.get("account", "")[:40],
                 flat_id=ofid if olevel == "zelena" else None, party=oparty if olevel == "zelena" else "",
                 match=olevel or "none",
                 suggest_flat_id=ofid if olevel == "oranzova" else None,
