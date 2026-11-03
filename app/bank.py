@@ -173,11 +173,16 @@ def _surname(flat) -> str:
     return parts[-1] if parts and len(parts[-1]) >= 4 else ""
 
 
-def suggest(amount, vs: str, counterparty: str, period: str, flats, aliases) -> tuple[int | None, str]:
-    """Návrh bytu pro platbu. 'zelena' = sedí VS nebo částka i jméno (přiřadí se), 'oranzova' = jen částka
-    nebo známý plátce (čeká na potvrzení), '' = ručně."""
+def _street(flat) -> str:
+    parts = normalize(flat.addr).split()
+    return parts[0] if parts and len(parts[0]) >= 5 else ""
+
+
+def suggest(amount, vs: str, counterparty: str, note: str, period: str, flats, aliases) -> tuple[int | None, str]:
+    """Návrh bytu pro platbu. 'zelena' = sedí VS, nebo sedí částka a zároveň jméno nebo adresa,
+    'oranzova' = jen částka nebo jen jméno/adresa (čeká na potvrzení), '' = ručně."""
     vs = vs or ""
-    cp = normalize(counterparty)
+    text = normalize(f"{counterparty} {note}")
     if vs:
         for al in aliases:
             if al.alias == f"vs:{vs}":
@@ -185,18 +190,20 @@ def suggest(amount, vs: str, counterparty: str, period: str, flats, aliases) -> 
     first, last = month_bounds(period)
     amt = Decimal(str(amount))
     named = None
-    if cp:
-        for al in aliases:
-            if al.alias == f"cp:{cp}"[:200]:
-                named = al.flat_id
-                break
-        if named is None:
-            hits = [f.id for f in flats if _surname(f) and _contains(_surname(f), cp)]
-            if len(hits) == 1:
-                named = hits[0]
+    for al in aliases:
+        if text and al.alias == f"cp:{normalize(counterparty)}"[:200] and normalize(counterparty):
+            named = al.flat_id
+            break
+    hits = set()
+    for f in flats:
+        sn, st = _surname(f), _street(f)
+        if (sn and _contains(sn, text)) or (st and _contains(st, text)):
+            hits.add(f.id)
+    if named is None and len(hits) == 1:
+        named = next(iter(hits))
     if named is not None:
         f = next((x for x in flats if x.id == named), None)
-        if f is not None and expected_for(f, first, last) == amt:
+        if f is not None and expected_for(f, first, last) == amt and (named in hits or named is not None):
             return named, "zelena"
         return named, "oranzova"
     same = [f.id for f in flats if (e := expected_for(f, first, last)) > 0 and e == amt]

@@ -2166,7 +2166,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
             continue
         seen.add(key)
         period = r["date"].strftime("%Y-%m")
-        fid, level = bank.suggest(r["amount"], r["vs"], r["counterparty"], period, flats, aliases)
+        fid, level = bank.suggest(r["amount"], r["vs"], r["counterparty"], r["note"], period, flats, aliases)
         t = m.BankTx(
             key=key, date=r["date"], amount=money(r["amount"]), vs=r["vs"][:20],
             counterparty=r["counterparty"][:200], note=r["note"], period=period,
@@ -2188,7 +2188,7 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
     for t in db.scalars(select(m.BankTx).where(m.BankTx.flat_id.is_(None), m.BankTx.kind == "vynos")).all():
         if t.id in new_ids:
             continue
-        fid, level = bank.suggest(t.amount, t.vs, t.counterparty, t.period, flats, aliases)
+        fid, level = bank.suggest(t.amount, t.vs, t.counterparty, t.note, t.period, flats, aliases)
         if level == "zelena":
             t.flat_id, t.match = fid, "zelena"
             t.suggest_flat_id, t.suggest_level = None, ""
@@ -2204,8 +2204,6 @@ async def import_bank(file: UploadFile = File(...), db: Session = Depends(get_db
 def _dup_groups(db: Session) -> list[list[m.BankTx]]:
     by: dict[tuple, list[m.BankTx]] = defaultdict(list)
     for t in db.scalars(select(m.BankTx).order_by(m.BankTx.id)).all():
-        if not t.vs:
-            continue  # platby bez VS (složenky, hotovost) se nezdvojují, jsou to samostatné vklady
         by[dup_identity_tx(t)].append(t)
     return [sorted(g, key=lambda t: (t.flat_id is None, t.kind == "vyrazeno", t.id)) for g in by.values() if len(g) > 1]
 
@@ -2438,18 +2436,25 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
     received: dict[tuple[int, str], Decimal] = defaultdict(lambda: Decimal("0"))
     unmatched_by: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     pay: dict[tuple[int, str], list] = defaultdict(list)
+    sug_by: dict[tuple[int, str], list] = defaultdict(list)  # oranžové návrhy přímo v buňce bytu
     for t in txs:
         if t.kind in ("vyrazeno", "naklad"):
             continue  # vyřazené z přehledu a náklady nejsou příjem
         if t.flat_id is None:
             unmatched_by[t.period] += t.amount
+            if t.kind == "vynos" and t.suggest_level == "oranzova" and t.suggest_flat_id is not None:
+                sug_by[(t.suggest_flat_id, t.period)].append({
+                    "id": t.id, "amount": float(t.amount), "date": t.date.isoformat(), "vs": t.vs,
+                    "counterparty": t.counterparty, "note": t.note})
         else:
             received[(t.flat_id, t.period)] += t.amount
-            pay[(t.flat_id, t.period)].append({"amount": float(t.amount), "date": t.date.isoformat(), "src": "výpis"})
+            pay[(t.flat_id, t.period)].append({"ref": f"b{t.id}", "amount": float(t.amount),
+                                               "date": t.date.isoformat(), "src": "výpis"})
     for mp in db.scalars(select(m.ManualPayment)).all():
         per = mp.on_date.strftime("%Y-%m")
         received[(mp.flat_id, per)] += mp.amount
-        pay[(mp.flat_id, per)].append({"amount": float(mp.amount), "date": mp.on_date.isoformat(), "src": "ručně"})
+        pay[(mp.flat_id, per)].append({"ref": f"m{mp.id}", "amount": float(mp.amount),
+                                       "date": mp.on_date.isoformat(), "src": "ručně"})
 
     out = []
     for p in periods:
@@ -2459,7 +2464,8 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
         for f in flats:
             e = bank.expected_for(f, first, last)
             r = received.get((f.id, p), Decimal("0"))
-            if e == 0 and r == 0:
+            sugs = sug_by.get((f.id, p), [])
+            if e == 0 and r == 0 and not sugs:
                 continue
             if e == 0:
                 st = "extra"  # platba bez smlouvy, která to pokrývá
@@ -2473,6 +2479,7 @@ def economics(months: int = 6, frm: str | None = None, to: str | None = None, db
                 "flat_id": f.id, "addr": f.addr, "tenant": f.tenant_name, "email": f.tenant_email,
                 "expected": float(e), "received": float(r),
                 "payments": sorted(pay.get((f.id, p), []), key=lambda x: x["date"]),
+                "suggestions": sorted(sugs, key=lambda x: x["date"]),
                 "missing": float(max(e - r, Decimal("0"))), "status": st,
             })
             exp_total += e
