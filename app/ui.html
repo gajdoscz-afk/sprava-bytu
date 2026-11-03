@@ -292,7 +292,7 @@ h2,.bigHead{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:u
 <body>
 <main id="main"><p class="mut">Načítám…</p></main>
 <button id="verBtn" title="Zkontrolovat novou verzi" onclick="checkForUpdate()" style="position:fixed;top:12px;right:12px;width:40px;height:40px;border-radius:50%;border:0;background:var(--acc);color:var(--paper);font:inherit;font-weight:800;font-size:13px;cursor:pointer;z-index:6;box-shadow:0 2px 8px rgba(0,0,0,.2)">MG</button>
-<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.55</small></span></button>
+<button class="brandTop" onclick="go('home')" title="Na hlavní stránku"><span class="logoMark">MG</span><span style="display:flex;flex-direction:column;line-height:1.2"><span>MG Property</span><small style="font-size:11px;font-weight:500;opacity:.75">verze 1.56</small></span></button>
 <nav>
 
 <button data-t="home" onclick="go('home')">Přehled</button>
@@ -1080,7 +1080,7 @@ function payPop(fid,p){
  const pays=(r&&r.payments)||[], sugs=(r&&r.suggestions)||[];
  const pl=pays.map(q=>{
   const bid=q.ref[0]==='b'?q.ref.slice(1):null;
-  const tools=bid?`<div class="btns" style="margin-top:4px;align-items:center;flex-wrap:wrap"><select id="pm${bid}" style="width:auto">${flatOpts(fid)}</select><button class="btn sm" onclick="bankMove(${bid},${fid},'${p}')">Přesunout</button><button class="btn sec sm warnTxt" onclick="bankDrop(${bid},${fid},'${p}')">Vyhodit</button><button class="btn sec sm" onclick="previewTx(${bid},${fid},'${p}')">Náhled</button></div>`:'';
+  const tools=bid?`<div class="btns" style="margin-top:4px;align-items:center;flex-wrap:wrap"><select id="pm${bid}" style="width:auto">${flatOpts(fid)}</select><button class="btn sm" onclick="bankMove(${bid},${fid},'${p}')">Přesunout</button><button class="btn sec sm warnTxt" onclick="bankDrop(${bid},${fid},'${p}')">Vyhodit</button><button class="btn sec sm" onclick="previewTx(${bid},${fid},'${p}')">Náhled</button></div><div class="btns" style="margin-top:4px"><button class="btn sec sm" onclick="settlePop(${bid},${fid},'${p}',${q.amount},'${q.date}','svj')">Úhrada od SVJ (vyúčtování)</button><button class="btn sec sm" onclick="settlePop(${bid},${fid},'${p}',${q.amount},'${q.date}','najemnik')">Úhrada od nájemníka (vyúčtování)</button></div>`:'';
   return `<div class="card" style="margin-top:6px"><div class="row small"><span>${fd(q.date)} · <b>${kc(q.amount)}</b> · ${q.src}</span>${bid?'':`<button class="btn sec sm" onclick="payDel('${q.ref}',${fid},'${p}')">×</button>`}</div>${tools}</div>`;
  }).join('')||'<div class="small mut">Žádné přiřazené platby.</div>';
  const sl=sugs.map(q=>`<div class="card txMiss" style="margin-top:6px"><div><b>${kc(q.amount)}</b> · ${fd(q.date)}<div class="small mut">${esc(q.counterparty||'neznámý plátce')}${q.vs?' · VS '+esc(q.vs):''}${q.note?' · '+esc(q.note):''}</div></div>
@@ -1090,6 +1090,12 @@ function payPop(fid,p){
 async function bankMove(id,fid,p){
  const v=$('#pm'+id).value;if(!v){toast('Vyberte byt');return}
  try{await api(`/bank/${id}`,'PATCH',{flat_id:+v,kind:'vynos'});await payReopen(+v,p)}catch(e){toast(e.message)}
+}
+async function settlePop(id,fid,p,amt,date,party){
+ const lbl=party==='svj'?'SVJ':'nájemníka';
+ if(!confirm(`Zapsat ${kc(amt)} jako úhradu od ${lbl} do vyúčtování? Do nájmu se nezapočítá a na kartě se odečte od salda.`))return;
+ try{await api(`/flats/${fid}/settlement-entries`,'POST',{party,kind:'uhrada',amount:-amt,on_date:date,bank_tx_id:id});toast('Zapsáno do vyúčtování');await payReopen(fid,p)}
+ catch(e){toast(e.message)}
 }
 async function bankDrop(id,fid,p){
  try{await api(`/bank/${id}`,'PATCH',{kind:'vyrazeno'});await payReopen(fid,p)}catch(e){toast(e.message)}

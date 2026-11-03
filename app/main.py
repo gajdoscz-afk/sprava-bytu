@@ -2407,9 +2407,12 @@ def add_settlement_entry(flat_id: int, body: dict = Body(...), db: Session = Dep
         tx = db.get(m.BankTx, int(body["bank_tx_id"]))
         if tx is None:
             raise HTTPException(404, "Platba nenalezena")
-        if tx.flat_id is not None or tx.kind != "vynos":
-            raise HTTPException(400, "Platba je už zařazená jinde")
+        if tx.kind != "vynos":
+            raise HTTPException(400, "Platba je už zařazená jinde (náklad, vyřazeno nebo vyúčtování)")
+        if db.scalar(select(m.SettlementEntry).where(m.SettlementEntry.bank_tx_id == tx.id)) is not None:
+            raise HTTPException(400, "Tato platba už je ve vyúčtování")
         tx.flat_id, tx.kind, tx.match = f.id, "vyuctovani", "ručně"
+        tx.suggest_flat_id, tx.suggest_level = None, ""
         tx.suggest_flat_id, tx.suggest_level = None, ""
     db.add(m.SettlementEntry(flat_id=f.id, party=party, kind=kind, on_date=on, amount=money(amt),
                              note=str(body.get("note") or "").strip()[:200], year=year,
